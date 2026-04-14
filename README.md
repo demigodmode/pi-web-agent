@@ -125,6 +125,12 @@ Build the project:
 npm run build
 ```
 
+### Trying it in Pi locally
+
+This repo includes a project-local Pi extension entrypoint at `.pi/extensions/pi-web-agent.ts`.
+
+That means Pi can discover it from the repo during development. After starting Pi in this project, use `/reload` if you change the extension code and want Pi to pick up the latest version.
+
 ## Project layout
 
 The code is split into small modules on purpose.
