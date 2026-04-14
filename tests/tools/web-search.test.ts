@@ -19,6 +19,24 @@ describe('web_search tool', () => {
     });
   });
 
+  it('serves repeated identical queries from cache', async () => {
+    const searchHtml = vi.fn().mockResolvedValue(`
+      <div class="result">
+        <a class="result__a" href="https://example.com">Example</a>
+        <a class="result__snippet">Snippet</a>
+      </div>
+    `);
+
+    const search = createWebSearchTool({ searchHtml });
+
+    const first = await search({ query: 'example' });
+    const second = await search({ query: 'example' });
+
+    expect(searchHtml).toHaveBeenCalledTimes(1);
+    expect(first.metadata.cacheHit).toBe(false);
+    expect(second.metadata.cacheHit).toBe(true);
+  });
+
   it('rejects empty queries', async () => {
     const search = createWebSearchTool({ searchHtml: vi.fn() });
 

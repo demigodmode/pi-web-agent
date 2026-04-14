@@ -1,3 +1,7 @@
+export function createCacheKey(parts: Array<string | number | boolean>): string {
+  return JSON.stringify(parts);
+}
+
 export function createTtlCache<T>({
   ttlMs,
   now = () => Date.now()
