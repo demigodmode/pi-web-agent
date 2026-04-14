@@ -12,4 +12,18 @@ describe('web_fetch_headless tool', () => {
       error: { code: 'NOT_IMPLEMENTED' }
     });
   });
+
+  it('can be constructed without dependency arguments', () => {
+    expect(typeof createWebFetchHeadlessTool()).toBe('function');
+  });
+
+  it('rejects unsupported URL schemes before headless execution', async () => {
+    const tool = createWebFetchHeadlessTool();
+    const result = await tool({ url: 'file:///tmp/test.html' });
+
+    expect(result).toMatchObject({
+      status: 'unsupported',
+      error: { code: 'UNSUPPORTED_URL' }
+    });
+  });
 });

@@ -6,7 +6,16 @@ export function createWebFetchHeadlessTool({
 }: {
   fetchPage?: (url: string) => Promise<WebFetchHeadlessResponse>;
 } = {}) {
-  return async function webFetchHeadless({ url }: { url: string }) {
+  return async function webFetchHeadless({ url }: { url: string }): Promise<WebFetchHeadlessResponse> {
+    if (!/^https?:\/\//.test(url)) {
+      return {
+        status: 'unsupported',
+        url,
+        metadata: { method: 'headless', cacheHit: false },
+        error: { code: 'UNSUPPORTED_URL', message: 'Only http and https URLs are supported.' }
+      };
+    }
+
     return fetchPage(url);
   };
 }

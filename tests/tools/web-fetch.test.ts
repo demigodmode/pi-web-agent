@@ -25,4 +25,8 @@ describe('web_fetch tool', () => {
       status: 'needs_headless'
     });
   });
+
+  it('can be constructed without dependency arguments', () => {
+    expect(typeof createWebFetchTool()).toBe('function');
+  });
 });
