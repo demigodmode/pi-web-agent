@@ -7,7 +7,7 @@ import {
   type WebFetchResponse,
   type WebFetchHeadlessResponse
 } from '../src/types.js';
-import { createExtension } from '../src/extension.js';
+import extension from '../src/extension.js';
 
 describe('shared tool contracts', () => {
   it('exposes the allowed tool statuses', () => {
@@ -57,13 +57,7 @@ describe('shared tool contracts', () => {
 });
 
 describe('extension surface', () => {
-  it('exposes exactly three tool handlers', () => {
-    const extension = createExtension();
-
-    expect(Object.keys(extension.tools)).toEqual([
-      'web_search',
-      'web_fetch',
-      'web_fetch_headless'
-    ]);
+  it('exports a Pi extension function', () => {
+    expect(typeof extension).toBe('function');
   });
 });

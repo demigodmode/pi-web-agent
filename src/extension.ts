@@ -1,13 +1,62 @@
+import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import { Type } from '@sinclair/typebox';
 import { createWebFetchTool } from './tools/web-fetch.js';
 import { createWebFetchHeadlessTool } from './tools/web-fetch-headless.js';
 import { createWebSearchTool } from './tools/web-search.js';
 
-export function createExtension() {
-  return {
-    tools: {
-      web_search: createWebSearchTool(),
-      web_fetch: createWebFetchTool(),
-      web_fetch_headless: createWebFetchHeadlessTool()
+export default function extension(pi: ExtensionAPI) {
+  const webSearch = createWebSearchTool();
+  const webFetch = createWebFetchTool();
+  const webFetchHeadless = createWebFetchHeadlessTool();
+
+  pi.registerTool({
+    name: 'web_search',
+    label: 'Web Search',
+    description: 'Find relevant pages and return titles, URLs, and snippets only.',
+    parameters: Type.Object({
+      query: Type.String({ description: 'Search query.' })
+    }),
+    async execute(_toolCallId, params) {
+      const result = await webSearch({ query: params.query });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        details: result,
+        isError: result.status === 'error'
+      };
     }
-  };
+  });
+
+  pi.registerTool({
+    name: 'web_fetch',
+    label: 'Web Fetch',
+    description: 'Fetch a URL over plain HTTP and extract readable content.',
+    parameters: Type.Object({
+      url: Type.String({ description: 'HTTP or HTTPS URL to fetch.' })
+    }),
+    async execute(_toolCallId, params) {
+      const result = await webFetch({ url: params.url });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        details: result,
+        isError: result.status === 'error'
+      };
+    }
+  });
+
+  pi.registerTool({
+    name: 'web_fetch_headless',
+    label: 'Web Fetch Headless',
+    description: 'Fetch a URL with an explicitly requested headless browser path.',
+    parameters: Type.Object({
+      url: Type.String({ description: 'HTTP or HTTPS URL to fetch in headless mode.' })
+    }),
+    async execute(_toolCallId, params) {
+      const result = await webFetchHeadless({ url: params.url });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        details: result,
+        isError: result.status === 'error'
+      };
+    }
+  });
 }
