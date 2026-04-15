@@ -18,9 +18,9 @@ function summarizeText(text: string, maxLength = 180): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-function evidenceFromFetch(fetched: Extract<WebFetchResponse, { status: 'ok' }>, fallbackTitle: string) {
+function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string) {
   const content = fetched.content;
-  if (!content) return null;
+  if (fetched.status !== 'ok' || !content) return null;
 
   const summary = summarizeText(content.text);
   const evidence: ResearchEvidence = {
