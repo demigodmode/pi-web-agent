@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
+import { createWebExploreTool } from './tools/web-explore.js';
 import { createWebFetchTool } from './tools/web-fetch.js';
 import { createWebFetchHeadlessTool } from './tools/web-fetch-headless.js';
 import { createWebSearchTool } from './tools/web-search.js';
@@ -8,6 +9,7 @@ export default function extension(pi: ExtensionAPI) {
   const webSearch = createWebSearchTool();
   const webFetch = createWebFetchTool();
   const webFetchHeadless = createWebFetchHeadlessTool();
+  const webExplore = createWebExploreTool();
 
   pi.registerTool({
     name: 'web_search',
@@ -54,6 +56,29 @@ export default function extension(pi: ExtensionAPI) {
       const result = await webFetchHeadless({ url: params.url });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        details: result,
+        isError: result.status === 'error'
+      };
+    }
+  });
+
+  pi.registerTool({
+    name: 'web_explore',
+    label: 'Web Explore',
+    description:
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Returns concise findings, supporting sources, and a caveat when evidence is incomplete.',
+    parameters: Type.Object({
+      query: Type.String({ description: 'Web research question to explore.' })
+    }),
+    async execute(_toolCallId, params) {
+      const result = await webExplore({ query: params.query });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ],
         details: result,
         isError: result.status === 'error'
       };
