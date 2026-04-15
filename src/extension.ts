@@ -76,7 +76,7 @@ export default function extension(pi: ExtensionAPI) {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(result, null, 2)
+            text: result.status === 'ok' ? result.text : JSON.stringify(result, null, 2)
           }
         ],
         details: result,

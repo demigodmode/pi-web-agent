@@ -32,4 +32,21 @@ describe('Pi extension entrypoint', () => {
     expect(webExplore.parameters.properties).toHaveProperty('query');
     expect(Object.keys(webExplore.parameters.properties)).toEqual(['query']);
   });
+
+  it('returns human-readable content for web_explore instead of only raw json', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool)
+    };
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const result = await webExplore.execute('tool-call-1', {
+      query: 'example query'
+    });
+
+    expect(result.content[0].text).toContain('Findings');
+    expect(result.content[0].text).toContain('Sources');
+  });
 });

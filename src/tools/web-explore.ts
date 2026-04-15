@@ -20,6 +20,22 @@ function findingFromEvidence(evidence: ResearchEvidence, index: number): string 
   return evidence.summary || `Finding ${index + 1}`;
 }
 
+function formatExploreText({
+  findings,
+  sources,
+  caveat
+}: {
+  findings: string[];
+  sources: Array<{ title: string; url: string }>;
+  caveat?: string;
+}) {
+  const findingLines = findings.map((finding) => `- ${finding}`).join('\n');
+  const sourceLines = sources.map((source) => `- ${source.title}: ${source.url}`).join('\n');
+  const caveatBlock = caveat ? `\n\nCaveat\n${caveat}` : '';
+
+  return `Findings\n${findingLines}\n\nSources\n${sourceLines}${caveatBlock}`;
+}
+
 export function createWebExploreTool({
   explore = createResearchWorkflow()
 }: {
@@ -66,7 +82,8 @@ export function createWebExploreTool({
       status: 'ok' as const,
       findings,
       sources,
-      caveat
+      caveat,
+      text: formatExploreText({ findings, sources, caveat })
     };
   };
 }
