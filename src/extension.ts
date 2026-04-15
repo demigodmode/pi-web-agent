@@ -11,10 +11,18 @@ export default function extension(pi: ExtensionAPI) {
   const webFetchHeadless = createWebFetchHeadlessTool();
   const webExplore = createWebExploreTool();
 
+  pi.on('before_agent_start', async (event) => ({
+    systemPrompt:
+      `${event.systemPrompt}\n\n` +
+      'For web research questions that require finding and comparing multiple sources, prefer web_explore. ' +
+      'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations like explicit search calls, specific URL reads, or debugging.'
+  }));
+
   pi.registerTool({
     name: 'web_search',
     label: 'Web Search',
-    description: 'Find relevant pages and return titles, URLs, and snippets only.',
+    description:
+      'Direct search tool for manual discovery of links and snippets. Use for explicit search requests or when the user wants raw search results. Prefer web_explore for broader research questions.',
     parameters: Type.Object({
       query: Type.String({ description: 'Search query.' })
     }),
@@ -31,7 +39,8 @@ export default function extension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'web_fetch',
     label: 'Web Fetch',
-    description: 'Fetch a URL over plain HTTP and extract readable content.',
+    description:
+      'Direct HTTP page fetch for a specific URL. Use when the user wants one page read directly. Prefer web_explore for broader research across multiple sources.',
     parameters: Type.Object({
       url: Type.String({ description: 'HTTP or HTTPS URL to fetch.' })
     }),
@@ -48,7 +57,8 @@ export default function extension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'web_fetch_headless',
     label: 'Web Fetch Headless',
-    description: 'Fetch a URL with an explicitly requested headless browser path.',
+    description:
+      'Direct headless page fetch for a specific URL when browser rendering is explicitly needed. Prefer web_explore for research tasks; it decides headless escalation internally.',
     parameters: Type.Object({
       url: Type.String({ description: 'HTTP or HTTPS URL to fetch in headless mode.' })
     }),
@@ -66,7 +76,7 @@ export default function extension(pi: ExtensionAPI) {
     name: 'web_explore',
     label: 'Web Explore',
     description:
-      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Returns concise findings, supporting sources, and a caveat when evidence is incomplete.',
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Prefer this for multi-source web research, current docs/discussion lookups, and recommendation summaries.',
     parameters: Type.Object({
       query: Type.String({ description: 'Web research question to explore.' })
     }),
