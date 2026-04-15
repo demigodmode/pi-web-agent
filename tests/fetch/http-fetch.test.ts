@@ -47,6 +47,22 @@ describe('http fetcher', () => {
     expect(result.metadata.method).toBe('http');
   });
 
+  it('returns ok for a short but legitimate simple page', async () => {
+    const fetcher = createHttpFetcher({
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: 'https://example.com/',
+        headers: new Headers({ 'content-type': 'text/html' }),
+        text: async () =>
+          '<html><head><title>Example Domain</title></head><body><main><p>This domain is for use in documentation examples without needing permission.</p><p>Avoid use in operations.</p><a href="https://iana.org">Learn more</a></main></body></html>'
+      } as Response)
+    });
+
+    const result = await fetcher('https://example.com/');
+    expect(result.status).toBe('ok');
+    expect(result.metadata.method).toBe('http');
+  });
+
   it('returns unsupported for binary content', async () => {
     const fetcher = createHttpFetcher({
       fetchImpl: vi.fn().mockResolvedValue({

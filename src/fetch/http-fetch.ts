@@ -16,9 +16,8 @@ function isWeakHttpContent(options: { html: string; title?: string; text: string
   );
   const veryShortBody = textLength > 0 && textLength < 120;
   const lowDensity = htmlLength > 0 && textLength / htmlLength < 0.02;
-  const titleOnlyShell = Boolean(options.title) && textLength < 160;
 
-  return veryShortBody && (lowDensity || hasGenericShellMarker || titleOnlyShell);
+  return veryShortBody && (lowDensity || hasGenericShellMarker);
 }
 
 export function createHttpFetcher({
