@@ -1,4 +1,4 @@
-import { extractReadableContent } from '../extract/readability.js';
+import { extractReadableContentSafely } from '../extract/readability.js';
 import type { WebFetchResponse } from '../types.js';
 
 function looksLikeScriptShell(html: string): boolean {
@@ -38,7 +38,8 @@ export function createHttpFetcher({
     }
 
     const html = await response.text();
-    const content = extractReadableContent(html);
+    const extraction = extractReadableContentSafely(html);
+    const content = extraction.content;
 
     if (
       looksLikeScriptShell(html) ||

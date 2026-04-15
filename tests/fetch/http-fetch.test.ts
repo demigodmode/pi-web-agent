@@ -63,6 +63,74 @@ describe('http fetcher', () => {
     expect(result.metadata.method).toBe('http');
   });
 
+  it('falls back to simple extraction and returns ok when content is still readable', async () => {
+    const fetcher = createHttpFetcher({
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: 'https://example.com/broken-css',
+        headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+        text: async () =>
+          `<html>
+            <head>
+              <title>Broken CSS Page</title>
+              <style>
+                .btn {
+                  color: red;
+                  &:hover {
+                    color: blue;
+                  }
+                }
+              </style>
+            </head>
+            <body>
+              <main>
+                <h1>Broken CSS Page</h1>
+                <p>This page should still produce useful readable text through the fallback path.</p>
+                <p>It contains enough content to count as a legitimate HTTP success.</p>
+              </main>
+            </body>
+          </html>`
+      } as Response)
+    });
+
+    const result = await fetcher('https://example.com/broken-css');
+    expect(result.status).toBe('ok');
+    expect(result.content?.title).toBe('Broken CSS Page');
+    expect(result.content?.text).toContain('useful readable text through the fallback path');
+  });
+
+  it('returns needs_headless instead of crashing when fallback content is still weak', async () => {
+    const fetcher = createHttpFetcher({
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: 'https://example.com/broken-shell',
+        headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+        text: async () =>
+          `<html>
+            <head>
+              <title>Broken Shell</title>
+              <style>
+                .card {
+                  &:hover {
+                    opacity: 1;
+                  }
+                }
+              </style>
+            </head>
+            <body>
+              <div id="app"></div>
+              <noscript>Enable JavaScript</noscript>
+              <main><p>Hi</p></main>
+            </body>
+          </html>`
+      } as Response)
+    });
+
+    const result = await fetcher('https://example.com/broken-shell');
+    expect(result.status).toBe('needs_headless');
+    expect(result.error?.code).toBe('WEAK_EXTRACTION');
+  });
+
   it('returns unsupported for binary content', async () => {
     const fetcher = createHttpFetcher({
       fetchImpl: vi.fn().mockResolvedValue({
