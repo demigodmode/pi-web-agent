@@ -134,4 +134,41 @@ describe('web_explore tool', () => {
       error: { code: 'INVALID_QUERY' }
     });
   });
+
+  it('does not leak raw internal worker bookkeeping into visible output', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: {
+          action: 'research-again',
+          rationale: 'Not enough evidence.',
+          followupQuery: 'same query'
+        },
+        evidence: [
+          {
+            title: 'Source A',
+            url: 'https://example.com/a',
+            sourceKind: 'community',
+            method: 'http',
+            summary: 'A concise summary.',
+            supports: ['detail a']
+          }
+        ],
+        workerPass: {
+          searchQueries: ['q1'],
+          evidence: [],
+          gaps: [{ kind: 'needs-more-evidence', message: 'Need more.' }],
+          lowValueOutcomes: [{ kind: 'empty-search', message: 'No more results.' }],
+          suggestedHeadlessUrl: 'https://example.com/b',
+          exhaustedBudget: false
+        }
+      })
+    });
+
+    const result = await webExplore({ query: 'example query' });
+
+    expect(JSON.stringify(result)).not.toContain('searchQueries');
+    expect(JSON.stringify(result)).not.toContain('lowValueOutcomes');
+    expect(JSON.stringify(result)).not.toContain('suggestedHeadlessUrl');
+    expect(result.findings).toEqual(['A concise summary.']);
+  });
 });
