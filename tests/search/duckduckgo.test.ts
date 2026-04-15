@@ -26,4 +26,42 @@ describe('DuckDuckGo search parsing', () => {
       }
     ]);
   });
+
+  it('decodes DuckDuckGo redirect urls into destination urls', () => {
+    const html = `
+      <div class="result">
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fpi.dev%2F&rut=abc">pi.dev</a>
+        <a class="result__snippet">Pi docs</a>
+      </div>
+    `;
+
+    const results = parseDuckDuckGoResults(html);
+
+    expect(results).toEqual([
+      {
+        title: 'pi.dev',
+        url: 'https://pi.dev/',
+        snippet: 'Pi docs'
+      }
+    ]);
+  });
+
+  it('falls back to the original url when redirect decoding fails', () => {
+    const html = `
+      <div class="result">
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=%E0%A4%A&rut=abc">broken</a>
+        <a class="result__snippet">Broken redirect</a>
+      </div>
+    `;
+
+    const results = parseDuckDuckGoResults(html);
+
+    expect(results).toEqual([
+      {
+        title: 'broken',
+        url: '//duckduckgo.com/l/?uddg=%E0%A4%A&rut=abc',
+        snippet: 'Broken redirect'
+      }
+    ]);
+  });
 });
