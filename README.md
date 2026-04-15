@@ -125,6 +125,8 @@ Build the project:
 npm run build
 ```
 
+To run the optional real-browser smoke test for headless fetch, set `PI_HEADLESS_SMOKE=1` before running Vitest. It stays skipped by default so local browser install differences do not make the normal test suite flaky.
+
 ### Trying it in Pi locally
 
 This repo includes a project-local Pi extension entrypoint at `.pi/extensions/pi-web-agent.ts`.

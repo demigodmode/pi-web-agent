@@ -2,14 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { createWebFetchHeadlessTool } from '../../src/tools/web-fetch-headless.js';
 
 describe('web_fetch_headless tool', () => {
-  it('keeps the explicit headless contract visible', async () => {
-    const tool = createWebFetchHeadlessTool();
+  it('passes through headless fetch results', async () => {
+    const tool = createWebFetchHeadlessTool({
+      fetchPage: async () => ({
+        status: 'ok',
+        url: 'https://example.com',
+        metadata: { method: 'headless', cacheHit: false, browser: 'chrome', navigationMs: 1200 },
+        content: { text: 'Rendered text' }
+      })
+    });
     const result = await tool({ url: 'https://example.com' });
 
     expect(result).toMatchObject({
-      status: 'error',
-      metadata: { method: 'headless', cacheHit: false },
-      error: { code: 'NOT_IMPLEMENTED' }
+      status: 'ok',
+      metadata: { method: 'headless', cacheHit: false, browser: 'chrome', navigationMs: 1200 },
+      content: { text: 'Rendered text' }
     });
   });
 
