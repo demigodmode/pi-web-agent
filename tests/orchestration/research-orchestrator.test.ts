@@ -167,4 +167,166 @@ describe('research orchestrator types', () => {
     expect(result.decision.action).toBe('escalate-headless');
     expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app' });
   });
+
+  it('answers once two strong sources exist and one is official', async () => {
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['playwright edge channel'],
+          evidence: [
+            {
+              title: 'Browsers | Playwright',
+              url: 'https://playwright.dev/docs/browsers',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Official docs',
+              supports: ['Use channel']
+            },
+            {
+              title: 'Edge docs',
+              url: 'https://learn.microsoft.com/en-us/microsoft-edge/playwright/',
+              sourceKind: 'official-discussion',
+              method: 'http',
+              summary: 'Vendor guidance',
+              supports: ['Use msedge']
+            }
+          ],
+          gaps: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'playwright edge channel' });
+    expect(result.decision.action).toBe('answer');
+  });
+
+  it('does not escalate to headless when strong http evidence already answers the question', async () => {
+    const headlessFetch = vi.fn();
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['vitest coverage docs'],
+          evidence: [
+            {
+              title: 'Coverage | Guide | Vitest',
+              url: 'https://vitest.dev/guide/coverage.html',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Coverage docs',
+              supports: ['provider v8']
+            },
+            {
+              title: 'Coverage package',
+              url: 'https://vitest.dev/guide/coverage.html#provider',
+              sourceKind: 'official-api',
+              method: 'http',
+              summary: 'Install @vitest/coverage-v8',
+              supports: ['install package']
+            }
+          ],
+          gaps: [{ kind: 'fetch-failed', message: 'One page was weak over HTTP.' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://vitest.dev/guide/coverage.html',
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'vitest coverage docs' });
+    expect(result.decision.action).toBe('answer');
+    expect(headlessFetch).not.toHaveBeenCalled();
+  });
+
+  it('prefers stronger sources over package pages in approved evidence', async () => {
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['duckduckgo scraping node'],
+          evidence: [
+            {
+              title: 'npm package',
+              url: 'https://www.npmjs.com/package/duck-duck-scrape',
+              sourceKind: 'package-page',
+              method: 'http',
+              summary: 'Package page',
+              supports: ['Install command']
+            },
+            {
+              title: 'SearXNG docs',
+              url: 'https://docs.searxng.org/dev/engines/online/duckduckgo.html',
+              sourceKind: 'community',
+              method: 'http',
+              summary: 'vqd and pagination details',
+              supports: ['vqd matters']
+            },
+            {
+              title: 'ddg-search',
+              url: 'https://github.com/camohiddendj/ddg-search',
+              sourceKind: 'community',
+              method: 'http',
+              summary: 'Node implementation',
+              supports: ['bot detection note']
+            }
+          ],
+          gaps: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'duckduckgo scraping node' });
+
+    expect(result.decision.action).toBe('research-again');
+    expect(result.evidence[0]?.sourceKind).not.toBe('package-page');
+  });
+
+  it('records low-value bot-check outcomes as a reason not to escalate again', async () => {
+    const headlessFetch = vi.fn().mockResolvedValue({
+      status: 'ok',
+      url: 'https://www.npmjs.com/package/duck-duck-scrape',
+      content: {
+        title: 'Just a moment...',
+        text: 'Performing security verification'
+      },
+      metadata: {
+        method: 'headless',
+        cacheHit: false,
+        browser: 'edge',
+        navigationMs: 5000,
+        truncated: false
+      }
+    });
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['duckduckgo scraping node'],
+          evidence: [],
+          gaps: [{ kind: 'needs-more-evidence', message: 'Need one more technical source.' }],
+          lowValueOutcomes: [
+            {
+              kind: 'bot-check',
+              url: 'https://www.npmjs.com/package/duck-duck-scrape',
+              message: 'Security verification wall.'
+            }
+          ],
+          suggestedHeadlessUrl: 'https://www.npmjs.com/package/duck-duck-scrape',
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'duckduckgo scraping node' });
+    expect(result.decision.action).toBe('research-again');
+    expect(headlessFetch).not.toHaveBeenCalled();
+  });
 });
