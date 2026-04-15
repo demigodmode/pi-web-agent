@@ -105,4 +105,50 @@ describe('headless fetch', () => {
     expect(closeContext).toHaveBeenCalledTimes(1);
     expect(closeBrowser).toHaveBeenCalledTimes(1);
   });
+
+  it('cleans up obviously repetitive boilerplate in rendered content', async () => {
+    const result = await headlessFetch('https://example.com/app', {
+      resolveBrowser: vi.fn().mockResolvedValue({
+        ok: true,
+        browser: 'edge',
+        executablePath: 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'
+      }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => undefined,
+            waitForLoadState: async () => undefined,
+            content: async () => `
+              <html>
+                <head><title>Busy App</title></head>
+                <body>
+                  <main>
+                    <h1>Busy App</h1>
+                    <p>Main content starts here.</p>
+                    <p>Show more Show more Show more Show more</p>
+                    <p>Useful details for the user.</p>
+                    <p>Privacy Terms Privacy Terms Privacy Terms</p>
+                  </main>
+                </body>
+              </html>
+            `,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      })),
+      now: (() => {
+        let tick = 0;
+        return () => (tick += 100);
+      })()
+    });
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.content.text).toContain('Main content starts here.');
+    expect(result.content.text).toContain('Useful details for the user.');
+    expect(result.content.text.match(/Show more/g)?.length ?? 0).toBeLessThan(4);
+    expect(result.content.text.match(/Privacy Terms/g)?.length ?? 0).toBeLessThan(3);
+  });
 });

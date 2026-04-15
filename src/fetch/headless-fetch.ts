@@ -3,6 +3,13 @@ import { extractReadableContent } from '../extract/readability.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import type { WebFetchHeadlessResponse } from '../types.js';
 
+function cleanupRenderedText(text: string): string {
+  let cleaned = text.replace(/(Show more)(\s+\1){1,}/gi, '$1');
+  cleaned = cleaned.replace(/(Privacy Terms)(\s+\1){1,}/gi, '$1');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned;
+}
+
 export async function headlessFetch(
   url: string,
   {
@@ -49,7 +56,12 @@ export async function headlessFetch(
     const finishedAt = now();
 
     const content = extractReadableContent(html);
-    if (!content.text || content.text.length < 40) {
+    const cleanedContent = {
+      ...content,
+      text: cleanupRenderedText(content.text)
+    };
+
+    if (!cleanedContent.text || cleanedContent.text.length < 40) {
       return {
         status: 'blocked',
         url,
@@ -69,13 +81,13 @@ export async function headlessFetch(
     return {
       status: 'ok',
       url,
-      content,
+      content: cleanedContent,
       metadata: {
         method: 'headless',
         cacheHit: false,
         browser: resolved.browser,
         navigationMs: finishedAt - startedAt,
-        truncated: content.text.length >= 4000
+        truncated: cleanedContent.text.length >= 4000
       }
     };
   } catch (error) {
