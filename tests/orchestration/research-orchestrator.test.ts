@@ -32,7 +32,8 @@ describe('research orchestrator types', () => {
       searchQueries: ['playwright installed edge channel executablePath'],
       evidence: [evidence],
       gaps: [gap],
-      suggestedHeadlessUrls: [],
+      lowValueOutcomes: [],
+      suggestedHeadlessUrl: undefined,
       exhaustedBudget: false
     };
 
@@ -44,6 +45,26 @@ describe('research orchestrator types', () => {
 
     expect(result.evidence[0].sourceKind).toBe('official-docs');
     expect(decision.action).toBe('answer');
+  });
+
+  it('supports explicit low-value outcomes in worker results', () => {
+    const result: ResearchWorkerResult = {
+      searchQueries: ['duckduckgo scraping node'],
+      evidence: [],
+      gaps: [{ kind: 'fetch-failed', message: 'Primary fetch failed.' }],
+      lowValueOutcomes: [
+        {
+          kind: 'bot-check',
+          url: 'https://www.npmjs.com/package/duck-duck-scrape',
+          message: 'Headless hit a security verification page.'
+        }
+      ],
+      suggestedHeadlessUrl: undefined,
+      exhaustedBudget: false
+    };
+
+    expect(result.lowValueOutcomes[0]?.kind).toBe('bot-check');
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
   });
 
   it('answers when one bounded pass returns enough official evidence', async () => {
@@ -70,7 +91,8 @@ describe('research orchestrator types', () => {
             }
           ],
           gaps: [],
-          suggestedHeadlessUrls: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
           exhaustedBudget: false
         })
       },
@@ -99,7 +121,8 @@ describe('research orchestrator types', () => {
             }
           ],
           gaps: [{ kind: 'needs-more-evidence', message: 'Need at least one official source.' }],
-          suggestedHeadlessUrls: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
           exhaustedBudget: false
         })
       },
@@ -131,7 +154,8 @@ describe('research orchestrator types', () => {
           searchQueries: ['dynamic app'],
           evidence: [],
           gaps: [{ kind: 'fetch-failed', message: 'HTTP was weak.' }],
-          suggestedHeadlessUrls: ['https://example.com/app'],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://example.com/app',
           exhaustedBudget: false
         })
       },

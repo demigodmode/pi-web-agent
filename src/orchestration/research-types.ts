@@ -4,6 +4,7 @@ export type ResearchSourceKind =
   | 'official-discussion'
   | 'community'
   | 'issue-thread'
+  | 'package-page'
   | 'other';
 
 export type ResearchMethod = 'search' | 'http' | 'headless';
@@ -22,11 +23,18 @@ export type ResearchGap = {
   message: string;
 };
 
+export type ResearchLowValueOutcome = {
+  kind: 'empty-search' | 'bot-check' | 'low-value-page' | 'duplicate-evidence';
+  url?: string;
+  message: string;
+};
+
 export type ResearchWorkerResult = {
   searchQueries: string[];
   evidence: ResearchEvidence[];
   gaps: ResearchGap[];
-  suggestedHeadlessUrls: string[];
+  lowValueOutcomes: ResearchLowValueOutcome[];
+  suggestedHeadlessUrl?: string;
   exhaustedBudget: boolean;
 };
 

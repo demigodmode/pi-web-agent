@@ -55,14 +55,15 @@ export function createResearchWorker({
       const searchQueries = [query];
       const evidence: ResearchEvidence[] = [];
       const gaps: ResearchGap[] = [];
-      const suggestedHeadlessUrls: string[] = [];
+      let suggestedHeadlessUrl: string | undefined;
 
       if (maxSearchRounds <= 0 || maxFetches <= 0) {
         return {
           searchQueries: [],
           evidence,
           gaps: [{ kind: 'needs-more-evidence', message: 'Research worker budget was zero.' }],
-          suggestedHeadlessUrls,
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl,
           exhaustedBudget: true
         };
       }
@@ -78,7 +79,8 @@ export function createResearchWorker({
               message: searchResult.error?.message ?? 'Search failed during research worker pass.'
             }
           ],
-          suggestedHeadlessUrls,
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl,
           exhaustedBudget: false
         };
       }
@@ -97,7 +99,9 @@ export function createResearchWorker({
         }
 
         if (fetched.status === 'needs_headless') {
-          suggestedHeadlessUrls.push(fetched.url);
+          if (!suggestedHeadlessUrl) {
+            suggestedHeadlessUrl = fetched.url;
+          }
           gaps.push({ kind: 'fetch-failed', message: `HTTP fetch was weak for ${fetched.url}` });
           continue;
         }
@@ -112,7 +116,8 @@ export function createResearchWorker({
         searchQueries,
         evidence,
         gaps,
-        suggestedHeadlessUrls,
+        lowValueOutcomes: [],
+        suggestedHeadlessUrl,
         exhaustedBudget: false
       };
     }

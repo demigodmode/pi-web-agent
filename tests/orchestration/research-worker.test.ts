@@ -80,7 +80,7 @@ describe('research worker', () => {
       maxFetches: 1
     });
 
-    expect(result.suggestedHeadlessUrls).toEqual(['https://example.com/app']);
+    expect(result.suggestedHeadlessUrl).toBe('https://example.com/app');
     expect(result.gaps[0]?.kind).toBe('fetch-failed');
   });
 });

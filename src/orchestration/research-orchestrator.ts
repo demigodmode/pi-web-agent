@@ -39,8 +39,8 @@ export function createResearchOrchestrator({
         return { decision, evidence: pass.evidence, workerPass: pass };
       }
 
-      if (pass.suggestedHeadlessUrls.length > 0) {
-        const url = pass.suggestedHeadlessUrls[0];
+      if (pass.suggestedHeadlessUrl) {
+        const url = pass.suggestedHeadlessUrl;
         await headlessFetch({ url });
         const decision: ResearchOrchestratorDecision = {
           action: 'escalate-headless',
