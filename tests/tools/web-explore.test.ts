@@ -1,0 +1,137 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
+
+describe('web_explore tool', () => {
+  it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: {
+          action: 'answer',
+          rationale: 'Enough evidence.',
+          approvedEvidence: [
+            {
+              title: 'Browsers | Playwright',
+              url: 'https://playwright.dev/docs/browsers',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Use channel for branded browsers.',
+              supports: ['Use channel']
+            },
+            {
+              title: 'BrowserType | Playwright',
+              url: 'https://playwright.dev/docs/api/class-browsertype',
+              sourceKind: 'official-api',
+              method: 'http',
+              summary: 'executablePath is supported but use at your own risk.',
+              supports: ['executablePath is risky']
+            }
+          ]
+        },
+        evidence: [
+          {
+            title: 'Browsers | Playwright',
+            url: 'https://playwright.dev/docs/browsers',
+            sourceKind: 'official-docs',
+            method: 'http',
+            summary: 'Use channel for branded browsers.',
+            supports: ['Use channel']
+          },
+          {
+            title: 'BrowserType | Playwright',
+            url: 'https://playwright.dev/docs/api/class-browsertype',
+            sourceKind: 'official-api',
+            method: 'http',
+            summary: 'executablePath is supported but use at your own risk.',
+            supports: ['executablePath is risky']
+          }
+        ],
+        workerPass: {
+          searchQueries: ['playwright installed edge executablePath vs channel'],
+          evidence: [],
+          gaps: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        }
+      })
+    });
+
+    const result = await webExplore({
+      query: 'Find current docs or discussions about Playwright launching an installed Chrome or Edge executable instead of a bundled browser, then summarize the recommended approach.'
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.findings).toEqual([
+      'Use channel for branded Chrome or Edge when possible.',
+      'Treat executablePath as a fallback because Playwright documents it as use-at-your-own-risk.'
+    ]);
+    expect(result.sources).toEqual([
+      {
+        title: 'Browsers | Playwright',
+        url: 'https://playwright.dev/docs/browsers'
+      },
+      {
+        title: 'BrowserType | Playwright',
+        url: 'https://playwright.dev/docs/api/class-browsertype'
+      }
+    ]);
+    expect(result.caveat).toBeUndefined();
+  });
+
+  it('returns a caveat when only partial evidence is available', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: {
+          action: 'research-again',
+          rationale: 'Evidence is partial.',
+          followupQuery: 'same query'
+        },
+        evidence: [
+          {
+            title: 'Coverage | Guide | Vitest',
+            url: 'https://vitest.dev/guide/coverage.html',
+            sourceKind: 'official-docs',
+            method: 'headless',
+            summary: 'Set coverage.provider to v8 and install @vitest/coverage-v8.',
+            supports: ['provider: v8', 'install @vitest/coverage-v8']
+          }
+        ],
+        workerPass: {
+          searchQueries: ['vitest coverage docs'],
+          evidence: [],
+          gaps: [{ kind: 'needs-more-evidence', message: 'Only one strong source was gathered.' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        }
+      })
+    });
+
+    const result = await webExplore({
+      query: 'Find the current Vitest coverage docs and tell me how to enable coverage with the V8 provider in a TypeScript project.'
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.findings).toEqual([
+      'Vitest coverage docs say to set coverage.provider to v8 and install @vitest/coverage-v8.'
+    ]);
+    expect(result.sources).toEqual([
+      {
+        title: 'Coverage | Guide | Vitest',
+        url: 'https://vitest.dev/guide/coverage.html'
+      }
+    ]);
+    expect(result.caveat).toBe('Evidence is partial, so this answer is based on the strongest source found so far.');
+  });
+
+  it('rejects empty exploration queries', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn()
+    });
+
+    await expect(webExplore({ query: '   ' })).resolves.toMatchObject({
+      status: 'error',
+      error: { code: 'INVALID_QUERY' }
+    });
+  });
+});
