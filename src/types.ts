@@ -29,6 +29,8 @@ export type FetchMetadata = {
   cacheHit: boolean;
   contentType?: string;
   truncated?: boolean;
+  browser?: 'configured' | 'chrome' | 'edge';
+  navigationMs?: number;
 };
 
 export type ExtractedContent = {

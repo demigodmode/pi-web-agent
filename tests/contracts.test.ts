@@ -61,3 +61,22 @@ describe('extension surface', () => {
     expect(typeof extension).toBe('function');
   });
 });
+
+describe('headless metadata', () => {
+  it('allows headless metadata to carry browser and navigation timing', () => {
+    const headless: WebFetchHeadlessResponse = {
+      status: 'ok',
+      url: 'https://example.com',
+      metadata: {
+        method: 'headless',
+        cacheHit: false,
+        browser: 'chrome',
+        navigationMs: 1500
+      },
+      content: { text: 'Rendered text' }
+    };
+
+    expect(headless.metadata.browser).toBe('chrome');
+    expect(headless.metadata.navigationMs).toBe(1500);
+  });
+});
