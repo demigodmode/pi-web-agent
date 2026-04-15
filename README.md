@@ -54,18 +54,13 @@ Right now it has:
 - a TypeScript project scaffold
 - shared result and status contracts
 - a DuckDuckGo HTML parser for `web_search`
-- an HTTP fetch path with readability-based extraction
-- conservative escalation to `needs_headless`
-- a stubbed `web_fetch_headless` contract
+- an HTTP fetch path with readability-based extraction and conservative escalation to `needs_headless`
+- a real browser-backed `web_fetch_headless` implementation with local browser resolution
+- repo-local Pi extension wiring for development
 - a test suite around parser behavior, contracts, extraction, caching, and tool adapters
+- optional smoke coverage for local installed browsers
 
-What it does not have yet:
-
-- finished Pi package wiring
-- a real headless browser implementation
-- full browser detection and smoke-test coverage
-
-So the project is real and testable, but still incomplete.
+So the project is real and usable, but still early.
 
 ## Example behavior
 
@@ -97,7 +92,7 @@ If the page looks too script-heavy, too thin, blocked, or otherwise unreliable, 
 
 This is the browser-based path for pages that really need rendering.
 
-At the moment, that path is still stubbed in this repo. The contract exists, but the real browser implementation is still part of the next slice of work.
+This path now launches a local browser explicitly, waits for the rendered page to settle, and then extracts readable content from the rendered HTML.
 
 ## Local development
 
@@ -152,8 +147,8 @@ The code is split into small modules on purpose.
 
 The next chunk of work is pretty clear:
 
-- wire the package into Pi for real
-- replace the headless stub with an actual local-browser implementation
-- improve blocked-page detection and escalation heuristics
+- keep tightening weak-content escalation on tricky HTTP targets
+- improve cleanup of noisy rendered-page extraction on busy sites
+- validate the same behavior through the actual npm package install path
 - expand fixtures and end-to-end coverage
 

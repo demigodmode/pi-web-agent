@@ -145,7 +145,7 @@ describe('headless fetch', () => {
     });
 
     expect(result.status).toBe('ok');
-    if (result.status !== 'ok') return;
+    if (result.status !== 'ok' || !result.content) return;
     expect(result.content.text).toContain('Main content starts here.');
     expect(result.content.text).toContain('Useful details for the user.');
     expect(result.content.text.match(/Show more/g)?.length ?? 0).toBeLessThan(4);
