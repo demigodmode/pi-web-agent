@@ -2,6 +2,7 @@ import type { WebFetchResponse, WebSearchResponse } from '../types.js';
 import type {
   ResearchEvidence,
   ResearchGap,
+  ResearchLowValueOutcome,
   ResearchSourceKind,
   ResearchWorkerResult
 } from './research-types.js';
@@ -11,6 +12,7 @@ function classifySource(url: string): ResearchSourceKind {
   if (url.includes('playwright.dev/docs')) return 'official-docs';
   if (url.includes('learn.microsoft.com')) return 'official-docs';
   if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
+  if (url.includes('npmjs.com/package/')) return 'package-page';
   return 'community';
 }
 
@@ -22,17 +24,30 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string) {
   const content = fetched.content;
   if (fetched.status !== 'ok' || !content) return null;
 
-  const summary = summarizeText(content.text);
-  const evidence: ResearchEvidence = {
+  const sourceKind = classifySource(fetched.url);
+  if (sourceKind === 'package-page') {
+    return null;
+  }
+
+  return {
     title: content.title ?? fallbackTitle,
     url: fetched.url,
-    sourceKind: classifySource(fetched.url),
+    sourceKind,
     method: fetched.metadata.method,
-    summary,
+    summary: summarizeText(content.text),
     supports: [summarizeText(content.text, 120)]
-  };
+  } satisfies ResearchEvidence;
+}
 
-  return evidence;
+function lowValueOutcomeFromFetch(fetched: WebFetchResponse): ResearchLowValueOutcome | null {
+  if (fetched.status !== 'ok' || !fetched.content) return null;
+  if (classifySource(fetched.url) !== 'package-page') return null;
+
+  return {
+    kind: 'low-value-page',
+    url: fetched.url,
+    message: 'Fetched page did not add strong research evidence.'
+  };
 }
 
 export function createResearchWorker({
@@ -55,6 +70,7 @@ export function createResearchWorker({
       const searchQueries = [query];
       const evidence: ResearchEvidence[] = [];
       const gaps: ResearchGap[] = [];
+      const lowValueOutcomes: ResearchLowValueOutcome[] = [];
       let suggestedHeadlessUrl: string | undefined;
 
       if (maxSearchRounds <= 0 || maxFetches <= 0) {
@@ -62,7 +78,7 @@ export function createResearchWorker({
           searchQueries: [],
           evidence,
           gaps: [{ kind: 'needs-more-evidence', message: 'Research worker budget was zero.' }],
-          lowValueOutcomes: [],
+          lowValueOutcomes,
           suggestedHeadlessUrl,
           exhaustedBudget: true
         };
@@ -79,7 +95,23 @@ export function createResearchWorker({
               message: searchResult.error?.message ?? 'Search failed during research worker pass.'
             }
           ],
-          lowValueOutcomes: [],
+          lowValueOutcomes,
+          suggestedHeadlessUrl,
+          exhaustedBudget: false
+        };
+      }
+
+      if (searchResult.results.length === 0) {
+        return {
+          searchQueries,
+          evidence,
+          gaps,
+          lowValueOutcomes: [
+            {
+              kind: 'empty-search',
+              message: 'Search returned no results for this pass.'
+            }
+          ],
           suggestedHeadlessUrl,
           exhaustedBudget: false
         };
@@ -94,6 +126,12 @@ export function createResearchWorker({
           const parsedEvidence = evidenceFromFetch(fetched, candidate.title);
           if (parsedEvidence) {
             evidence.push(parsedEvidence);
+            continue;
+          }
+
+          const lowValueOutcome = lowValueOutcomeFromFetch(fetched);
+          if (lowValueOutcome) {
+            lowValueOutcomes.push(lowValueOutcome);
           }
           continue;
         }
@@ -116,7 +154,7 @@ export function createResearchWorker({
         searchQueries,
         evidence,
         gaps,
-        lowValueOutcomes: [],
+        lowValueOutcomes,
         suggestedHeadlessUrl,
         exhaustedBudget: false
       };
