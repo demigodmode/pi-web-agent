@@ -8,8 +8,8 @@ import type {
 } from './research-types.js';
 
 function classifySource(url: string): ResearchSourceKind {
-  if (url.includes('playwright.dev/docs/api')) return 'official-api';
-  if (url.includes('playwright.dev/docs')) return 'official-docs';
+  if (url.includes('/docs/api/') || url.includes('/config/')) return 'official-api';
+  if (url.includes('playwright.dev/docs') || url.includes('vitest.dev/guide/')) return 'official-docs';
   if (url.includes('learn.microsoft.com')) return 'official-docs';
   if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
   if (url.includes('npmjs.com/package/')) return 'package-page';

@@ -81,4 +81,46 @@ describe('research workflow composition', () => {
     const result = await workflow.run({ query: 'duckduckgo scraping node pitfalls' });
     expect(result.decision.action).toBe('research-again');
   });
+
+  it('produces enough approved evidence for web_explore to format a compact research result', async () => {
+    const workflow = createResearchWorkflow({
+      search: async () => ({
+        status: 'ok',
+        results: [
+          {
+            title: 'Coverage | Guide | Vitest',
+            url: 'https://vitest.dev/guide/coverage.html',
+            snippet: 'Coverage docs'
+          },
+          {
+            title: 'coverage | Config | Vitest',
+            url: 'https://vitest.dev/config/coverage',
+            snippet: 'Coverage config'
+          }
+        ],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: async ({ url }) => ({
+        status: 'ok',
+        url,
+        content: {
+          title: url.includes('/config/') ? 'coverage | Config | Vitest' : 'Coverage | Guide | Vitest',
+          text: url.includes('/config/')
+            ? 'coverage.enabled and coverage.provider can be configured here.'
+            : 'Set coverage.provider to v8 and install @vitest/coverage-v8.'
+        },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      }),
+      headlessFetch: async () => ({
+        status: 'error',
+        url: 'https://example.com',
+        metadata: { method: 'headless', cacheHit: false },
+        error: { code: 'BROWSER_NOT_FOUND', message: 'No browser found.' }
+      })
+    });
+
+    const result = await workflow.run({ query: 'vitest coverage docs' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.evidence.length).toBeGreaterThanOrEqual(2);
+  });
 });
