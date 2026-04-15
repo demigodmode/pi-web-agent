@@ -10,12 +10,12 @@ export type SafeReadableExtraction = {
 };
 
 export function extractReadableContent(html: string, maxLength = 4000): ExtractedContent {
-  const stylesheetErrors: Error[] = [];
+  let stylesheetError: Error | undefined;
   const virtualConsole = new VirtualConsole();
 
   virtualConsole.on('jsdomError', (error) => {
-    if (error.message.includes('Could not parse CSS stylesheet')) {
-      stylesheetErrors.push(error);
+    if (!stylesheetError && error.message.includes('Could not parse CSS stylesheet')) {
+      stylesheetError = error;
     }
   });
 
@@ -24,8 +24,8 @@ export function extractReadableContent(html: string, maxLength = 4000): Extracte
     virtualConsole
   });
 
-  if (stylesheetErrors.length > 0) {
-    throw stylesheetErrors[0];
+  if (stylesheetError) {
+    throw stylesheetError;
   }
 
   const article = new Readability(dom.window.document).parse();

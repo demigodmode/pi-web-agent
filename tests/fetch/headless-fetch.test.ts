@@ -106,8 +106,8 @@ describe('headless fetch', () => {
     expect(closeBrowser).toHaveBeenCalledTimes(1);
   });
 
-  it('cleans up obviously repetitive boilerplate in rendered content', async () => {
-    const result = await headlessFetch('https://example.com/app', {
+  it('uses safe extraction for rendered pages with broken stylesheet content', async () => {
+    const result = await headlessFetch('https://example.com/broken-css', {
       resolveBrowser: vi.fn().mockResolvedValue({
         ok: true,
         browser: 'edge',
@@ -120,10 +120,20 @@ describe('headless fetch', () => {
             waitForLoadState: async () => undefined,
             content: async () => `
               <html>
-                <head><title>Busy App</title></head>
+                <head>
+                  <title>Broken CSS Page</title>
+                  <style>
+                    .btn {
+                      color: red;
+                      &:hover {
+                        color: blue;
+                      }
+                    }
+                  </style>
+                </head>
                 <body>
                   <main>
-                    <h1>Busy App</h1>
+                    <h1>Broken CSS Page</h1>
                     <p>Main content starts here.</p>
                     <p>Show more Show more Show more Show more</p>
                     <p>Useful details for the user.</p>
@@ -146,6 +156,7 @@ describe('headless fetch', () => {
 
     expect(result.status).toBe('ok');
     if (result.status !== 'ok' || !result.content) return;
+    expect(result.content.title).toBe('Broken CSS Page');
     expect(result.content.text).toContain('Main content starts here.');
     expect(result.content.text).toContain('Useful details for the user.');
     expect(result.content.text.match(/Show more/g)?.length ?? 0).toBeLessThan(4);

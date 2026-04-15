@@ -1,5 +1,5 @@
 import { chromium } from 'playwright-core';
-import { extractReadableContent } from '../extract/readability.js';
+import { extractReadableContentSafely } from '../extract/readability.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import type { WebFetchHeadlessResponse } from '../types.js';
 
@@ -55,10 +55,10 @@ export async function headlessFetch(
     const html = await page.content();
     const finishedAt = now();
 
-    const content = extractReadableContent(html);
+    const extraction = extractReadableContentSafely(html);
     const cleanedContent = {
-      ...content,
-      text: cleanupRenderedText(content.text)
+      ...extraction.content,
+      text: cleanupRenderedText(extraction.content.text)
     };
 
     if (!cleanedContent.text || cleanedContent.text.length < 40) {
