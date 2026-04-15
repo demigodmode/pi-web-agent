@@ -6,6 +6,21 @@ function looksLikeScriptShell(html: string): boolean {
   return lower.includes('<script') && (lower.includes('id="app"') || lower.includes('id="root"'));
 }
 
+function isWeakHttpContent(options: { html: string; title?: string; text: string }): boolean {
+  const normalizedText = options.text.replace(/\s+/g, ' ').trim();
+  const normalizedHtml = options.html.replace(/\s+/g, ' ').trim();
+  const textLength = normalizedText.length;
+  const htmlLength = normalizedHtml.length;
+  const hasGenericShellMarker = /enable javascript|javascript required|please turn on javascript/i.test(
+    options.html
+  );
+  const veryShortBody = textLength > 0 && textLength < 120;
+  const lowDensity = htmlLength > 0 && textLength / htmlLength < 0.02;
+  const titleOnlyShell = Boolean(options.title) && textLength < 160;
+
+  return veryShortBody && (lowDensity || hasGenericShellMarker || titleOnlyShell);
+}
+
 export function createHttpFetcher({
   fetchImpl = fetch
 }: {
@@ -26,12 +41,19 @@ export function createHttpFetcher({
     const html = await response.text();
     const content = extractReadableContent(html);
 
-    if (looksLikeScriptShell(html) || content.text.length < 40) {
+    if (
+      looksLikeScriptShell(html) ||
+      content.text.length < 40 ||
+      isWeakHttpContent({ html, title: content.title, text: content.text })
+    ) {
       return {
         status: 'needs_headless',
         url: response.url,
         metadata: { method: 'http', cacheHit: false, contentType },
-        error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
+        error: {
+          code: 'WEAK_EXTRACTION',
+          message: 'HTTP extraction was not reliable enough.'
+        }
       };
     }
 

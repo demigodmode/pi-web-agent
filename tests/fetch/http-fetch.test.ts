@@ -31,6 +31,22 @@ describe('http fetcher', () => {
     expect(result.status).toBe('needs_headless');
   });
 
+  it('returns needs_headless for weak content on a js-heavy shell page', async () => {
+    const fetcher = createHttpFetcher({
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: 'https://www.airbnb.com/',
+        headers: new Headers({ 'content-type': 'text/html;charset=utf-8' }),
+        text: async () =>
+          '<html><head><title>Airbnb | Vacation rentals, cabins, beach houses, & more</title></head><body><div id="root"></div><noscript>Enable JavaScript</noscript><main><p>Become a host</p><p>It\'s easy to start hosting and earn extra income.</p></main></body></html>'
+      } as Response)
+    });
+
+    const result = await fetcher('https://www.airbnb.com/');
+    expect(result.status).toBe('needs_headless');
+    expect(result.metadata.method).toBe('http');
+  });
+
   it('returns unsupported for binary content', async () => {
     const fetcher = createHttpFetcher({
       fetchImpl: vi.fn().mockResolvedValue({
