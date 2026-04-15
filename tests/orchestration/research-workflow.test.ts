@@ -25,4 +25,60 @@ describe('research workflow composition', () => {
     const result = await workflow.run({ query: 'example query' });
     expect(result.decision.action).toBeDefined();
   });
+
+  it('does not spend headless on a low-value npm package page when other technical sources exist', async () => {
+    const workflow = createResearchWorkflow({
+      search: async () => ({
+        status: 'ok',
+        results: [
+          {
+            title: 'ddg-search',
+            url: 'https://github.com/camohiddendj/ddg-search',
+            snippet: 'Node scraper'
+          },
+          {
+            title: 'duck-duck-scrape - npm',
+            url: 'https://www.npmjs.com/package/duck-duck-scrape',
+            snippet: 'Package page'
+          }
+        ],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: async ({ url }) => {
+        if (url.includes('github.com/camohiddendj/ddg-search')) {
+          return {
+            status: 'ok',
+            url,
+            content: {
+              title: 'ddg-search',
+              text: 'DuckDuckGo HTML search scraper with bot-detection and pagination notes.'
+            },
+            metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+          };
+        }
+
+        return {
+          status: 'needs_headless',
+          url,
+          metadata: { method: 'http', cacheHit: false, contentType: 'text/html' },
+          error: { code: 'WEAK_EXTRACTION', message: 'Weak extraction.' }
+        };
+      },
+      headlessFetch: async () => ({
+        status: 'ok',
+        url: 'https://www.npmjs.com/package/duck-duck-scrape',
+        content: { title: 'Just a moment...', text: 'Security verification' },
+        metadata: {
+          method: 'headless',
+          cacheHit: false,
+          browser: 'edge',
+          navigationMs: 4000,
+          truncated: false
+        }
+      })
+    });
+
+    const result = await workflow.run({ query: 'duckduckgo scraping node pitfalls' });
+    expect(result.decision.action).toBe('research-again');
+  });
 });
