@@ -107,7 +107,7 @@ Install dependencies:
 npm install
 ```
 
-Run tests:
+Run tests with coverage:
 
 ```bash
 npm test
@@ -126,6 +126,8 @@ npm run build
 ```
 
 To run the optional real-browser smoke test for headless fetch, set `PI_HEADLESS_SMOKE=1` before running Vitest. It stays skipped by default so local browser install differences do not make the normal test suite flaky.
+
+Coverage is now part of the normal `npm test` flow. Vitest prints a text summary in the terminal and writes the full HTML report to `coverage/`.
 
 ### Trying it in Pi locally
 
@@ -155,8 +157,3 @@ The next chunk of work is pretty clear:
 - improve blocked-page detection and escalation heuristics
 - expand fixtures and end-to-end coverage
 
-## Development notes
-
-This repo currently ignores `local_docs/`, which is being used for local-only planning and spec files.
-
-The tracked code and tests in the repo are the source of truth for implementation status.
