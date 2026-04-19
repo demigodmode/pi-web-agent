@@ -10,15 +10,46 @@ export default function extension(pi: ExtensionAPI) {
   const webFetch = createWebFetchTool();
   const webFetchHeadless = createWebFetchHeadlessTool();
   const webExplore = createWebExploreTool();
+  let usedWebExploreThisPrompt = false;
 
-  pi.on('before_agent_start', async (event) => ({
-    systemPrompt:
-      `${event.systemPrompt}\n\n` +
-      'For web research questions that require finding and comparing multiple sources, prefer web_explore. ' +
-      'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations like explicit search calls, specific URL reads, or debugging. ' +
-      'After using web_explore, only call low-level web tools if there is a specific unresolved gap. ' +
-      'Do not keep searching or fetching just for extra confirmation.'
-  }));
+  pi.on('before_agent_start', async (event) => {
+    usedWebExploreThisPrompt = false;
+    return {
+      systemPrompt:
+        `${event.systemPrompt}\n\n` +
+        'For web research questions that require finding and comparing multiple sources, prefer web_explore. ' +
+        'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations like explicit search calls, specific URL reads, or debugging. ' +
+        'After using web_explore, only call low-level web tools if there is a specific unresolved gap. ' +
+        'Do not keep searching or fetching just for extra confirmation.'
+    };
+  });
+
+  pi.on('tool_execution_end', async (event) => {
+    if (event.toolName === 'web_explore' && !event.isError) {
+      usedWebExploreThisPrompt = true;
+    }
+  });
+
+  pi.on('agent_end', async () => {
+    usedWebExploreThisPrompt = false;
+  });
+
+  (pi as any).on('context', async (event: { messages: Array<{ role: string; content: string }> }) => {
+    if (!usedWebExploreThisPrompt) {
+      return { messages: event.messages };
+    }
+
+    return {
+      messages: [
+        ...event.messages,
+        {
+          role: 'user',
+          content:
+            'web_explore has already been used for this research task. Only call low-level web tools if there is a specific unresolved gap. Do not keep searching or fetching just for extra confirmation.'
+        }
+      ]
+    };
+  });
 
   pi.registerTool({
     name: 'web_search',

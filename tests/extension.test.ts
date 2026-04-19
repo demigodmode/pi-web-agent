@@ -88,6 +88,56 @@ describe('Pi extension entrypoint', () => {
     expect(result.systemPrompt).toContain('Do not keep searching or fetching just for extra confirmation');
   });
 
+  it('adds a post-web_explore context hint for later turns in the same prompt', async () => {
+    const handlers = new Map<string, Function>();
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    extension(pi as never);
+
+    const beforeAgentStart = handlers.get('before_agent_start');
+    const toolExecutionEnd = handlers.get('tool_execution_end');
+    const context = handlers.get('context');
+
+    expect(beforeAgentStart).toBeDefined();
+    expect(toolExecutionEnd).toBeDefined();
+    expect(context).toBeDefined();
+
+    await beforeAgentStart!(
+      {
+        prompt: 'Research something on the web',
+        images: [],
+        systemPrompt: 'Base system prompt'
+      },
+      {}
+    );
+
+    await toolExecutionEnd!(
+      {
+        toolName: 'web_explore',
+        result: { details: { status: 'ok' } },
+        isError: false
+      },
+      {}
+    );
+
+    const result = await context!(
+      {
+        messages: [{ role: 'user', content: 'Original research prompt' }]
+      },
+      {}
+    );
+
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[1].content).toContain('web_explore has already been used for this research task');
+    expect(result.messages[1].content).toContain('specific unresolved gap');
+    expect(result.messages[1].content).toContain('Do not keep searching or fetching just for extra confirmation');
+  });
+
   it('returns human-readable content for web_explore instead of only raw json', async () => {
     const tools: any[] = [];
     const pi = {
