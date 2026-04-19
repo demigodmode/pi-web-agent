@@ -15,7 +15,9 @@ export default function extension(pi: ExtensionAPI) {
     systemPrompt:
       `${event.systemPrompt}\n\n` +
       'For web research questions that require finding and comparing multiple sources, prefer web_explore. ' +
-      'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations like explicit search calls, specific URL reads, or debugging.'
+      'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations like explicit search calls, specific URL reads, or debugging. ' +
+      'After using web_explore, only call low-level web tools if there is a specific unresolved gap. ' +
+      'Do not keep searching or fetching just for extra confirmation.'
   }));
 
   pi.registerTool({
@@ -76,7 +78,7 @@ export default function extension(pi: ExtensionAPI) {
     name: 'web_explore',
     label: 'Web Explore',
     description:
-      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Prefer this for multi-source web research, current docs/discussion lookups, and recommendation summaries.',
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Prefer this for multi-source web research, current docs/discussion lookups, and recommendation summaries. Use this instead of chaining low-level web tools for the same research task.',
     parameters: Type.Object({
       query: Type.String({ description: 'Web research question to explore.' })
     }),

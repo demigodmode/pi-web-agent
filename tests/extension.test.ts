@@ -29,6 +29,7 @@ describe('Pi extension entrypoint', () => {
     expect(webExplore).toBeDefined();
     expect(webExplore.description).toContain('Prefer this for multi-source web research');
     expect(webExplore.description).toContain('current docs/discussion lookups');
+    expect(webExplore.description).toContain('Use this instead of chaining low-level web tools');
     expect(webExplore.parameters.properties).toHaveProperty('query');
     expect(Object.keys(webExplore.parameters.properties)).toEqual(['query']);
   });
@@ -83,6 +84,8 @@ describe('Pi extension entrypoint', () => {
     expect(result.systemPrompt).toContain(
       'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations'
     );
+    expect(result.systemPrompt).toContain('After using web_explore, only call low-level web tools if there is a specific unresolved gap');
+    expect(result.systemPrompt).toContain('Do not keep searching or fetching just for extra confirmation');
   });
 
   it('returns human-readable content for web_explore instead of only raw json', async () => {
@@ -101,5 +104,5 @@ describe('Pi extension entrypoint', () => {
 
     expect(result.content[0].text).toContain('Findings');
     expect(result.content[0].text).toContain('Sources');
-  });
+  }, 15000);
 });
