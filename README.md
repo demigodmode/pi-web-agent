@@ -165,6 +165,22 @@ The code is split into small modules on purpose.
 - `src/types.ts` - shared contracts
 - `tests/` - parser, contract, extraction, fetch, and adapter tests
 
+## License
+
+AGPL-3.0-only. See `LICENSE`.
+
+## Release process
+
+1. Update `CHANGELOG.md` under `## Unreleased`.
+2. Run `npm run release:dry-run` to preview the next version.
+3. Run `npm run release` to bump version, rewrite the changelog release heading, create a release commit, and create a tag.
+4. Push the branch and tag.
+5. GitHub Actions publishes the tagged release to npm.
+
+## Maintainer release notes
+
+GitHub Actions publish requires an `NPM_TOKEN` repository secret with permission to publish `@demigodmode/pi-web-agent`.
+
 ## Near-term next steps
 
 The next chunk of work is pretty clear:

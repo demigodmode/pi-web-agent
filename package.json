@@ -30,6 +30,7 @@
   "bugs": {
     "url": "https://github.com/demigodmode/pi-web-agent/issues"
   },
+  "license": "AGPL-3.0-only",
   "publishConfig": {
     "access": "public"
   },
@@ -39,7 +40,9 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "eval:live": "npm run build:dev && node dist/scripts/live-web-eval.js"
+    "eval:live": "npm run build:dev && node dist/scripts/live-web-eval.js",
+    "release:dry-run": "node scripts/release.mjs --dry-run",
+    "release": "node scripts/release.mjs"
   },
   "pi": {
     "extensions": [
