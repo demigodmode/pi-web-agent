@@ -1,6 +1,6 @@
 # pi-web-agent
 
-pi-web-agent is a Pi package for reliable web access.
+`@demigodmode/pi-web-agent` is a Pi package for reliable web access.
 
 It is built around a simple rule: searching for a page is not the same thing as reading it. This package keeps those steps separate, prefers plain HTTP by default, and is designed to say "I couldn't read this reliably" instead of making something up.
 
@@ -44,6 +44,26 @@ The main thing is the contract.
 `web_fetch_headless` is the explicit browser path.
 
 That separation is the whole point. It makes failures easier to reason about and avoids the weird behavior where a tool quietly changes execution mode behind your back.
+
+## Install
+
+Install it through Pi:
+
+```bash
+pi install npm:@demigodmode/pi-web-agent
+```
+
+Update installed packages later with:
+
+```bash
+pi update
+```
+
+If you just want to inspect the package from npm directly, the package name is:
+
+```bash
+npm view @demigodmode/pi-web-agent
+```
 
 ## Current status
 
@@ -126,9 +146,11 @@ Coverage is now part of the normal `npm test` flow. Vitest prints a text summary
 
 ### Trying it in Pi locally
 
-This repo includes a project-local Pi extension entrypoint at `.pi/extensions/pi-web-agent.ts`.
+This repo includes a project-local Pi extension entrypoint at `.pi/extensions/pi-web-agent.ts` for development and hot reload.
 
-That means Pi can discover it from the repo during development. After starting Pi in this project, use `/reload` if you change the extension code and want Pi to pick up the latest version.
+For the published npm package, Pi loads the compiled runtime from `dist/extension.js` via the `pi.extensions` entry in `package.json`.
+
+After starting Pi in this project, use `/reload` if you change the extension code and want Pi to pick up the latest version.
 
 ## Project layout
 
@@ -149,6 +171,6 @@ The next chunk of work is pretty clear:
 
 - keep tightening weak-content escalation on tricky HTTP targets
 - improve cleanup of noisy rendered-page extraction on busy sites
-- validate the same behavior through the actual npm package install path
 - expand fixtures and end-to-end coverage
+- add alternate search backends behind a first-class provider abstraction
 
