@@ -165,6 +165,29 @@ The code is split into small modules on purpose.
 - `src/types.ts` - shared contracts
 - `tests/` - parser, contract, extraction, fetch, and adapter tests
 
+## License
+
+AGPL-3.0-only. See `LICENSE`.
+
+## Release process
+
+1. Update `CHANGELOG.md` under `## Unreleased`.
+2. Run `npm run release:dry-run` to preview the next version.
+3. Run `npm run release` to bump version, rewrite the changelog release heading, create a release commit, and create a tag.
+4. Push the branch and tag.
+5. GitHub Actions publishes the tagged release to npm.
+
+## Maintainer release notes
+
+This repo is set up for npm Trusted Publishing from GitHub Actions.
+
+In npm package settings, add a trusted publisher for:
+- package: `@demigodmode/pi-web-agent`
+- provider: GitHub Actions
+- repository: `demigodmode/pi-web-agent`
+
+That replaces the old `NPM_TOKEN` secret flow.
+
 ## Near-term next steps
 
 The next chunk of work is pretty clear:
