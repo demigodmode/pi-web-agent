@@ -17,6 +17,7 @@ The format is intentionally simple and release-oriented.
 
 ### Fixed
 - Stopped injecting post-`web_explore` reminder text through a context hook so it no longer leaks into normal sessions.
+- Worked around Rollup's missing Linux native package in GitHub Actions so CI and publish jobs run reliably on Ubuntu.
 
 ### Breaking
 - None.

@@ -19,6 +19,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
+      - run: npm install --no-save @rollup/rollup-linux-x64-gnu
       - run: npm run lint
       - run: npm test
       - run: npm run build
