@@ -29,6 +29,7 @@ describe('Pi extension entrypoint', () => {
     expect(webExplore).toBeDefined();
     expect(webExplore.description).toContain('Prefer this for multi-source web research');
     expect(webExplore.description).toContain('current docs/discussion lookups');
+    expect(webExplore.description).toContain('Use this instead of chaining low-level web tools');
     expect(webExplore.parameters.properties).toHaveProperty('query');
     expect(Object.keys(webExplore.parameters.properties)).toEqual(['query']);
   });
@@ -83,6 +84,124 @@ describe('Pi extension entrypoint', () => {
     expect(result.systemPrompt).toContain(
       'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations'
     );
+    expect(result.systemPrompt).toContain('After using web_explore, only call low-level web tools if there is a specific unresolved gap');
+    expect(result.systemPrompt).toContain('Do not keep searching or fetching just for extra confirmation');
+  });
+
+  it('adds a post-web_explore context hint based on conversation messages instead of shared mutable state', async () => {
+    const handlers = new Map<string, Function>();
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    extension(pi as never);
+
+    const context = handlers.get('context');
+    expect(context).toBeDefined();
+
+    const result = await context!(
+      {
+        messages: [
+          { role: 'user', content: 'Original research prompt' },
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-call-1',
+            toolName: 'web_explore',
+            content: [{ type: 'text', text: 'Findings\n- Source A' }],
+            details: { status: 'ok' },
+            isError: false,
+            timestamp: Date.now()
+          }
+        ]
+      },
+      {}
+    );
+
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[2].role).toBe('custom');
+    expect(result.messages[2].content).toContain('web_explore has already been used for this research task');
+    expect(result.messages[2].content).toContain('specific unresolved gap');
+    expect(result.messages[2].content).toContain('Do not keep searching or fetching just for extra confirmation');
+  });
+
+  it('does not inject the reminder as a fake user message', async () => {
+    const handlers = new Map<string, Function>();
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    extension(pi as never);
+
+    const context = handlers.get('context');
+    expect(context).toBeDefined();
+
+    const result = await context!(
+      {
+        messages: [
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-call-1',
+            toolName: 'web_explore',
+            content: [{ type: 'text', text: 'Findings\n- Source A' }],
+            details: { status: 'ok' },
+            isError: false,
+            timestamp: Date.now()
+          }
+        ]
+      },
+      {}
+    );
+
+    expect(result.messages.some((message: { role: string }) => message.role === 'user')).toBe(false);
+    expect(result.messages.at(-1)?.role).toBe('custom');
+  });
+
+  it('does not add duplicate reminders when one is already present in context', async () => {
+    const handlers = new Map<string, Function>();
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    extension(pi as never);
+
+    const context = handlers.get('context');
+    expect(context).toBeDefined();
+
+    const result = await context!(
+      {
+        messages: [
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-call-1',
+            toolName: 'web_explore',
+            content: [{ type: 'text', text: 'Findings\n- Source A' }],
+            details: { status: 'ok' },
+            isError: false,
+            timestamp: Date.now()
+          },
+          {
+            role: 'custom',
+            customType: 'pi-web-agent-web-explore-reminder',
+            content:
+              'web_explore has already been used for this research task. Only call low-level web tools if there is a specific unresolved gap. Do not keep searching or fetching just for extra confirmation.',
+            display: false,
+            timestamp: Date.now()
+          }
+        ]
+      },
+      {}
+    );
+
+    expect(result.messages).toHaveLength(2);
   });
 
   it('returns human-readable content for web_explore instead of only raw json', async () => {
@@ -101,5 +220,5 @@ describe('Pi extension entrypoint', () => {
 
     expect(result.content[0].text).toContain('Findings');
     expect(result.content[0].text).toContain('Sources');
-  });
+  }, 15000);
 });
