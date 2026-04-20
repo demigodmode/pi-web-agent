@@ -88,7 +88,7 @@ describe('Pi extension entrypoint', () => {
     expect(result.systemPrompt).toContain('Do not keep searching or fetching just for extra confirmation');
   });
 
-  it('adds a post-web_explore context hint for later turns in the same prompt', async () => {
+  it('adds a post-web_explore context hint based on conversation messages instead of shared mutable state', async () => {
     const handlers = new Map<string, Function>();
     const pi = {
       registerTool: vi.fn(),
@@ -99,43 +99,109 @@ describe('Pi extension entrypoint', () => {
 
     extension(pi as never);
 
-    const beforeAgentStart = handlers.get('before_agent_start');
-    const toolExecutionEnd = handlers.get('tool_execution_end');
     const context = handlers.get('context');
-
-    expect(beforeAgentStart).toBeDefined();
-    expect(toolExecutionEnd).toBeDefined();
     expect(context).toBeDefined();
-
-    await beforeAgentStart!(
-      {
-        prompt: 'Research something on the web',
-        images: [],
-        systemPrompt: 'Base system prompt'
-      },
-      {}
-    );
-
-    await toolExecutionEnd!(
-      {
-        toolName: 'web_explore',
-        result: { details: { status: 'ok' } },
-        isError: false
-      },
-      {}
-    );
 
     const result = await context!(
       {
-        messages: [{ role: 'user', content: 'Original research prompt' }]
+        messages: [
+          { role: 'user', content: 'Original research prompt' },
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-call-1',
+            toolName: 'web_explore',
+            content: [{ type: 'text', text: 'Findings\n- Source A' }],
+            details: { status: 'ok' },
+            isError: false,
+            timestamp: Date.now()
+          }
+        ]
+      },
+      {}
+    );
+
+    expect(result.messages).toHaveLength(3);
+    expect(result.messages[2].role).toBe('custom');
+    expect(result.messages[2].content).toContain('web_explore has already been used for this research task');
+    expect(result.messages[2].content).toContain('specific unresolved gap');
+    expect(result.messages[2].content).toContain('Do not keep searching or fetching just for extra confirmation');
+  });
+
+  it('does not inject the reminder as a fake user message', async () => {
+    const handlers = new Map<string, Function>();
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    extension(pi as never);
+
+    const context = handlers.get('context');
+    expect(context).toBeDefined();
+
+    const result = await context!(
+      {
+        messages: [
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-call-1',
+            toolName: 'web_explore',
+            content: [{ type: 'text', text: 'Findings\n- Source A' }],
+            details: { status: 'ok' },
+            isError: false,
+            timestamp: Date.now()
+          }
+        ]
+      },
+      {}
+    );
+
+    expect(result.messages.some((message: { role: string }) => message.role === 'user')).toBe(false);
+    expect(result.messages.at(-1)?.role).toBe('custom');
+  });
+
+  it('does not add duplicate reminders when one is already present in context', async () => {
+    const handlers = new Map<string, Function>();
+    const pi = {
+      registerTool: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    extension(pi as never);
+
+    const context = handlers.get('context');
+    expect(context).toBeDefined();
+
+    const result = await context!(
+      {
+        messages: [
+          {
+            role: 'toolResult',
+            toolCallId: 'tool-call-1',
+            toolName: 'web_explore',
+            content: [{ type: 'text', text: 'Findings\n- Source A' }],
+            details: { status: 'ok' },
+            isError: false,
+            timestamp: Date.now()
+          },
+          {
+            role: 'custom',
+            customType: 'pi-web-agent-web-explore-reminder',
+            content:
+              'web_explore has already been used for this research task. Only call low-level web tools if there is a specific unresolved gap. Do not keep searching or fetching just for extra confirmation.',
+            display: false,
+            timestamp: Date.now()
+          }
+        ]
       },
       {}
     );
 
     expect(result.messages).toHaveLength(2);
-    expect(result.messages[1].content).toContain('web_explore has already been used for this research task');
-    expect(result.messages[1].content).toContain('specific unresolved gap');
-    expect(result.messages[1].content).toContain('Do not keep searching or fetching just for extra confirmation');
   });
 
   it('returns human-readable content for web_explore instead of only raw json', async () => {
