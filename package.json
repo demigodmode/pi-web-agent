@@ -1,18 +1,49 @@
 {
-  "name": "pi-web-agent",
+  "name": "@demigodmode/pi-web-agent",
   "version": "0.1.0",
-  "private": true,
+  "description": "Pi package for reliable web access with explicit search, fetch, and headless boundaries.",
   "type": "module",
+  "main": "./dist/extension.js",
+  "types": "./dist/extension.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/extension.d.ts",
+      "import": "./dist/extension.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "web-search",
+    "web-fetch"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/demigodmode/pi-web-agent.git"
+  },
+  "homepage": "https://github.com/demigodmode/pi-web-agent#readme",
+  "bugs": {
+    "url": "https://github.com/demigodmode/pi-web-agent/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "build:dev": "tsc -p tsconfig.json",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "eval:live": "npm run build && node dist/scripts/live-web-eval.js"
+    "eval:live": "npm run build:dev && node dist/scripts/live-web-eval.js"
   },
   "pi": {
     "extensions": [
-      "./.pi/extensions/pi-web-agent.ts"
+      "./dist/extension.js"
     ]
   },
   "dependencies": {
