@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.2.0] - 2026-04-20
+### Added
 - Added AGPL licensing, a release foundation test, and changelog-driven release tooling.
 - Added GitHub Actions workflows for CI and tag-based npm publishing.
 - Added maintainer docs for releases, self-hosted runners, and main branch protection.
