@@ -179,7 +179,14 @@ AGPL-3.0-only. See `LICENSE`.
 
 ## Maintainer release notes
 
-GitHub Actions publish requires an `NPM_TOKEN` repository secret with permission to publish `@demigodmode/pi-web-agent`.
+This repo is set up for npm Trusted Publishing from GitHub Actions.
+
+In npm package settings, add a trusted publisher for:
+- package: `@demigodmode/pi-web-agent`
+- provider: GitHub Actions
+- repository: `demigodmode/pi-web-agent`
+
+That replaces the old `NPM_TOKEN` secret flow.
 
 ## Near-term next steps
 

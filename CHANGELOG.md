@@ -13,6 +13,7 @@ The format is intentionally simple and release-oriented.
 
 ### Changed
 - Documented the release process in the README.
+- Switched npm publishing guidance from `NPM_TOKEN` secrets to npm Trusted Publishing.
 
 ### Fixed
 - Stopped injecting post-`web_explore` reminder text through a context hook so it no longer leaks into normal sessions.

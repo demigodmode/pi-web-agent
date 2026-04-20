@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 // Runtime-tested script module; TypeScript doesn't need declarations for this import.
 // @ts-expect-error importing local .mjs helper exports for tests
-import {
-  inferVersionBump,
-  parseUnreleasedSections,
-  rewritePackageLockVersion
-} from '../scripts/release.mjs';
+import { inferVersionBump, parseUnreleasedSections, rewritePackageLockVersion } from '../scripts/release.mjs';
 
 describe('release script helpers', () => {
   it('returns major when Breaking has real entries', () => {
