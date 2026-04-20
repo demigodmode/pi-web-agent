@@ -13,7 +13,7 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Fixed
-- Nothing yet.
+- Added the missing npm `--provenance` flag to the publish workflow so Trusted Publishing can exchange the GitHub OIDC token correctly.
 
 ### Breaking
 - None.
