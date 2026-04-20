@@ -13,6 +13,19 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.2.1] - 2026-04-20
+### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
 - Added the missing npm `--provenance` flag to the publish workflow so Trusted Publishing can exchange the GitHub OIDC token correctly.
 
 ### Breaking
