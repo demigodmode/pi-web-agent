@@ -18,6 +18,21 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [0.2.2] - 2026-04-21
+### Added
+- Expanded the live web eval so it covers deterministic search failure cases and reports when follow-up web calls were blocked after `web_explore`.
+
+### Changed
+- Tightened post-`web_explore` discipline by blocking same-flow low-level web tool churn instead of relying on prompt wording alone.
+
+### Fixed
+- Split `web_search` failures into more useful states like no results, parse failures, blocked pages, and fetch failures.
+- Catch DuckDuckGo challenge pages that still return HTTP 200 so blocked searches stop looking like vague parser bugs.
+- Stopped the model from spiraling into extra `web_search` / `web_fetch` calls after a successful `web_explore` in the live-eval cases.
+
+### Breaking
+- None.
+
 ## [0.2.1] - 2026-04-20
 ### Added
 - Nothing yet.
