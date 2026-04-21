@@ -89,4 +89,32 @@ describe('web_search tool', () => {
       }
     });
   });
+
+  it('returns BLOCKED when the backend clearly looks blocked', async () => {
+    const search = createWebSearchTool({
+      searchHtml: vi.fn().mockRejectedValue(new Error('DuckDuckGo blocked the request with 403'))
+    });
+
+    await expect(search({ query: 'blocked query' })).resolves.toMatchObject({
+      status: 'error',
+      error: {
+        code: 'BLOCKED',
+        message: 'DuckDuckGo search appears to be blocked or rate limited.'
+      }
+    });
+  });
+
+  it('returns FETCH_FAILED for generic backend failures', async () => {
+    const search = createWebSearchTool({
+      searchHtml: vi.fn().mockRejectedValue(new Error('socket hang up'))
+    });
+
+    await expect(search({ query: 'network issue' })).resolves.toMatchObject({
+      status: 'error',
+      error: {
+        code: 'FETCH_FAILED',
+        message: 'DuckDuckGo search request failed: socket hang up'
+      }
+    });
+  });
 });

@@ -2,6 +2,31 @@ import { createCacheKey, createTtlCache } from '../cache/ttl-cache.js';
 import { fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../search/duckduckgo.js';
 import type { WebSearchResponse } from '../types.js';
 
+function classifySearchFailure(error: unknown) {
+  const rawMessage = error instanceof Error ? error.message : 'Unknown search failure.';
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('blocked') ||
+    normalized.includes('rate limit') ||
+    normalized.includes('rate-limit') ||
+    normalized.includes('403') ||
+    normalized.includes('429') ||
+    normalized.includes('captcha') ||
+    normalized.includes('challenge')
+  ) {
+    return {
+      code: 'BLOCKED',
+      message: 'DuckDuckGo search appears to be blocked or rate limited.'
+    };
+  }
+
+  return {
+    code: 'FETCH_FAILED',
+    message: `DuckDuckGo search request failed: ${rawMessage}`
+  };
+}
+
 export function createWebSearchTool({
   searchHtml = fetchDuckDuckGoHtml,
   cache = createTtlCache<WebSearchResponse>({ ttlMs: 30_000 })
@@ -73,10 +98,7 @@ export function createWebSearchTool({
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
-        error: {
-          code: 'FETCH_FAILED',
-          message: error instanceof Error ? error.message : 'Unknown search failure.'
-        }
+        error: classifySearchFailure(error)
       };
     }
   };
