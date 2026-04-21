@@ -45,4 +45,48 @@ describe('web_search tool', () => {
       error: { code: 'INVALID_QUERY' }
     });
   });
+
+  it('returns NO_RESULTS when the backend page is valid but contains no usable results', async () => {
+    const search = createWebSearchTool({
+      searchHtml: vi.fn().mockResolvedValue(`
+        <html>
+          <body>
+            <div class="results">
+              <div class="no-results">No results found for your search.</div>
+            </div>
+          </body>
+        </html>
+      `)
+    });
+
+    await expect(search({ query: 'missing thing' })).resolves.toMatchObject({
+      status: 'error',
+      error: {
+        code: 'NO_RESULTS',
+        message: 'DuckDuckGo returned no usable results for this query.'
+      }
+    });
+  });
+
+  it('returns PARSE_FAILED when the backend page cannot be understood as search results', async () => {
+    const search = createWebSearchTool({
+      searchHtml: vi.fn().mockResolvedValue(`
+        <html>
+          <body>
+            <main>
+              <h1>Unexpected page</h1>
+            </main>
+          </body>
+        </html>
+      `)
+    });
+
+    await expect(search({ query: 'odd page' })).resolves.toMatchObject({
+      status: 'error',
+      error: {
+        code: 'PARSE_FAILED',
+        message: 'DuckDuckGo returned a page, but it did not match the expected results format.'
+      }
+    });
+  });
 });

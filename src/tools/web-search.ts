@@ -35,20 +35,46 @@ export function createWebSearchTool({
 
     try {
       const html = await searchHtml(normalizedQuery);
-      const result: WebSearchResponse = {
-        status: 'ok',
-        results: parseDuckDuckGoResults(html),
-        metadata: { backend: 'duckduckgo', cacheHit: false }
+      const parsed = parseDuckDuckGoResults(html);
+
+      if (parsed.results.length > 0) {
+        const result: WebSearchResponse = {
+          status: 'ok',
+          results: parsed.results,
+          metadata: { backend: 'duckduckgo', cacheHit: false }
+        };
+        cache.set(cacheKey, result);
+        return result;
+      }
+
+      if (parsed.noResults) {
+        return {
+          status: 'error',
+          results: [],
+          metadata: { backend: 'duckduckgo', cacheHit: false },
+          error: {
+            code: 'NO_RESULTS',
+            message: 'DuckDuckGo returned no usable results for this query.'
+          }
+        };
+      }
+
+      return {
+        status: 'error',
+        results: [],
+        metadata: { backend: 'duckduckgo', cacheHit: false },
+        error: {
+          code: 'PARSE_FAILED',
+          message: 'DuckDuckGo returned a page, but it did not match the expected results format.'
+        }
       };
-      cache.set(cacheKey, result);
-      return result;
     } catch (error) {
       return {
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
         error: {
-          code: 'SEARCH_FAILED',
+          code: 'FETCH_FAILED',
           message: error instanceof Error ? error.message : 'Unknown search failure.'
         }
       };
