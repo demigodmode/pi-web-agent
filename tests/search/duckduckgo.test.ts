@@ -11,20 +11,24 @@ describe('DuckDuckGo search parsing', () => {
 
   it('parses normalized title, url, and snippet records', () => {
     const html = readFileSync('tests/fixtures/duckduckgo/basic-results.html', 'utf8');
-    const results = parseDuckDuckGoResults(html);
+    const parsed = parseDuckDuckGoResults(html);
 
-    expect(results).toEqual([
-      {
-        title: 'Example Article',
-        url: 'https://example.com/article',
-        snippet: 'First example snippet.'
-      },
-      {
-        title: 'Another Result',
-        url: 'https://example.org/post',
-        snippet: 'Second example snippet.'
-      }
-    ]);
+    expect(parsed).toEqual({
+      results: [
+        {
+          title: 'Example Article',
+          url: 'https://example.com/article',
+          snippet: 'First example snippet.'
+        },
+        {
+          title: 'Another Result',
+          url: 'https://example.org/post',
+          snippet: 'Second example snippet.'
+        }
+      ],
+      noResults: false,
+      hasResultContainers: true
+    });
   });
 
   it('decodes DuckDuckGo redirect urls into destination urls', () => {
@@ -35,15 +39,19 @@ describe('DuckDuckGo search parsing', () => {
       </div>
     `;
 
-    const results = parseDuckDuckGoResults(html);
+    const parsed = parseDuckDuckGoResults(html);
 
-    expect(results).toEqual([
-      {
-        title: 'pi.dev',
-        url: 'https://pi.dev/',
-        snippet: 'Pi docs'
-      }
-    ]);
+    expect(parsed).toEqual({
+      results: [
+        {
+          title: 'pi.dev',
+          url: 'https://pi.dev/',
+          snippet: 'Pi docs'
+        }
+      ],
+      noResults: false,
+      hasResultContainers: true
+    });
   });
 
   it('falls back to the original url when redirect decoding fails', () => {
@@ -54,14 +62,59 @@ describe('DuckDuckGo search parsing', () => {
       </div>
     `;
 
-    const results = parseDuckDuckGoResults(html);
+    const parsed = parseDuckDuckGoResults(html);
 
-    expect(results).toEqual([
-      {
-        title: 'broken',
-        url: '//duckduckgo.com/l/?uddg=%E0%A4%A&rut=abc',
-        snippet: 'Broken redirect'
-      }
-    ]);
+    expect(parsed).toEqual({
+      results: [
+        {
+          title: 'broken',
+          url: '//duckduckgo.com/l/?uddg=%E0%A4%A&rut=abc',
+          snippet: 'Broken redirect'
+        }
+      ],
+      noResults: false,
+      hasResultContainers: true
+    });
+  });
+
+  it('detects a no-results page separately from a parse failure', () => {
+    const html = `
+      <html>
+        <body>
+          <div class="results">
+            <div class="no-results">No results found for your search.</div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const parsed = parseDuckDuckGoResults(html);
+
+    expect(parsed).toEqual({
+      results: [],
+      noResults: true,
+      hasResultContainers: false
+    });
+  });
+
+  it('reports when the page does not match the expected results format', () => {
+    const html = `
+      <html>
+        <body>
+          <main>
+            <h1>Unexpected page</h1>
+            <p>Nothing here looks like a DuckDuckGo results page.</p>
+          </main>
+        </body>
+      </html>
+    `;
+
+    const parsed = parseDuckDuckGoResults(html);
+
+    expect(parsed).toEqual({
+      results: [],
+      noResults: false,
+      hasResultContainers: false
+    });
   });
 });
