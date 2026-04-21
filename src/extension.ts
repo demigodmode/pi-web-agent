@@ -4,14 +4,77 @@ import { createWebExploreTool } from './tools/web-explore.js';
 import { createWebFetchTool } from './tools/web-fetch.js';
 import { createWebFetchHeadlessTool } from './tools/web-fetch-headless.js';
 import { createWebSearchTool } from './tools/web-search.js';
+import type { WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from './types.js';
 
 export default function extension(pi: ExtensionAPI) {
   const webSearch = createWebSearchTool();
   const webFetch = createWebFetchTool();
   const webFetchHeadless = createWebFetchHeadlessTool();
   const webExplore = createWebExploreTool();
+  let webExploreUsedInCurrentFlow = false;
+  const postWebExploreGuardError = {
+    code: 'POST_WEB_EXPLORE_GUARD',
+    message:
+      'web_explore already ran for this research task. Only use low-level web tools if there is a specific unresolved gap.'
+  };
+
+  function guardSearchResponse() {
+    const result: WebSearchResponse = {
+      status: 'error',
+      results: [],
+      metadata: {
+        backend: 'duckduckgo',
+        cacheHit: false
+      },
+      error: postWebExploreGuardError
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      details: result,
+      isError: true as const
+    };
+  }
+
+  function guardFetchResponse(url: string) {
+    const result: WebFetchResponse = {
+      status: 'error',
+      url,
+      metadata: {
+        method: 'http',
+        cacheHit: false
+      },
+      error: postWebExploreGuardError
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      details: result,
+      isError: true as const
+    };
+  }
+
+  function guardHeadlessResponse(url: string) {
+    const result: WebFetchHeadlessResponse = {
+      status: 'error',
+      url,
+      metadata: {
+        method: 'headless',
+        cacheHit: false
+      },
+      error: postWebExploreGuardError
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      details: result,
+      isError: true as const
+    };
+  }
 
   pi.on('before_agent_start', async (event) => {
+    webExploreUsedInCurrentFlow = false;
+
     return {
       systemPrompt:
         `${event.systemPrompt}\n\n` +
@@ -32,6 +95,10 @@ export default function extension(pi: ExtensionAPI) {
       query: Type.String({ description: 'Search query.' })
     }),
     async execute(_toolCallId, params) {
+      if (webExploreUsedInCurrentFlow) {
+        return guardSearchResponse();
+      }
+
       const result = await webSearch({ query: params.query });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -50,6 +117,10 @@ export default function extension(pi: ExtensionAPI) {
       url: Type.String({ description: 'HTTP or HTTPS URL to fetch.' })
     }),
     async execute(_toolCallId, params) {
+      if (webExploreUsedInCurrentFlow) {
+        return guardFetchResponse(params.url);
+      }
+
       const result = await webFetch({ url: params.url });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -68,6 +139,10 @@ export default function extension(pi: ExtensionAPI) {
       url: Type.String({ description: 'HTTP or HTTPS URL to fetch in headless mode.' })
     }),
     async execute(_toolCallId, params) {
+      if (webExploreUsedInCurrentFlow) {
+        return guardHeadlessResponse(params.url);
+      }
+
       const result = await webFetchHeadless({ url: params.url });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -87,6 +162,10 @@ export default function extension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await webExplore({ query: params.query });
+      if (result.status === 'ok') {
+        webExploreUsedInCurrentFlow = true;
+      }
+
       return {
         content: [
           {

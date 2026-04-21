@@ -119,4 +119,46 @@ describe('Pi extension entrypoint', () => {
     expect(result.content[0].text).toContain('Findings');
     expect(result.content[0].text).toContain('Sources');
   }, 15000);
+
+  it('blocks low-level web_search after a successful web_explore in the same tool flow', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      on: vi.fn()
+    };
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const webSearch = tools.find((tool) => tool.name === 'web_search');
+
+    await webExplore.execute('tool-call-1', { query: 'example query' });
+    const result = await webSearch.execute('tool-call-2', { query: 'follow-up search' });
+
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({
+      status: 'error',
+      error: {
+        code: 'POST_WEB_EXPLORE_GUARD',
+        message:
+          'web_explore already ran for this research task. Only use low-level web tools if there is a specific unresolved gap.'
+      }
+    });
+  }, 15000);
+
+  it('still allows low-level tools before web_explore runs', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      on: vi.fn()
+    };
+
+    extension(pi as never);
+
+    const webSearch = tools.find((tool) => tool.name === 'web_search');
+    const result = await webSearch.execute('tool-call-1', { query: 'plain search' });
+
+    expect(result.details.status).not.toBe('error');
+    expect(result.details.error?.code).not.toBe('POST_WEB_EXPLORE_GUARD');
+  }, 15000);
 });

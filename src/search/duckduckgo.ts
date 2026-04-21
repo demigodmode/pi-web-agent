@@ -1,6 +1,12 @@
 import * as cheerio from 'cheerio';
 import type { SearchResult } from '../types.js';
 
+export type ParsedDuckDuckGoResults = {
+  results: SearchResult[];
+  noResults: boolean;
+  hasResultContainers: boolean;
+};
+
 function normalizeDuckDuckGoUrl(rawUrl: string): string {
   try {
     const absolute = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
@@ -35,10 +41,11 @@ export async function fetchDuckDuckGoHtml(query: string): Promise<string> {
   return response.text();
 }
 
-export function parseDuckDuckGoResults(html: string): SearchResult[] {
+export function parseDuckDuckGoResults(html: string): ParsedDuckDuckGoResults {
   const $ = cheerio.load(html);
+  const resultContainers = $('.result');
 
-  return $('.result')
+  const results = resultContainers
     .map((_, element) => {
       const title = $(element).find('.result__a').first().text().trim();
       const url = normalizeDuckDuckGoUrl(
@@ -50,4 +57,16 @@ export function parseDuckDuckGoResults(html: string): SearchResult[] {
     })
     .get()
     .filter((value): value is SearchResult => value !== null);
+
+  const text = $.text().toLowerCase();
+  const noResults =
+    text.includes('no results found') ||
+    text.includes('no more results') ||
+    text.includes('did not match any documents');
+
+  return {
+    results,
+    noResults,
+    hasResultContainers: resultContainers.length > 0
+  };
 }

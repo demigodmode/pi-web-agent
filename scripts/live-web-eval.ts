@@ -7,11 +7,34 @@ import {
   ModelRegistry,
   SessionManager
 } from '@mariozechner/pi-coding-agent';
+import { createWebSearchTool } from '../src/tools/web-search.js';
 
 type PromptCase = {
   id: 'prompt-1' | 'prompt-2' | 'prompt-4';
   title: string;
   prompt: string;
+};
+
+type SearchFailureCase = {
+  id: 'no-results' | 'parse-failed' | 'blocked-html' | 'fetch-failed';
+  title: string;
+  expectedCode: string;
+  expectedMessage: string;
+  searchHtml: (query: string) => Promise<string>;
+};
+
+type SearchFailureEvaluation = {
+  id: SearchFailureCase['id'];
+  title: string;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  expectedCode: string;
+  actualCode: string;
+  expectedMessage: string;
+  actualMessage: string;
+  verdict: 'pass' | 'fail';
+  notes: string[];
 };
 
 type ToolCallRecord = {
@@ -32,6 +55,7 @@ type PromptMetrics = {
   fetchCalls: number;
   headlessCalls: number;
   lowLevelCallsAfterExplore: number;
+  guardedLowLevelCallsAfterExplore: number;
   emptySearches: number;
   unsupportedFetches: number;
   botCheckHeadlesses: number;
@@ -56,6 +80,7 @@ type EvaluationRun = {
   finishedAt: string;
   cwd: string;
   prompts: PromptEvaluation[];
+  searchFailureCases: SearchFailureEvaluation[];
 };
 
 const PROMPTS: PromptCase[] = [
@@ -76,6 +101,65 @@ const PROMPTS: PromptCase[] = [
     title: 'DuckDuckGo HTML scraping pitfalls',
     prompt:
       'Find two or three current sources on DuckDuckGo HTML scraping in Node.js and tell me what the common parsing pitfalls are.'
+  }
+];
+
+const SEARCH_FAILURE_CASES: SearchFailureCase[] = [
+  {
+    id: 'no-results',
+    title: 'NO_RESULTS classification',
+    expectedCode: 'NO_RESULTS',
+    expectedMessage: 'DuckDuckGo returned no usable results for this query.',
+    searchHtml: async () => `
+      <html>
+        <body>
+          <div class="results">
+            <div class="no-results">No results found for your search.</div>
+          </div>
+        </body>
+      </html>
+    `
+  },
+  {
+    id: 'parse-failed',
+    title: 'PARSE_FAILED classification',
+    expectedCode: 'PARSE_FAILED',
+    expectedMessage: 'DuckDuckGo returned a page, but it did not match the expected results format.',
+    searchHtml: async () => `
+      <html>
+        <body>
+          <main>
+            <h1>Unexpected page</h1>
+            <p>Nothing here looks like a search results page.</p>
+          </main>
+        </body>
+      </html>
+    `
+  },
+  {
+    id: 'blocked-html',
+    title: 'BLOCKED classification from challenge HTML',
+    expectedCode: 'BLOCKED',
+    expectedMessage: 'DuckDuckGo search appears to be blocked or rate limited.',
+    searchHtml: async () => `
+      <html>
+        <body>
+          <main>
+            <h1>Are you a robot?</h1>
+            <p>Please verify you are human to continue.</p>
+          </main>
+        </body>
+      </html>
+    `
+  },
+  {
+    id: 'fetch-failed',
+    title: 'FETCH_FAILED classification',
+    expectedCode: 'FETCH_FAILED',
+    expectedMessage: 'DuckDuckGo search request failed: socket hang up',
+    searchHtml: async () => {
+      throw new Error('socket hang up');
+    }
   }
 ];
 
@@ -154,6 +238,15 @@ function isBotCheckHeadlessResult(result: unknown): boolean {
   return /just a moment|security verification|verify you are not a bot/i.test(`${title}\n${text}`);
 }
 
+function isPostWebExploreGuardResult(result: unknown): boolean {
+  const details = toolDetails(result);
+  if (!details || typeof details !== 'object') return false;
+  const record = details as Record<string, unknown>;
+  const error = record.error;
+  if (!error || typeof error !== 'object') return false;
+  return (error as Record<string, unknown>).code === 'POST_WEB_EXPLORE_GUARD';
+}
+
 function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
   const webToolNames = new Set(['web_explore', 'web_search', 'web_fetch', 'web_fetch_headless']);
   const lowLevelWebToolNames = new Set(['web_search', 'web_fetch', 'web_fetch_headless']);
@@ -171,10 +264,24 @@ function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
     headlessCalls: toolCalls.filter((call) => call.toolName === 'web_fetch_headless').length,
     lowLevelCallsAfterExplore:
       firstWebExploreIndex === -1
-        ? toolCalls.filter((call) => lowLevelWebToolNames.has(call.toolName)).length
+        ? toolCalls.filter(
+            (call) => lowLevelWebToolNames.has(call.toolName) && !isPostWebExploreGuardResult(call.result)
+          ).length
         : toolCalls
             .slice(firstWebExploreIndex + 1)
-            .filter((call) => lowLevelWebToolNames.has(call.toolName)).length,
+            .filter(
+              (call) => lowLevelWebToolNames.has(call.toolName) && !isPostWebExploreGuardResult(call.result)
+            ).length,
+    guardedLowLevelCallsAfterExplore:
+      firstWebExploreIndex === -1
+        ? toolCalls.filter(
+            (call) => lowLevelWebToolNames.has(call.toolName) && isPostWebExploreGuardResult(call.result)
+          ).length
+        : toolCalls
+            .slice(firstWebExploreIndex + 1)
+            .filter(
+              (call) => lowLevelWebToolNames.has(call.toolName) && isPostWebExploreGuardResult(call.result)
+            ).length,
     emptySearches: toolCalls.filter((call) => call.toolName === 'web_search' && isEmptySearchResult(call.result)).length,
     unsupportedFetches: toolCalls.filter(
       (call) =>
@@ -232,6 +339,28 @@ function evaluateVerdict(metrics: PromptMetrics, finalAnswer: string): {
   return { verdict: 'mixed', notes };
 }
 
+function formatSearchFailureMarkdown(cases: SearchFailureEvaluation[]) {
+  if (cases.length === 0) {
+    return '## Search failure cases\n\nNone.\n';
+  }
+
+  const sections = cases
+    .map((testCase) => {
+      const notes = testCase.notes.length > 0 ? testCase.notes.map((note) => `- ${note}`).join('\n') : '- none';
+
+      return `### ${testCase.title}\n\n` +
+        `Verdict: **${testCase.verdict}**\n\n` +
+        `- expected code: ${testCase.expectedCode}\n` +
+        `- actual code: ${testCase.actualCode}\n` +
+        `- expected message: ${testCase.expectedMessage}\n` +
+        `- actual message: ${testCase.actualMessage}\n\n` +
+        `Notes:\n${notes}\n`;
+    })
+    .join('\n');
+
+  return `## Search failure cases\n\n${sections}`;
+}
+
 function formatMarkdown(run: EvaluationRun): string {
   const sections = run.prompts
     .map((prompt) => {
@@ -253,6 +382,7 @@ function formatMarkdown(run: EvaluationRun): string {
         `- web_fetch calls: ${prompt.metrics.fetchCalls}\n` +
         `- web_fetch_headless calls: ${prompt.metrics.headlessCalls}\n` +
         `- low-level calls after web_explore: ${prompt.metrics.lowLevelCallsAfterExplore}\n` +
+        `- guarded low-level calls after web_explore: ${prompt.metrics.guardedLowLevelCallsAfterExplore}\n` +
         `- empty searches: ${prompt.metrics.emptySearches}\n` +
         `- unsupported fetches: ${prompt.metrics.unsupportedFetches}\n` +
         `- bot-check headlesses: ${prompt.metrics.botCheckHeadlesses}\n\n` +
@@ -262,7 +392,30 @@ function formatMarkdown(run: EvaluationRun): string {
     })
     .join('\n---\n\n');
 
-  return `# live web eval\n\nStarted: ${run.startedAt}\nFinished: ${run.finishedAt}\nCWD: ${run.cwd}\n\n${sections}`;
+  return `# live web eval\n\nStarted: ${run.startedAt}\nFinished: ${run.finishedAt}\nCWD: ${run.cwd}\n\n` +
+    `${sections}\n\n---\n\n${formatSearchFailureMarkdown(run.searchFailureCases)}`;
+}
+
+function evaluateSearchFailureCase(
+  expectedCode: string,
+  actualCode: string,
+  expectedMessage: string,
+  actualMessage: string
+) {
+  const notes: string[] = [];
+
+  if (actualCode !== expectedCode) {
+    notes.push(`expected code ${expectedCode} but got ${actualCode}`);
+  }
+
+  if (actualMessage !== expectedMessage) {
+    notes.push(`expected message \"${expectedMessage}\" but got \"${actualMessage}\"`);
+  }
+
+  return {
+    verdict: notes.length === 0 ? 'pass' : 'fail',
+    notes
+  } as const;
 }
 
 async function runPrompt(promptCase: PromptCase, cwd: string, authStorage: AuthStorage, modelRegistry: ModelRegistry) {
@@ -335,6 +488,36 @@ async function runPrompt(promptCase: PromptCase, cwd: string, authStorage: AuthS
   } satisfies PromptEvaluation;
 }
 
+async function runSearchFailureCase(testCase: SearchFailureCase) {
+  const startedAt = Date.now();
+  const search = createWebSearchTool({ searchHtml: testCase.searchHtml });
+  const result = await search({ query: 'deterministic test query' });
+  const finishedAt = Date.now();
+
+  const actualCode = result.error?.code ?? 'NO_ERROR';
+  const actualMessage = result.error?.message ?? 'No error message returned.';
+  const evaluation = evaluateSearchFailureCase(
+    testCase.expectedCode,
+    actualCode,
+    testCase.expectedMessage,
+    actualMessage
+  );
+
+  return {
+    id: testCase.id,
+    title: testCase.title,
+    startedAt: new Date(startedAt).toISOString(),
+    finishedAt: new Date(finishedAt).toISOString(),
+    durationMs: finishedAt - startedAt,
+    expectedCode: testCase.expectedCode,
+    actualCode,
+    expectedMessage: testCase.expectedMessage,
+    actualMessage,
+    verdict: evaluation.verdict,
+    notes: evaluation.notes
+  } satisfies SearchFailureEvaluation;
+}
+
 async function main() {
   const cwd = process.cwd();
   const startedAt = isoNow();
@@ -347,11 +530,18 @@ async function main() {
     prompts.push(await runPrompt(promptCase, cwd, authStorage, modelRegistry));
   }
 
+  const searchFailureCases: SearchFailureEvaluation[] = [];
+  for (const testCase of SEARCH_FAILURE_CASES) {
+    console.log(`Running ${testCase.id}: ${testCase.title}`);
+    searchFailureCases.push(await runSearchFailureCase(testCase));
+  }
+
   const run: EvaluationRun = {
     startedAt,
     finishedAt: isoNow(),
     cwd,
-    prompts
+    prompts,
+    searchFailureCases
   };
 
   const outputDir = path.join(cwd, 'local_docs', 'tmp', 'live-evals');
@@ -371,8 +561,15 @@ async function main() {
     console.log(`\n${prompt.id} -> ${prompt.verdict}`);
     console.log(`  web_explore first web tool: ${prompt.metrics.webExploreFirstWebTool}`);
     console.log(`  low-level calls after web_explore: ${prompt.metrics.lowLevelCallsAfterExplore}`);
+    console.log(`  guarded low-level calls after web_explore: ${prompt.metrics.guardedLowLevelCallsAfterExplore}`);
     console.log(`  empty searches: ${prompt.metrics.emptySearches}`);
     console.log(`  bot-check headlesses: ${prompt.metrics.botCheckHeadlesses}`);
+  }
+
+  for (const testCase of run.searchFailureCases) {
+    console.log(`\n${testCase.id} -> ${testCase.verdict}`);
+    console.log(`  expected code: ${testCase.expectedCode}`);
+    console.log(`  actual code: ${testCase.actualCode}`);
   }
 }
 
