@@ -8,7 +8,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html'],
       reportsDirectory: 'coverage',
-      exclude: ['scripts/**', 'dist/**', '.pi/**', 'vitest.config.ts']
+      exclude: ['scripts/**', 'dist/**', '.pi/**', 'docs/.vitepress/**', 'vitest.config.ts']
     }
   }
 });
