@@ -27,6 +27,18 @@ function classifySearchFailure(error: unknown) {
   };
 }
 
+function htmlLooksBlocked(html: string) {
+  const normalized = html.toLowerCase();
+
+  return (
+    normalized.includes('captcha') ||
+    normalized.includes('challenge') ||
+    normalized.includes('verify you are human') ||
+    normalized.includes('are you a robot') ||
+    normalized.includes('unusual traffic')
+  );
+}
+
 export function createWebSearchTool({
   searchHtml = fetchDuckDuckGoHtml,
   cache = createTtlCache<WebSearchResponse>({ ttlMs: 30_000 })
@@ -80,6 +92,18 @@ export function createWebSearchTool({
           error: {
             code: 'NO_RESULTS',
             message: 'DuckDuckGo returned no usable results for this query.'
+          }
+        };
+      }
+
+      if (htmlLooksBlocked(html)) {
+        return {
+          status: 'error',
+          results: [],
+          metadata: { backend: 'duckduckgo', cacheHit: false },
+          error: {
+            code: 'BLOCKED',
+            message: 'DuckDuckGo search appears to be blocked or rate limited.'
           }
         };
       }

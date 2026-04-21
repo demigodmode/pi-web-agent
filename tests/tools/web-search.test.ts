@@ -104,6 +104,29 @@ describe('web_search tool', () => {
     });
   });
 
+  it('returns BLOCKED when a 200 response is really a challenge page', async () => {
+    const search = createWebSearchTool({
+      searchHtml: vi.fn().mockResolvedValue(`
+        <html>
+          <body>
+            <main>
+              <h1>Are you a robot?</h1>
+              <p>Please verify you are human to continue.</p>
+            </main>
+          </body>
+        </html>
+      `)
+    });
+
+    await expect(search({ query: 'challenge page' })).resolves.toMatchObject({
+      status: 'error',
+      error: {
+        code: 'BLOCKED',
+        message: 'DuckDuckGo search appears to be blocked or rate limited.'
+      }
+    });
+  });
+
   it('returns FETCH_FAILED for generic backend failures', async () => {
     const search = createWebSearchTool({
       searchHtml: vi.fn().mockRejectedValue(new Error('socket hang up'))
