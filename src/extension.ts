@@ -10,8 +10,28 @@ export default function extension(pi: ExtensionAPI) {
   const webFetch = createWebFetchTool();
   const webFetchHeadless = createWebFetchHeadlessTool();
   const webExplore = createWebExploreTool();
+  let webExploreUsedInCurrentFlow = false;
+
+  function guardedLowLevelResponse() {
+    const result = {
+      status: 'error',
+      error: {
+        code: 'POST_WEB_EXPLORE_GUARD',
+        message:
+          'web_explore already ran for this research task. Only use low-level web tools if there is a specific unresolved gap.'
+      }
+    };
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      details: result,
+      isError: true
+    };
+  }
 
   pi.on('before_agent_start', async (event) => {
+    webExploreUsedInCurrentFlow = false;
+
     return {
       systemPrompt:
         `${event.systemPrompt}\n\n` +
@@ -32,6 +52,10 @@ export default function extension(pi: ExtensionAPI) {
       query: Type.String({ description: 'Search query.' })
     }),
     async execute(_toolCallId, params) {
+      if (webExploreUsedInCurrentFlow) {
+        return guardedLowLevelResponse();
+      }
+
       const result = await webSearch({ query: params.query });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -50,6 +74,10 @@ export default function extension(pi: ExtensionAPI) {
       url: Type.String({ description: 'HTTP or HTTPS URL to fetch.' })
     }),
     async execute(_toolCallId, params) {
+      if (webExploreUsedInCurrentFlow) {
+        return guardedLowLevelResponse();
+      }
+
       const result = await webFetch({ url: params.url });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -68,6 +96,10 @@ export default function extension(pi: ExtensionAPI) {
       url: Type.String({ description: 'HTTP or HTTPS URL to fetch in headless mode.' })
     }),
     async execute(_toolCallId, params) {
+      if (webExploreUsedInCurrentFlow) {
+        return guardedLowLevelResponse();
+      }
+
       const result = await webFetchHeadless({ url: params.url });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -87,6 +119,10 @@ export default function extension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       const result = await webExplore({ query: params.query });
+      if (result.status === 'ok') {
+        webExploreUsedInCurrentFlow = true;
+      }
+
       return {
         content: [
           {
