@@ -7,11 +7,34 @@ import {
   ModelRegistry,
   SessionManager
 } from '@mariozechner/pi-coding-agent';
+import { createWebSearchTool } from '../src/tools/web-search.js';
 
 type PromptCase = {
   id: 'prompt-1' | 'prompt-2' | 'prompt-4';
   title: string;
   prompt: string;
+};
+
+type SearchFailureCase = {
+  id: 'no-results' | 'parse-failed' | 'blocked-html' | 'fetch-failed';
+  title: string;
+  expectedCode: string;
+  expectedMessage: string;
+  searchHtml: (query: string) => Promise<string>;
+};
+
+type SearchFailureEvaluation = {
+  id: SearchFailureCase['id'];
+  title: string;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  expectedCode: string;
+  actualCode: string;
+  expectedMessage: string;
+  actualMessage: string;
+  verdict: 'pass' | 'fail';
+  notes: string[];
 };
 
 type ToolCallRecord = {
@@ -56,6 +79,7 @@ type EvaluationRun = {
   finishedAt: string;
   cwd: string;
   prompts: PromptEvaluation[];
+  searchFailureCases: SearchFailureEvaluation[];
 };
 
 const PROMPTS: PromptCase[] = [
@@ -76,6 +100,65 @@ const PROMPTS: PromptCase[] = [
     title: 'DuckDuckGo HTML scraping pitfalls',
     prompt:
       'Find two or three current sources on DuckDuckGo HTML scraping in Node.js and tell me what the common parsing pitfalls are.'
+  }
+];
+
+const SEARCH_FAILURE_CASES: SearchFailureCase[] = [
+  {
+    id: 'no-results',
+    title: 'NO_RESULTS classification',
+    expectedCode: 'NO_RESULTS',
+    expectedMessage: 'DuckDuckGo returned no usable results for this query.',
+    searchHtml: async () => `
+      <html>
+        <body>
+          <div class="results">
+            <div class="no-results">No results found for your search.</div>
+          </div>
+        </body>
+      </html>
+    `
+  },
+  {
+    id: 'parse-failed',
+    title: 'PARSE_FAILED classification',
+    expectedCode: 'PARSE_FAILED',
+    expectedMessage: 'DuckDuckGo returned a page, but it did not match the expected results format.',
+    searchHtml: async () => `
+      <html>
+        <body>
+          <main>
+            <h1>Unexpected page</h1>
+            <p>Nothing here looks like a search results page.</p>
+          </main>
+        </body>
+      </html>
+    `
+  },
+  {
+    id: 'blocked-html',
+    title: 'BLOCKED classification from challenge HTML',
+    expectedCode: 'BLOCKED',
+    expectedMessage: 'DuckDuckGo search appears to be blocked or rate limited.',
+    searchHtml: async () => `
+      <html>
+        <body>
+          <main>
+            <h1>Are you a robot?</h1>
+            <p>Please verify you are human to continue.</p>
+          </main>
+        </body>
+      </html>
+    `
+  },
+  {
+    id: 'fetch-failed',
+    title: 'FETCH_FAILED classification',
+    expectedCode: 'FETCH_FAILED',
+    expectedMessage: 'DuckDuckGo search request failed: socket hang up',
+    searchHtml: async () => {
+      throw new Error('socket hang up');
+    }
   }
 ];
 
@@ -232,6 +315,28 @@ function evaluateVerdict(metrics: PromptMetrics, finalAnswer: string): {
   return { verdict: 'mixed', notes };
 }
 
+function formatSearchFailureMarkdown(cases: SearchFailureEvaluation[]) {
+  if (cases.length === 0) {
+    return '## Search failure cases\n\nNone.\n';
+  }
+
+  const sections = cases
+    .map((testCase) => {
+      const notes = testCase.notes.length > 0 ? testCase.notes.map((note) => `- ${note}`).join('\n') : '- none';
+
+      return `### ${testCase.title}\n\n` +
+        `Verdict: **${testCase.verdict}**\n\n` +
+        `- expected code: ${testCase.expectedCode}\n` +
+        `- actual code: ${testCase.actualCode}\n` +
+        `- expected message: ${testCase.expectedMessage}\n` +
+        `- actual message: ${testCase.actualMessage}\n\n` +
+        `Notes:\n${notes}\n`;
+    })
+    .join('\n');
+
+  return `## Search failure cases\n\n${sections}`;
+}
+
 function formatMarkdown(run: EvaluationRun): string {
   const sections = run.prompts
     .map((prompt) => {
@@ -262,7 +367,30 @@ function formatMarkdown(run: EvaluationRun): string {
     })
     .join('\n---\n\n');
 
-  return `# live web eval\n\nStarted: ${run.startedAt}\nFinished: ${run.finishedAt}\nCWD: ${run.cwd}\n\n${sections}`;
+  return `# live web eval\n\nStarted: ${run.startedAt}\nFinished: ${run.finishedAt}\nCWD: ${run.cwd}\n\n` +
+    `${sections}\n\n---\n\n${formatSearchFailureMarkdown(run.searchFailureCases)}`;
+}
+
+function evaluateSearchFailureCase(
+  expectedCode: string,
+  actualCode: string,
+  expectedMessage: string,
+  actualMessage: string
+) {
+  const notes: string[] = [];
+
+  if (actualCode !== expectedCode) {
+    notes.push(`expected code ${expectedCode} but got ${actualCode}`);
+  }
+
+  if (actualMessage !== expectedMessage) {
+    notes.push(`expected message \"${expectedMessage}\" but got \"${actualMessage}\"`);
+  }
+
+  return {
+    verdict: notes.length === 0 ? 'pass' : 'fail',
+    notes
+  } as const;
 }
 
 async function runPrompt(promptCase: PromptCase, cwd: string, authStorage: AuthStorage, modelRegistry: ModelRegistry) {
@@ -335,6 +463,36 @@ async function runPrompt(promptCase: PromptCase, cwd: string, authStorage: AuthS
   } satisfies PromptEvaluation;
 }
 
+async function runSearchFailureCase(testCase: SearchFailureCase) {
+  const startedAt = Date.now();
+  const search = createWebSearchTool({ searchHtml: testCase.searchHtml });
+  const result = await search({ query: 'deterministic test query' });
+  const finishedAt = Date.now();
+
+  const actualCode = result.error?.code ?? 'NO_ERROR';
+  const actualMessage = result.error?.message ?? 'No error message returned.';
+  const evaluation = evaluateSearchFailureCase(
+    testCase.expectedCode,
+    actualCode,
+    testCase.expectedMessage,
+    actualMessage
+  );
+
+  return {
+    id: testCase.id,
+    title: testCase.title,
+    startedAt: new Date(startedAt).toISOString(),
+    finishedAt: new Date(finishedAt).toISOString(),
+    durationMs: finishedAt - startedAt,
+    expectedCode: testCase.expectedCode,
+    actualCode,
+    expectedMessage: testCase.expectedMessage,
+    actualMessage,
+    verdict: evaluation.verdict,
+    notes: evaluation.notes
+  } satisfies SearchFailureEvaluation;
+}
+
 async function main() {
   const cwd = process.cwd();
   const startedAt = isoNow();
@@ -347,11 +505,18 @@ async function main() {
     prompts.push(await runPrompt(promptCase, cwd, authStorage, modelRegistry));
   }
 
+  const searchFailureCases: SearchFailureEvaluation[] = [];
+  for (const testCase of SEARCH_FAILURE_CASES) {
+    console.log(`Running ${testCase.id}: ${testCase.title}`);
+    searchFailureCases.push(await runSearchFailureCase(testCase));
+  }
+
   const run: EvaluationRun = {
     startedAt,
     finishedAt: isoNow(),
     cwd,
-    prompts
+    prompts,
+    searchFailureCases
   };
 
   const outputDir = path.join(cwd, 'local_docs', 'tmp', 'live-evals');
@@ -373,6 +538,12 @@ async function main() {
     console.log(`  low-level calls after web_explore: ${prompt.metrics.lowLevelCallsAfterExplore}`);
     console.log(`  empty searches: ${prompt.metrics.emptySearches}`);
     console.log(`  bot-check headlesses: ${prompt.metrics.botCheckHeadlesses}`);
+  }
+
+  for (const testCase of run.searchFailureCases) {
+    console.log(`\n${testCase.id} -> ${testCase.verdict}`);
+    console.log(`  expected code: ${testCase.expectedCode}`);
+    console.log(`  actual code: ${testCase.actualCode}`);
   }
 }
 
