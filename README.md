@@ -53,6 +53,10 @@ npm run docs:build
 - `preview` — slightly richer bounded view
 - `verbose` — fuller bounded view
 
+See the `v0.3.0` release notes for a before/after of the transcript cleanup:
+
+- https://github.com/demigodmode/pi-web-agent/releases/tag/v0.3.0
+
 ## Settings
 
 Primary UI:
