@@ -7,7 +7,12 @@ describe('web_fetch tool', () => {
 
     await expect(webFetch({ url: 'file:///tmp/test.html' })).resolves.toMatchObject({
       status: 'unsupported',
-      error: { code: 'UNSUPPORTED_URL' }
+      error: { code: 'UNSUPPORTED_URL' },
+      presentation: {
+        views: {
+          compact: 'Fetch failed: Only http and https URLs are supported.'
+        }
+      }
     });
   });
 
@@ -22,7 +27,12 @@ describe('web_fetch tool', () => {
     });
 
     await expect(webFetch({ url: 'https://example.com' })).resolves.toMatchObject({
-      status: 'needs_headless'
+      status: 'needs_headless',
+      presentation: {
+        views: {
+          compact: 'Fetch failed: not enough content'
+        }
+      }
     });
   });
 

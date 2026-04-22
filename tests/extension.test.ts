@@ -102,7 +102,7 @@ describe('Pi extension entrypoint', () => {
     expect(handlers.has('context')).toBe(false);
   });
 
-  it('returns human-readable content for web_explore instead of only raw json', async () => {
+  it('returns compact output for web_explore by default instead of the old text block', async () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
@@ -116,8 +116,51 @@ describe('Pi extension entrypoint', () => {
       query: 'example query'
     });
 
-    expect(result.content[0].text).toContain('Findings');
-    expect(result.content[0].text).toContain('Sources');
+    expect(result.content[0].text).toContain('Reviewed');
+    expect(result.content[0].text).not.toContain('Findings\n');
+    expect(result.content[0].text).not.toContain('{\n');
+  }, 15000);
+
+  it('returns compact output for web_search by default instead of raw json', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      on: vi.fn()
+    };
+
+    extension(pi as never);
+
+    const webSearch = tools.find((tool) => tool.name === 'web_search');
+    const result = await webSearch.execute('tool-call-1', { query: 'plain search' });
+
+    expect(result.content[0].text).toContain('Found');
+    expect(result.content[0].text).not.toContain('{\n');
+  }, 15000);
+
+  it('can render preview mode when web_search is configured for preview', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      on: vi.fn(),
+      getConfig: () => ({
+        presentation: {
+          defaultMode: 'compact',
+          allowExpansion: true,
+          preview: { maxItems: 3, maxChars: 240 },
+          verbose: { maxItems: 5 },
+          showMetrics: true,
+          tools: { web_search: { mode: 'preview' } }
+        }
+      })
+    };
+
+    extension(pi as never);
+
+    const webSearch = tools.find((tool) => tool.name === 'web_search');
+    const result = await webSearch.execute('tool-call-1', { query: 'plain search' });
+
+    expect(result.content[0].text).toContain('1.');
+    expect(result.content[0].text).not.toContain('Found 1 result');
   }, 15000);
 
   it('blocks low-level web_search after a successful web_explore in the same tool flow', async () => {

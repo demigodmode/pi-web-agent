@@ -1,4 +1,5 @@
 import { headlessFetch } from '../fetch/headless-fetch.js';
+import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import type { WebFetchHeadlessResponse } from '../types.js';
 
 export function createWebFetchHeadlessTool({
@@ -8,14 +9,23 @@ export function createWebFetchHeadlessTool({
 } = {}) {
   return async function webFetchHeadless({ url }: { url: string }): Promise<WebFetchHeadlessResponse> {
     if (!/^https?:\/\//.test(url)) {
-      return {
+      const result: WebFetchHeadlessResponse = {
         status: 'unsupported',
         url,
         metadata: { method: 'headless', cacheHit: false },
         error: { code: 'UNSUPPORTED_URL', message: 'Only http and https URLs are supported.' }
       };
+
+      return {
+        ...result,
+        presentation: buildFetchPresentation(result)
+      };
     }
 
-    return fetchPage(url);
+    const result = await fetchPage(url);
+    return {
+      ...result,
+      presentation: buildFetchPresentation(result)
+    };
   };
 }

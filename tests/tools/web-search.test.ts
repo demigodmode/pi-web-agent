@@ -12,10 +12,16 @@ describe('web_search tool', () => {
       `)
     });
 
-    await expect(search({ query: 'example' })).resolves.toEqual({
+    await expect(search({ query: 'example' })).resolves.toMatchObject({
       status: 'ok',
       results: [{ title: 'Example', url: 'https://example.com', snippet: 'Snippet' }],
-      metadata: { backend: 'duckduckgo', cacheHit: false }
+      metadata: { backend: 'duckduckgo', cacheHit: false },
+      presentation: {
+        views: {
+          compact: 'Found 1 result',
+          preview: '1. Example'
+        }
+      }
     });
   });
 

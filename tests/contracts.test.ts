@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type {
+  PresentationEnvelope,
+  PresentationMode,
+  PresentationConfig
+} from '../src/presentation/types.js';
+import { DEFAULT_PRESENTATION_CONFIG } from '../src/presentation/config.js';
 import {
   TOOL_STATUSES,
   type ToolStatus,
@@ -8,6 +14,37 @@ import {
   type WebFetchHeadlessResponse
 } from '../src/types.js';
 import extension from '../src/extension.js';
+
+describe('presentation contracts', () => {
+  it('defines compact as the default mode and exposes all supported modes', () => {
+    const envelope: PresentationEnvelope = {
+      mode: 'compact',
+      views: {
+        compact: 'Found 2 results in 0.2s',
+        preview: '1. Example',
+        verbose: 'Top results (2)\n1. Example'
+      }
+    };
+
+    expect(envelope.mode satisfies PresentationMode).toBe('compact');
+    expect(DEFAULT_PRESENTATION_CONFIG.defaultMode).toBe('compact');
+  });
+
+  it('allows per-tool mode overrides', () => {
+    const config: PresentationConfig = {
+      defaultMode: 'compact',
+      allowExpansion: true,
+      preview: { maxItems: 3, maxChars: 240 },
+      verbose: { maxItems: 5 },
+      showMetrics: true,
+      tools: {
+        web_search: { mode: 'preview' }
+      }
+    };
+
+    expect(config.tools.web_search?.mode).toBe('preview');
+  });
+});
 
 describe('shared tool contracts', () => {
   it('exposes the allowed tool statuses', () => {

@@ -1,4 +1,5 @@
 import { createCacheKey, createTtlCache } from '../cache/ttl-cache.js';
+import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../search/duckduckgo.js';
 import type { WebSearchResponse } from '../types.js';
 
@@ -53,20 +54,28 @@ export function createWebSearchTool({
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
-      return {
+      const result: WebSearchResponse = {
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
         error: { code: 'INVALID_QUERY', message: 'Query must not be empty.' }
+      };
+      return {
+        ...result,
+        presentation: buildSearchPresentation(result)
       };
     }
 
     const cacheKey = createCacheKey(['web_search', normalizedQuery]);
     const cached = cache.get(cacheKey);
     if (cached) {
-      return {
+      const result: WebSearchResponse = {
         ...cached,
         metadata: { ...cached.metadata, cacheHit: true }
+      };
+      return {
+        ...result,
+        presentation: buildSearchPresentation(result)
       };
     }
 
@@ -81,11 +90,14 @@ export function createWebSearchTool({
           metadata: { backend: 'duckduckgo', cacheHit: false }
         };
         cache.set(cacheKey, result);
-        return result;
+        return {
+          ...result,
+          presentation: buildSearchPresentation(result)
+        };
       }
 
       if (parsed.noResults) {
-        return {
+        const result: WebSearchResponse = {
           status: 'error',
           results: [],
           metadata: { backend: 'duckduckgo', cacheHit: false },
@@ -94,10 +106,14 @@ export function createWebSearchTool({
             message: 'DuckDuckGo returned no usable results for this query.'
           }
         };
+        return {
+          ...result,
+          presentation: buildSearchPresentation(result)
+        };
       }
 
       if (htmlLooksBlocked(html)) {
-        return {
+        const result: WebSearchResponse = {
           status: 'error',
           results: [],
           metadata: { backend: 'duckduckgo', cacheHit: false },
@@ -106,9 +122,13 @@ export function createWebSearchTool({
             message: 'DuckDuckGo search appears to be blocked or rate limited.'
           }
         };
+        return {
+          ...result,
+          presentation: buildSearchPresentation(result)
+        };
       }
 
-      return {
+      const result: WebSearchResponse = {
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
@@ -117,12 +137,20 @@ export function createWebSearchTool({
           message: 'DuckDuckGo returned a page, but it did not match the expected results format.'
         }
       };
-    } catch (error) {
       return {
+        ...result,
+        presentation: buildSearchPresentation(result)
+      };
+    } catch (error) {
+      const result: WebSearchResponse = {
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
         error: classifySearchFailure(error)
+      };
+      return {
+        ...result,
+        presentation: buildSearchPresentation(result)
       };
     }
   };

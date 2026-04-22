@@ -1,3 +1,5 @@
+import type { PresentationEnvelope } from './presentation/types.js';
+
 export const TOOL_STATUSES = [
   'ok',
   'needs_headless',
@@ -43,6 +45,7 @@ export type WebSearchResponse = {
   status: 'ok' | 'error';
   results: SearchResult[];
   metadata: SearchMetadata;
+  presentation?: PresentationEnvelope;
   error?: ToolError;
 };
 
@@ -51,6 +54,7 @@ export type WebFetchResponse = {
   url: string;
   content?: ExtractedContent;
   metadata: FetchMetadata;
+  presentation?: PresentationEnvelope;
   error?: ToolError;
 };
 
@@ -59,5 +63,15 @@ export type WebFetchHeadlessResponse = {
   url: string;
   content?: ExtractedContent;
   metadata: FetchMetadata;
+  presentation?: PresentationEnvelope;
+  error?: ToolError;
+};
+
+export type WebExploreResponse = {
+  status: 'ok' | 'error';
+  findings: string[];
+  sources: Array<{ title: string; url: string }>;
+  caveat?: string;
+  presentation?: PresentationEnvelope;
   error?: ToolError;
 };

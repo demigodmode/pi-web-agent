@@ -76,6 +76,13 @@ describe('web_explore tool', () => {
       }
     ]);
     expect(result.caveat).toBeUndefined();
+    expect(result.presentation?.views.compact).toBe(
+      'Reviewed 2 sources · synthesized answer with 2 findings'
+    );
+    expect(result.presentation?.views.preview).toContain(
+      'Use channel for branded Chrome or Edge when possible.'
+    );
+    expect(result).not.toHaveProperty('text');
   });
 
   it('returns a caveat when only partial evidence is available', async () => {
@@ -122,6 +129,9 @@ describe('web_explore tool', () => {
       }
     ]);
     expect(result.caveat).toBe('Evidence is partial, so this answer is based on the strongest source found so far.');
+    expect(result.presentation?.views.compact).toBe(
+      'Reviewed 1 sources · synthesized answer with 1 findings'
+    );
   });
 
   it('rejects empty exploration queries', async () => {
@@ -170,5 +180,6 @@ describe('web_explore tool', () => {
     expect(JSON.stringify(result)).not.toContain('lowValueOutcomes');
     expect(JSON.stringify(result)).not.toContain('suggestedHeadlessUrl');
     expect(result.findings).toEqual(['A concise summary.']);
+    expect(result.presentation?.views.preview).toContain('- A concise summary.');
   });
 });
