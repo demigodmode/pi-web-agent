@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -113,6 +113,25 @@ describe('presentation config store', () => {
     expect(loaded.project.exists).toBe(true);
     expect(loaded.global.exists).toBe(false);
     expect(loaded.effectiveConfig.defaultMode).toBe('preview');
+  });
+
+  it('writes sparse override json without serializing missing fields', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+
+    await savePresentationConfigScope(
+      { homeDir, projectDir },
+      'project',
+      {
+        tools: { web_search: { mode: 'verbose' } }
+      }
+    );
+
+    const written = JSON.parse(readFileSync(projectPath, 'utf8'));
+    expect(written).toEqual({
+      presentation: {
+        tools: { web_search: { mode: 'verbose' } }
+      }
+    });
   });
 
   it('removes the selected scope file on reset', async () => {

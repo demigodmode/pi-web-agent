@@ -4,6 +4,11 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { Container, SettingsList, Text, type SettingItem } from '@mariozechner/pi-tui';
 import {
+  DEFAULT_PRESENTATION_CONFIG,
+  mergePresentationConfigLayers,
+  resolvePresentationMode
+} from '../presentation/config.js';
+import {
   loadPresentationConfigLayers,
   resetPresentationConfigScope,
   savePresentationConfigScope,
@@ -11,13 +16,14 @@ import {
 } from '../presentation/config-store.js';
 import type {
   PresentationConfig,
+  PresentationConfigOverride,
   PresentationScope,
   PresentationToolName
 } from '../presentation/types.js';
 
 type CommandDeps = {
   load?: () => ReturnType<typeof loadPresentationConfigLayers>;
-  save?: (scope: PresentationScope, config: PresentationConfig) => Promise<void>;
+  save?: (scope: PresentationScope, config: PresentationConfigOverride) => Promise<void>;
   reset?: (scope: PresentationScope) => Promise<void>;
 };
 
@@ -25,6 +31,12 @@ type SettingsUiResult =
   | { action: 'cancel' }
   | { action: 'reset'; scope: PresentationScope }
   | { action: 'save'; scope: PresentationScope; config: PresentationConfig };
+
+export type SettingsDraftState = {
+  scope: PresentationScope;
+  drafts: Record<PresentationScope, PresentationConfig>;
+  config: PresentationConfig;
+};
 
 const PRESENTATION_TOOL_NAMES: PresentationToolName[] = [
   'web_search',
@@ -85,36 +97,162 @@ function isModeOrInherit(value: string): value is 'inherit' | 'compact' | 'previ
   return ['inherit', 'compact', 'preview', 'verbose'].includes(value);
 }
 
-function getScopeDraft(loaded: Awaited<LoadedPresentationConfig>, scope: PresentationScope) {
+export function getInheritedConfigForScope(
+  loaded: Awaited<LoadedPresentationConfig>,
+  scope: PresentationScope
+): PresentationConfig {
   if (scope === 'global') {
-    return loaded.global.rawConfig
-      ? {
-          defaultMode: loaded.global.rawConfig.defaultMode ?? loaded.effectiveConfig.defaultMode,
-          tools: { ...loaded.global.rawConfig.tools }
-        }
-      : clonePresentationConfig(loaded.effectiveConfig);
+    return DEFAULT_PRESENTATION_CONFIG;
   }
 
-  return loaded.project.rawConfig
-    ? {
-        defaultMode: loaded.project.rawConfig.defaultMode ?? loaded.effectiveConfig.defaultMode,
-        tools: { ...loaded.project.rawConfig.tools }
+  return mergePresentationConfigLayers(DEFAULT_PRESENTATION_CONFIG, loaded.global.rawConfig);
+}
+
+export function getScopeDisplayConfig(
+  loaded: Awaited<LoadedPresentationConfig>,
+  scope: PresentationScope
+): PresentationConfig {
+  if (scope === 'global') {
+    return mergePresentationConfigLayers(DEFAULT_PRESENTATION_CONFIG, loaded.global.rawConfig);
+  }
+
+  return mergePresentationConfigLayers(
+    DEFAULT_PRESENTATION_CONFIG,
+    loaded.global.rawConfig,
+    loaded.project.rawConfig
+  );
+}
+
+export function createSettingsDraftState(
+  loaded: Awaited<LoadedPresentationConfig>,
+  initialScope: PresentationScope
+): SettingsDraftState {
+  const drafts = {
+    global: getScopeDisplayConfig(loaded, 'global'),
+    project: getScopeDisplayConfig(loaded, 'project')
+  };
+
+  return {
+    scope: initialScope,
+    drafts,
+    config: clonePresentationConfig(drafts[initialScope])
+  };
+}
+
+export function applySettingsValue(
+  state: SettingsDraftState,
+  id: string,
+  newValue: string
+): SettingsDraftState {
+  const nextDrafts = {
+    global: clonePresentationConfig(state.drafts.global),
+    project: clonePresentationConfig(state.drafts.project)
+  };
+
+  let nextScope = state.scope;
+
+  if (id === 'scope' && (newValue === 'project' || newValue === 'global')) {
+    nextScope = newValue;
+    return {
+      scope: nextScope,
+      drafts: nextDrafts,
+      config: clonePresentationConfig(nextDrafts[nextScope])
+    };
+  }
+
+  const currentDraft = clonePresentationConfig(nextDrafts[nextScope]);
+
+  if (id === 'defaultMode' && (newValue === 'compact' || newValue === 'preview' || newValue === 'verbose')) {
+    currentDraft.defaultMode = newValue;
+  }
+
+  if (id.startsWith('tool:')) {
+    const toolName = id.slice('tool:'.length) as PresentationToolName;
+    const nextTools = { ...currentDraft.tools };
+
+    if (newValue === 'inherit') {
+      delete nextTools[toolName];
+    } else if (
+      newValue === 'compact' ||
+      newValue === 'preview' ||
+      newValue === 'verbose'
+    ) {
+      nextTools[toolName] = { mode: newValue };
+    }
+
+    currentDraft.tools = nextTools;
+  }
+
+  nextDrafts[nextScope] = currentDraft;
+
+  return {
+    scope: nextScope,
+    drafts: nextDrafts,
+    config: clonePresentationConfig(nextDrafts[nextScope])
+  };
+}
+
+export function collapsePresentationConfigToOverride(
+  config: PresentationConfig,
+  inheritedConfig: PresentationConfig
+): PresentationConfigOverride {
+  const tools = Object.fromEntries(
+    PRESENTATION_TOOL_NAMES.flatMap((toolName) => {
+      const configuredMode = config.tools[toolName]?.mode;
+      if (!configuredMode) {
+        return [];
       }
-    : clonePresentationConfig(loaded.effectiveConfig);
+
+      const inheritedMode = resolvePresentationMode(toolName, inheritedConfig);
+      if (configuredMode === inheritedMode) {
+        return [];
+      }
+
+      return [[toolName, { mode: configuredMode }]];
+    })
+  ) as PresentationConfigOverride['tools'];
+
+  return {
+    defaultMode:
+      config.defaultMode === inheritedConfig.defaultMode ? undefined : config.defaultMode,
+    tools
+  };
+}
+
+export function handleSettingsShortcut(data: string): { action: 'cancel' | 'reset' | 'save' } | undefined {
+  if (data === '\u001b') {
+    return { action: 'cancel' };
+  }
+
+  if (data === '\u0012') {
+    return { action: 'reset' };
+  }
+
+  if (data === '\u0013') {
+    return { action: 'save' };
+  }
+
+  return undefined;
 }
 
 async function openSettingsUi(
   ctx: any,
-  initialScope: PresentationScope,
-  initialConfig: PresentationConfig
+  loaded: Awaited<LoadedPresentationConfig>,
+  initialScope: PresentationScope
 ): Promise<SettingsUiResult | undefined> {
   return ctx.ui.custom((_tui: unknown, theme: any, _kb: unknown, done: (value: SettingsUiResult) => void) => {
-    let draftScope: PresentationScope = initialScope;
-    let draftConfig = clonePresentationConfig(initialConfig);
+    let state = createSettingsDraftState(loaded, initialScope);
     let settingsList: SettingsList;
 
     const container = new Container();
     container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent settings')), 1, 1));
+    container.addChild(
+      new Text(
+        theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope · Esc cancel'),
+        1,
+        2
+      )
+    );
 
     const rebuildSettingsList = () => {
       if (settingsList) {
@@ -122,47 +260,15 @@ async function openSettingsUi(
       }
 
       settingsList = new SettingsList(
-        buildSettingsItems(draftScope, draftConfig),
-        Math.min(PRESENTATION_TOOL_NAMES.length + 6, 18),
+        buildSettingsItems(state.scope, state.config),
+        Math.min(PRESENTATION_TOOL_NAMES.length + 8, 18),
         getSettingsListTheme(),
         (id, newValue) => {
-          if (id === 'scope' && (newValue === 'project' || newValue === 'global')) {
-            draftScope = newValue;
-            rebuildSettingsList();
-            container.invalidate();
-            return;
-          }
-
-          if (
-            id === 'defaultMode' &&
-            (newValue === 'compact' || newValue === 'preview' || newValue === 'verbose')
-          ) {
-            draftConfig = { ...draftConfig, defaultMode: newValue };
-            rebuildSettingsList();
-            container.invalidate();
-            return;
-          }
-
-          if (id.startsWith('tool:')) {
-            const toolName = id.slice('tool:'.length) as PresentationToolName;
-            const nextTools = { ...draftConfig.tools };
-
-            if (newValue === 'inherit') {
-              delete nextTools[toolName];
-            } else if (
-              newValue === 'compact' ||
-              newValue === 'preview' ||
-              newValue === 'verbose'
-            ) {
-              nextTools[toolName] = { mode: newValue };
-            }
-
-            draftConfig = { ...draftConfig, tools: nextTools };
-            rebuildSettingsList();
-            container.invalidate();
-          }
+          state = applySettingsValue(state, id, newValue);
+          rebuildSettingsList();
+          container.invalidate();
         },
-        () => done({ action: 'save', scope: draftScope, config: draftConfig }),
+        () => done({ action: 'save', scope: state.scope, config: state.config }),
         { enableSearch: true }
       );
 
@@ -174,7 +280,26 @@ async function openSettingsUi(
     return {
       render: (width: number) => container.render(width),
       invalidate: () => container.invalidate(),
-      handleInput: (data: string) => settingsList.handleInput?.(data)
+      handleInput: (data: string) => {
+        const shortcut = handleSettingsShortcut(JSON.stringify(data).slice(1, -1));
+
+        if (shortcut?.action === 'cancel') {
+          done({ action: 'cancel' });
+          return;
+        }
+
+        if (shortcut?.action === 'reset') {
+          done({ action: 'reset', scope: state.scope });
+          return;
+        }
+
+        if (shortcut?.action === 'save') {
+          done({ action: 'save', scope: state.scope, config: state.config });
+          return;
+        }
+
+        settingsList.handleInput?.(data);
+      }
     };
   });
 }
@@ -213,10 +338,11 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         const [, first, second] = (args ?? '').trim().split(/\s+/).filter(Boolean);
         const loaded = await load();
         const scope: PresentationScope = 'project';
-        const baseConfig = getScopeDraft(loaded, scope);
+        const baseConfig = getScopeDisplayConfig(loaded, scope);
+        const inheritedConfig = getInheritedConfigForScope(loaded, scope);
 
         if (first && isModeOrInherit(first) && first !== 'inherit') {
-          await save(scope, { ...baseConfig, defaultMode: first });
+          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig));
           ctx.ui.notify(`Saved project default mode = ${first}`, 'info');
           return;
         }
@@ -230,7 +356,10 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
             nextTools[first] = { mode: second };
           }
 
-          await save(scope, { ...baseConfig, tools: nextTools });
+          await save(
+            scope,
+            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig)
+          );
           ctx.ui.notify(`Saved project ${first} = ${second}`, 'info');
           return;
         }
@@ -245,7 +374,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       if (action === 'settings') {
         const loaded = await load();
         const initialScope: PresentationScope = 'project';
-        const result = await openSettingsUi(ctx, initialScope, getScopeDraft(loaded, initialScope));
+        const result = await openSettingsUi(ctx, loaded, initialScope);
 
         if (!result || result.action === 'cancel') {
           return;
@@ -257,7 +386,13 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           return;
         }
 
-        await save(result.scope, result.config);
+        await save(
+          result.scope,
+          collapsePresentationConfigToOverride(
+            result.config,
+            getInheritedConfigForScope(loaded, result.scope)
+          )
+        );
         ctx.ui.notify(`Saved ${result.scope} config`, 'info');
         return;
       }

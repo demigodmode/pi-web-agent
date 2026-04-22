@@ -64,6 +64,20 @@ async function readPresentationConfigFile(filePath: string): Promise<Presentatio
   }
 }
 
+function serializePresentationConfigOverride(config: PresentationConfigOverride): PresentationConfigFile {
+  const presentation: NonNullable<PresentationConfigFile['presentation']> = {};
+
+  if (config.defaultMode) {
+    presentation.defaultMode = config.defaultMode;
+  }
+
+  if (Object.keys(config.tools).length > 0) {
+    presentation.tools = config.tools;
+  }
+
+  return { presentation };
+}
+
 export async function loadPresentationConfigLayers(
   options: PresentationConfigStoreOptions = {}
 ): Promise<LoadedPresentationConfig> {
@@ -85,13 +99,17 @@ export async function loadPresentationConfigLayers(
 export async function savePresentationConfigScope(
   options: PresentationConfigStoreOptions,
   scope: PresentationScope,
-  config: PresentationConfig
+  config: PresentationConfigOverride
 ) {
   const { globalPath, projectPath } = getPresentationConfigPaths(options);
   const filePath = scope === 'global' ? globalPath : projectPath;
 
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify({ presentation: config }, null, 2) + '\n', 'utf8');
+  await writeFile(
+    filePath,
+    JSON.stringify(serializePresentationConfigOverride(config), null, 2) + '\n',
+    'utf8'
+  );
 }
 
 export async function resetPresentationConfigScope(
