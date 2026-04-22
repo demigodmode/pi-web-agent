@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.3.0] - 2026-04-22
+### Added
 - Added compact, preview, and verbose presentation modes for web tool output.
 - Added a user-facing `/web-agent` settings UI plus helper commands for showing, resetting, and changing presentation config.
 - Added global and project-local presentation config files with project-overrides-global precedence.
