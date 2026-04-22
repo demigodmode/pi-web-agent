@@ -10,6 +10,19 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.3.1] - 2026-04-22
+### Added
+- Nothing yet.
+
+### Changed
 - Stopped self-upgrading npm inside the publish workflow before install and publish steps.
 - Added GitHub release creation to the tag publish workflow.
 
