@@ -2,6 +2,7 @@ import {
   PRESENTATION_MODES,
   type PresentationConfig,
   type PresentationConfigFile,
+  type PresentationConfigOverride,
   type PresentationMode,
   type PresentationToolName
 } from './types.js';
@@ -17,14 +18,10 @@ export function isPresentationMode(value: unknown): value is PresentationMode {
   return typeof value === 'string' && PRESENTATION_MODE_SET.has(value);
 }
 
-export function normalizePresentationConfigFile(
+export function extractPresentationConfigOverride(
   file: PresentationConfigFile | null | undefined
-): PresentationConfig {
+): PresentationConfigOverride {
   const presentation = file?.presentation;
-  const defaultMode = isPresentationMode(presentation?.defaultMode)
-    ? presentation.defaultMode
-    : DEFAULT_PRESENTATION_CONFIG.defaultMode;
-
   const tools = Object.fromEntries(
     Object.entries(presentation?.tools ?? {}).flatMap(([toolName, value]) => {
       if (!value || !isPresentationMode(value.mode)) {
@@ -35,13 +32,29 @@ export function normalizePresentationConfigFile(
     })
   ) as PresentationConfig['tools'];
 
-  return { defaultMode, tools };
+  return {
+    defaultMode: isPresentationMode(presentation?.defaultMode)
+      ? presentation.defaultMode
+      : undefined,
+    tools
+  };
+}
+
+export function normalizePresentationConfigFile(
+  file: PresentationConfigFile | null | undefined
+): PresentationConfig {
+  const override = extractPresentationConfigOverride(file);
+
+  return {
+    defaultMode: override.defaultMode ?? DEFAULT_PRESENTATION_CONFIG.defaultMode,
+    tools: override.tools
+  };
 }
 
 export function mergePresentationConfigLayers(
   defaults: PresentationConfig,
-  globalConfig?: PresentationConfig,
-  projectConfig?: PresentationConfig
+  globalConfig?: PresentationConfigOverride,
+  projectConfig?: PresentationConfigOverride
 ): PresentationConfig {
   return {
     defaultMode:

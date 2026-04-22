@@ -50,6 +50,11 @@ export type PresentationConfig = {
   tools: Partial<Record<PresentationToolName, PresentationToolConfig>>;
 };
 
+export type PresentationConfigOverride = {
+  defaultMode?: PresentationMode;
+  tools: Partial<Record<PresentationToolName, PresentationToolConfig>>;
+};
+
 export type PresentationConfigFile = {
   presentation?: {
     defaultMode?: unknown;
