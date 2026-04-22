@@ -30,6 +30,7 @@ jobs:
           cache: npm
           token: ''
       - run: npm config delete //registry.npmjs.org/:_authToken
+      - run: '[ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && echo "OIDC available" || echo "OIDC NOT available"'
       - run: node -v
       - run: npm -v
       - run: npm ci
