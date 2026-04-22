@@ -66,7 +66,7 @@ describe('web-agent config commands', () => {
     await handler('reset project', { ui: { notify } });
 
     expect(reset).toHaveBeenCalledWith('project');
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Reset project config'), 'success');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Reset project config'), 'info');
   });
 
   it('opens a custom settings UI when invoked with settings', async () => {
@@ -139,7 +139,7 @@ describe('web-agent config commands', () => {
       defaultMode: 'verbose',
       tools: { web_explore: { mode: 'preview' } }
     });
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved global config'), 'success');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved global config'), 'info');
   });
 
   it('resets the selected scope when the settings ui returns reset', async () => {

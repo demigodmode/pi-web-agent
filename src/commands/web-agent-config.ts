@@ -205,7 +205,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       if (action === 'reset') {
         const scope = parseScopeToken(maybeScope) ?? 'project';
         await reset(scope);
-        ctx.ui.notify(`Reset ${scope} config`, 'success');
+        ctx.ui.notify(`Reset ${scope} config`, 'info');
         return;
       }
 
@@ -217,7 +217,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
         if (first && isModeOrInherit(first) && first !== 'inherit') {
           await save(scope, { ...baseConfig, defaultMode: first });
-          ctx.ui.notify(`Saved project default mode = ${first}`, 'success');
+          ctx.ui.notify(`Saved project default mode = ${first}`, 'info');
           return;
         }
 
@@ -231,7 +231,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           }
 
           await save(scope, { ...baseConfig, tools: nextTools });
-          ctx.ui.notify(`Saved project ${first} = ${second}`, 'success');
+          ctx.ui.notify(`Saved project ${first} = ${second}`, 'info');
           return;
         }
 
@@ -253,12 +253,12 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
         if (result.action === 'reset') {
           await reset(result.scope);
-          ctx.ui.notify(`Reset ${result.scope} config`, 'success');
+          ctx.ui.notify(`Reset ${result.scope} config`, 'info');
           return;
         }
 
         await save(result.scope, result.config);
-        ctx.ui.notify(`Saved ${result.scope} config`, 'success');
+        ctx.ui.notify(`Saved ${result.scope} config`, 'info');
         return;
       }
 
