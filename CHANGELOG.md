@@ -10,10 +10,11 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Changed
-- Nothing yet.
+- Stopped self-upgrading npm inside the publish workflow before install and publish steps.
+- Added GitHub release creation to the tag publish workflow.
 
 ### Fixed
-- Nothing yet.
+- Fixed the tag publish workflow so npm publishing no longer fails before `npm ci`.
 
 ### Breaking
 - None.
