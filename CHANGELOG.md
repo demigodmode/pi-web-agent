@@ -7,13 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added compact, preview, and verbose presentation modes for web tool output.
+- Added a user-facing `/web-agent` settings UI plus helper commands for showing, resetting, and changing presentation config.
+- Added global and project-local presentation config files with project-overrides-global precedence.
+- Added docs for presentation settings, config paths, and command usage.
 
 ### Changed
-- Nothing yet.
+- Made compact output the default presentation mode for all web tools.
+- Made bare `/web-agent` open the settings UI directly.
 
 ### Fixed
-- Nothing yet.
+- Fixed settings scope switching so global and project drafts do not leak into each other.
+- Fixed config persistence so inherited values are not unnecessarily written into lower-precedence config files.
+- Fixed command notifications to use supported Pi UI notify levels.
 
 ### Breaking
 - None.

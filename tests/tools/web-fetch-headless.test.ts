@@ -16,7 +16,12 @@ describe('web_fetch_headless tool', () => {
     expect(result).toMatchObject({
       status: 'ok',
       metadata: { method: 'headless', cacheHit: false, browser: 'chrome', navigationMs: 1200 },
-      content: { text: 'Rendered text' }
+      content: { text: 'Rendered text' },
+      presentation: {
+        views: {
+          compact: 'Fetched page · article extracted · 2 words'
+        }
+      }
     });
   });
 
@@ -30,7 +35,12 @@ describe('web_fetch_headless tool', () => {
 
     expect(result).toMatchObject({
       status: 'unsupported',
-      error: { code: 'UNSUPPORTED_URL' }
+      error: { code: 'UNSUPPORTED_URL' },
+      presentation: {
+        views: {
+          compact: 'Fetch failed: Only http and https URLs are supported.'
+        }
+      }
     });
   });
 });

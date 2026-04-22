@@ -10,6 +10,8 @@ The simplest path is just installing the package in Pi and using the tools as th
 
 If all you want is the current package behavior, this is the setup that matters.
 
+If you want to tune how tool output shows up in the transcript, see [Presentation and settings](/presentation).
+
 ## Hosted-backed setups
 
 Some of the open issues point toward hosted search providers.

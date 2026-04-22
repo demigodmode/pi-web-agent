@@ -1,5 +1,7 @@
 import { createResearchWorkflow } from '../orchestration/index.js';
+import { buildExplorePresentation } from '../presentation/explore-presentation.js';
 import type { ResearchEvidence } from '../orchestration/research-types.js';
+import type { WebExploreResponse } from '../types.js';
 
 function findingFromEvidence(evidence: ResearchEvidence, index: number): string {
   if (evidence.summary.includes('Use channel')) {
@@ -18,22 +20,6 @@ function findingFromEvidence(evidence: ResearchEvidence, index: number): string 
   }
 
   return evidence.summary || `Finding ${index + 1}`;
-}
-
-function formatExploreText({
-  findings,
-  sources,
-  caveat
-}: {
-  findings: string[];
-  sources: Array<{ title: string; url: string }>;
-  caveat?: string;
-}) {
-  const findingLines = findings.map((finding) => `- ${finding}`).join('\n');
-  const sourceLines = sources.map((source) => `- ${source.title}: ${source.url}`).join('\n');
-  const caveatBlock = caveat ? `\n\nCaveat\n${caveat}` : '';
-
-  return `Findings\n${findingLines}\n\nSources\n${sourceLines}${caveatBlock}`;
 }
 
 export function createWebExploreTool({
@@ -59,11 +45,16 @@ export function createWebExploreTool({
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
-      return {
-        status: 'error' as const,
+      const result: WebExploreResponse = {
+        status: 'error',
         findings: [],
         sources: [],
         error: { code: 'INVALID_QUERY', message: 'Query must not be empty.' }
+      };
+
+      return {
+        ...result,
+        presentation: buildExplorePresentation(result)
       };
     }
 
@@ -78,12 +69,16 @@ export function createWebExploreTool({
         ? undefined
         : 'Evidence is partial, so this answer is based on the strongest source found so far.';
 
-    return {
-      status: 'ok' as const,
+    const shaped: WebExploreResponse = {
+      status: 'ok',
       findings,
       sources,
-      caveat,
-      text: formatExploreText({ findings, sources, caveat })
+      caveat
+    };
+
+    return {
+      ...shaped,
+      presentation: buildExplorePresentation(shaped)
     };
   };
 }

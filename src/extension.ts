@@ -1,12 +1,59 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
+import { registerWebAgentConfigCommands } from './commands/web-agent-config.js';
+import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presentation/config.js';
+import { loadPresentationConfigLayers } from './presentation/config-store.js';
+import { selectPresentationView } from './presentation/select-view.js';
+import type {
+  PresentationConfig,
+  PresentationEnvelope,
+  PresentationToolName
+} from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
 import { createWebFetchTool } from './tools/web-fetch.js';
 import { createWebFetchHeadlessTool } from './tools/web-fetch-headless.js';
 import { createWebSearchTool } from './tools/web-search.js';
-import type { WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from './types.js';
+import type {
+  WebExploreResponse,
+  WebFetchHeadlessResponse,
+  WebFetchResponse,
+  WebSearchResponse
+} from './types.js';
+
+type ToolResultWithPresentation = {
+  presentation?: PresentationEnvelope;
+};
+
+async function getEffectivePresentationConfig(pi: ExtensionAPI): Promise<PresentationConfig> {
+  const store = (
+    pi as ExtensionAPI & {
+      __presentationConfigStore?: {
+        load?: typeof loadPresentationConfigLayers;
+      };
+    }
+  ).__presentationConfigStore;
+
+  try {
+    const loaded = await (store?.load?.() ?? loadPresentationConfigLayers());
+    return loaded.effectiveConfig;
+  } catch {
+    return DEFAULT_PRESENTATION_CONFIG;
+  }
+}
+
+async function renderToolText(
+  pi: ExtensionAPI,
+  toolName: PresentationToolName,
+  details: ToolResultWithPresentation
+): Promise<string> {
+  const config = await getEffectivePresentationConfig(pi);
+  const mode = resolvePresentationMode(toolName, config);
+  return selectPresentationView(details.presentation, mode) ?? JSON.stringify(details, null, 2);
+}
 
 export default function extension(pi: ExtensionAPI) {
+  registerWebAgentConfigCommands(pi);
+
   const webSearch = createWebSearchTool();
   const webFetch = createWebFetchTool();
   const webFetchHeadless = createWebFetchHeadlessTool();
@@ -18,7 +65,7 @@ export default function extension(pi: ExtensionAPI) {
       'web_explore already ran for this research task. Only use low-level web tools if there is a specific unresolved gap.'
   };
 
-  function guardSearchResponse() {
+  async function guardSearchResponse() {
     const result: WebSearchResponse = {
       status: 'error',
       results: [],
@@ -26,17 +73,23 @@ export default function extension(pi: ExtensionAPI) {
         backend: 'duckduckgo',
         cacheHit: false
       },
-      error: postWebExploreGuardError
+      error: postWebExploreGuardError,
+      presentation: {
+        mode: 'compact',
+        views: {
+          compact: `Search failed: ${postWebExploreGuardError.message}`
+        }
+      }
     };
 
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text' as const, text: await renderToolText(pi, 'web_search', result) }],
       details: result,
       isError: true as const
     };
   }
 
-  function guardFetchResponse(url: string) {
+  async function guardFetchResponse(url: string) {
     const result: WebFetchResponse = {
       status: 'error',
       url,
@@ -44,17 +97,23 @@ export default function extension(pi: ExtensionAPI) {
         method: 'http',
         cacheHit: false
       },
-      error: postWebExploreGuardError
+      error: postWebExploreGuardError,
+      presentation: {
+        mode: 'compact',
+        views: {
+          compact: `Fetch failed: ${postWebExploreGuardError.message}`
+        }
+      }
     };
 
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text' as const, text: await renderToolText(pi, 'web_fetch', result) }],
       details: result,
       isError: true as const
     };
   }
 
-  function guardHeadlessResponse(url: string) {
+  async function guardHeadlessResponse(url: string) {
     const result: WebFetchHeadlessResponse = {
       status: 'error',
       url,
@@ -62,11 +121,22 @@ export default function extension(pi: ExtensionAPI) {
         method: 'headless',
         cacheHit: false
       },
-      error: postWebExploreGuardError
+      error: postWebExploreGuardError,
+      presentation: {
+        mode: 'compact',
+        views: {
+          compact: `Fetch failed: ${postWebExploreGuardError.message}`
+        }
+      }
     };
 
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      content: [
+        {
+          type: 'text' as const,
+          text: await renderToolText(pi, 'web_fetch_headless', result)
+        }
+      ],
       details: result,
       isError: true as const
     };
@@ -85,7 +155,6 @@ export default function extension(pi: ExtensionAPI) {
     };
   });
 
-
   pi.registerTool({
     name: 'web_search',
     label: 'Web Search',
@@ -101,7 +170,7 @@ export default function extension(pi: ExtensionAPI) {
 
       const result = await webSearch({ query: params.query });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        content: [{ type: 'text', text: await renderToolText(pi, 'web_search', result) }],
         details: result,
         isError: result.status === 'error'
       };
@@ -123,7 +192,7 @@ export default function extension(pi: ExtensionAPI) {
 
       const result = await webFetch({ url: params.url });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        content: [{ type: 'text', text: await renderToolText(pi, 'web_fetch', result) }],
         details: result,
         isError: result.status === 'error'
       };
@@ -145,7 +214,7 @@ export default function extension(pi: ExtensionAPI) {
 
       const result = await webFetchHeadless({ url: params.url });
       return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        content: [{ type: 'text', text: await renderToolText(pi, 'web_fetch_headless', result) }],
         details: result,
         isError: result.status === 'error'
       };
@@ -161,7 +230,7 @@ export default function extension(pi: ExtensionAPI) {
       query: Type.String({ description: 'Web research question to explore.' })
     }),
     async execute(_toolCallId, params) {
-      const result = await webExplore({ query: params.query });
+      const result: WebExploreResponse = await webExplore({ query: params.query });
       if (result.status === 'ok') {
         webExploreUsedInCurrentFlow = true;
       }
@@ -170,7 +239,7 @@ export default function extension(pi: ExtensionAPI) {
         content: [
           {
             type: 'text',
-            text: result.status === 'ok' ? result.text : JSON.stringify(result, null, 2)
+            text: await renderToolText(pi, 'web_explore', result)
           }
         ],
         details: result,

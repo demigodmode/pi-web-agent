@@ -18,6 +18,23 @@ That can happen when:
 
 Again, this is exactly where a clean `needs_headless` result is more useful than fake certainty.
 
+## `/web-agent` did something unexpected
+
+`/web-agent` opens the settings UI.
+
+If you just want to inspect the currently effective config instead, use:
+
+```text
+/web-agent show
+```
+
+If the current behavior does not match what you expected, check both config scopes:
+
+- global: `~/.pi/agent/extensions/pi-web-agent/config.json`
+- project: `.pi/extensions/pi-web-agent/config.json`
+
+Project config overrides global config.
+
 ## Pi seems to be loading the wrong copy
 
 If you use both the published package and the local repo-based extension, double-check which one Pi actually loaded.

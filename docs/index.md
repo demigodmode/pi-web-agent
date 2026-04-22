@@ -29,10 +29,12 @@ Right now it gives you:
 - plain HTTP fetch that can say "this isn't reliable enough"
 - explicit headless fetch when a browser is actually needed
 - a higher-level research tool that is meant to stop after a bounded pass instead of wandering forever
+- compact-by-default transcript output with user-facing presentation settings
 
 ## Start here
 
 - If you want to try it quickly, start with [Getting started](/getting-started).
 - If you want the install details, go to [Install](/install).
 - If you want to understand the tool behavior first, go to [Tools](/tools).
+- If you want to change transcript output and config, go to [Presentation and settings](/presentation).
 - If you want to work on the repo, go to [Development](/development).

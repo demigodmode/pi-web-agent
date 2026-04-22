@@ -9,6 +9,7 @@ export default defineConfig({
     nav: [
       { text: 'Getting started', link: '/getting-started' },
       { text: 'Tools', link: '/tools' },
+      { text: 'Presentation', link: '/presentation' },
       { text: 'Development', link: '/development' },
       { text: 'GitHub', link: 'https://github.com/demigodmode/pi-web-agent' }
     ],
@@ -19,6 +20,7 @@ export default defineConfig({
           { text: 'Home', link: '/' },
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Install', link: '/install' },
+          { text: 'Presentation and settings', link: '/presentation' },
           { text: 'Setup modes', link: '/setup-modes' },
           { text: 'Tools', link: '/tools' },
           { text: 'Architecture', link: '/architecture' },

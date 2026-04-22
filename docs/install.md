@@ -23,6 +23,26 @@ This repo also includes a project-local Pi extension entrypoint at `.pi/extensio
 
 That path is for local development and reloads while you are working in this repo.
 
+## Config files after install
+
+The package stores presentation settings in real JSON files.
+
+Global config:
+
+```text
+~/.pi/agent/extensions/pi-web-agent/config.json
+```
+
+Project config:
+
+```text
+.pi/extensions/pi-web-agent/config.json
+```
+
+Project config overrides global config.
+
+If you change settings through `/web-agent`, those files are what get updated.
+
 ## Watch out for mixed setups
 
 If you have both the npm-installed package and the local repo-based extension in play, it gets easy to think you are testing one copy when Pi is actually loading the other.

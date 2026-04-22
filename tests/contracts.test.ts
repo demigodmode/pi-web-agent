@@ -1,4 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import type {
+  PresentationEnvelope,
+  PresentationMode,
+  PresentationConfig,
+  PresentationConfigFile,
+  PresentationToolOverrideMode
+} from '../src/presentation/types.js';
+import {
+  DEFAULT_PRESENTATION_CONFIG,
+  mergePresentationConfigLayers,
+  normalizePresentationConfigFile,
+  resolvePresentationMode
+} from '../src/presentation/config.js';
 import {
   TOOL_STATUSES,
   type ToolStatus,
@@ -8,6 +21,92 @@ import {
   type WebFetchHeadlessResponse
 } from '../src/types.js';
 import extension from '../src/extension.js';
+
+describe('presentation contracts', () => {
+  it('defines compact as the default mode and exposes all supported modes', () => {
+    const envelope: PresentationEnvelope = {
+      mode: 'compact',
+      views: {
+        compact: 'Found 2 results in 0.2s',
+        preview: '1. Example',
+        verbose: 'Top results (2)\n1. Example'
+      }
+    };
+
+    expect(envelope.mode satisfies PresentationMode).toBe('compact');
+    expect(DEFAULT_PRESENTATION_CONFIG.defaultMode).toBe('compact');
+  });
+
+  it('treats missing tool overrides as inherit', () => {
+    const config: PresentationConfig = {
+      defaultMode: 'preview',
+      tools: {}
+    };
+
+    expect(resolvePresentationMode('web_fetch', config)).toBe('preview');
+  });
+
+  it('normalizes a config file with valid overrides', () => {
+    const file: PresentationConfigFile = {
+      presentation: {
+        defaultMode: 'verbose',
+        tools: {
+          web_search: { mode: 'preview' },
+          web_fetch: { mode: 'compact' }
+        }
+      }
+    };
+
+    expect(normalizePresentationConfigFile(file)).toEqual({
+      defaultMode: 'verbose',
+      tools: {
+        web_search: { mode: 'preview' },
+        web_fetch: { mode: 'compact' }
+      }
+    });
+  });
+
+  it('merges defaults, then global, then project', () => {
+    expect(
+      mergePresentationConfigLayers(
+        { defaultMode: 'compact', tools: {} },
+        {
+          defaultMode: 'preview',
+          tools: { web_explore: { mode: 'verbose' } }
+        },
+        {
+          defaultMode: 'preview',
+          tools: { web_search: { mode: 'compact' } }
+        }
+      )
+    ).toEqual({
+      defaultMode: 'preview',
+      tools: {
+        web_explore: { mode: 'verbose' },
+        web_search: { mode: 'compact' }
+      }
+    });
+  });
+
+  it('filters invalid tool override values instead of crashing', () => {
+    const normalized = normalizePresentationConfigFile({
+      presentation: {
+        defaultMode: 'compact',
+        tools: {
+          web_search: { mode: 'preview' },
+          web_fetch: { mode: 'loud' as PresentationToolOverrideMode }
+        }
+      }
+    });
+
+    expect(normalized).toEqual({
+      defaultMode: 'compact',
+      tools: {
+        web_search: { mode: 'preview' }
+      }
+    });
+  });
+});
 
 describe('shared tool contracts', () => {
   it('exposes the allowed tool statuses', () => {

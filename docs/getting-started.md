@@ -55,6 +55,20 @@ That should favor `web_fetch_headless` when browser rendering is actually the po
 
 That should favor `web_explore` for the broader research workflow.
 
+## Presentation defaults
+
+The package renders web tool output in `compact` mode by default.
+
+If you want to change that, open the settings UI with:
+
+```text
+/web-agent
+```
+
+That lets you change the default mode and per-tool overrides without editing code.
+
+If you want the full details, see [Presentation and settings](/presentation).
+
 ## One thing to keep in mind
 
 If the package says a page was too weak to trust over HTTP, that is not it being stubborn. That is the whole point of the contract.
