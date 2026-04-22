@@ -6,10 +6,20 @@ on:
       - 'v*.*.*'
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: release
+    permissions:
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +36,3 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm publish --access public --provenance
-      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ github.token }}

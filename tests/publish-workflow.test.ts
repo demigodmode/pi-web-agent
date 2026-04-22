@@ -22,8 +22,9 @@ describe('publish workflow', () => {
     expect(workflow).toContain('npm publish --access public --provenance');
   });
 
-  it('creates a GitHub release from the published tag', () => {
-    expect(workflow).toContain('contents: write');
-    expect(workflow).toContain('gh release create "$GITHUB_REF_NAME"');
+  it('creates the GitHub release independently from npm publish', () => {
+    expect(workflow).toContain('release:');
+    expect(workflow).toContain('needs: release');
+    expect(workflow).toContain('gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME"');
   });
 });
