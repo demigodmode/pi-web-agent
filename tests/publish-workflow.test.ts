@@ -10,6 +10,7 @@ describe('publish workflow', () => {
     expect(workflow).toContain('id-token: write');
     expect(workflow).toContain('registry-url: https://registry.npmjs.org');
     expect(workflow).toContain("token: ''");
+    expect(workflow).toContain('npm config delete //registry.npmjs.org/:_authToken');
     expect(workflow).not.toContain('NODE_AUTH_TOKEN');
     expect(workflow).not.toContain('NPM_TOKEN');
   });
