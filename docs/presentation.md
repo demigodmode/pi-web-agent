@@ -4,6 +4,23 @@
 
 That is deliberate. Search results, fetches, and research summaries can get noisy fast, especially when the package is doing exactly what you asked and returning a lot of useful detail. The goal here is to keep the transcript readable first, while still letting you ask for more when you want it.
 
+## Before and after
+
+Compact output is the default now, so normal research flows stay readable instead of turning into a wall of raw tool output.
+
+<table>
+  <tr>
+    <td align="center"><strong>Before</strong></td>
+    <td align="center"><strong>After</strong></td>
+  </tr>
+  <tr>
+    <td><img src="/images/presentation/before-0.3.0.png" alt="Before 0.3.0 transcript output" width="100%" /></td>
+    <td><img src="/images/presentation/after-0.3.0.png" alt="After 0.3.0 transcript output" width="100%" /></td>
+  </tr>
+</table>
+
+If you want more detail inline, switch modes in `/web-agent` settings instead of living with the noisy default.
+
 ## The three presentation modes
 
 Every web tool result is shaped into one visible mode at a time:
