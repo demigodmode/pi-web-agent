@@ -39,3 +39,5 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm publish --access public --provenance
+      - if: failure()
+        run: cat ~/.npm/_logs/*.log 2>/dev/null | tail -80 || echo "no debug log found"
