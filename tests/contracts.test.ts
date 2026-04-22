@@ -2,9 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type {
   PresentationEnvelope,
   PresentationMode,
-  PresentationConfig
+  PresentationConfig,
+  PresentationConfigFile,
+  PresentationToolOverrideMode
 } from '../src/presentation/types.js';
-import { DEFAULT_PRESENTATION_CONFIG } from '../src/presentation/config.js';
+import {
+  DEFAULT_PRESENTATION_CONFIG,
+  mergePresentationConfigLayers,
+  normalizePresentationConfigFile,
+  resolvePresentationMode
+} from '../src/presentation/config.js';
 import {
   TOOL_STATUSES,
   type ToolStatus,
@@ -30,15 +37,74 @@ describe('presentation contracts', () => {
     expect(DEFAULT_PRESENTATION_CONFIG.defaultMode).toBe('compact');
   });
 
-  it('allows per-tool mode overrides without exposing inactive config fields', () => {
+  it('treats missing tool overrides as inherit', () => {
     const config: PresentationConfig = {
+      defaultMode: 'preview',
+      tools: {}
+    };
+
+    expect(resolvePresentationMode('web_fetch', config)).toBe('preview');
+  });
+
+  it('normalizes a config file with valid overrides', () => {
+    const file: PresentationConfigFile = {
+      presentation: {
+        defaultMode: 'verbose',
+        tools: {
+          web_search: { mode: 'preview' },
+          web_fetch: { mode: 'compact' }
+        }
+      }
+    };
+
+    expect(normalizePresentationConfigFile(file)).toEqual({
+      defaultMode: 'verbose',
+      tools: {
+        web_search: { mode: 'preview' },
+        web_fetch: { mode: 'compact' }
+      }
+    });
+  });
+
+  it('merges defaults, then global, then project', () => {
+    expect(
+      mergePresentationConfigLayers(
+        { defaultMode: 'compact', tools: {} },
+        {
+          defaultMode: 'preview',
+          tools: { web_explore: { mode: 'verbose' } }
+        },
+        {
+          defaultMode: 'preview',
+          tools: { web_search: { mode: 'compact' } }
+        }
+      )
+    ).toEqual({
+      defaultMode: 'preview',
+      tools: {
+        web_explore: { mode: 'verbose' },
+        web_search: { mode: 'compact' }
+      }
+    });
+  });
+
+  it('filters invalid tool override values instead of crashing', () => {
+    const normalized = normalizePresentationConfigFile({
+      presentation: {
+        defaultMode: 'compact',
+        tools: {
+          web_search: { mode: 'preview' },
+          web_fetch: { mode: 'loud' as PresentationToolOverrideMode }
+        }
+      }
+    });
+
+    expect(normalized).toEqual({
       defaultMode: 'compact',
       tools: {
         web_search: { mode: 'preview' }
       }
-    };
-
-    expect(config.tools.web_search?.mode).toBe('preview');
+    });
   });
 });
 

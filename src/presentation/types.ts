@@ -37,7 +37,22 @@ export type PresentationToolName =
   | 'web_fetch_headless'
   | 'web_explore';
 
+export type PresentationScope = 'global' | 'project';
+
+export type PresentationToolOverrideMode = PresentationMode;
+
+export type PresentationToolConfig = {
+  mode: PresentationToolOverrideMode;
+};
+
 export type PresentationConfig = {
   defaultMode: PresentationMode;
-  tools: Partial<Record<PresentationToolName, { mode: PresentationMode }>>;
+  tools: Partial<Record<PresentationToolName, PresentationToolConfig>>;
+};
+
+export type PresentationConfigFile = {
+  presentation?: {
+    defaultMode?: unknown;
+    tools?: Partial<Record<PresentationToolName, { mode?: unknown }>>;
+  };
 };
