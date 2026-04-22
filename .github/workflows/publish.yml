@@ -31,7 +31,7 @@ jobs:
           token: ''
       - run: npm config delete //registry.npmjs.org/:_authToken
       - run: |
-          OIDC=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://registry.npmjs.org/" \
+          OIDC=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://registry.npmjs.org" \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" | jq -r '.value')
           npm config set "//registry.npmjs.org/:_authToken" "$OIDC"
       - run: node -v
