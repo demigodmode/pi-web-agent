@@ -10,6 +10,7 @@ describe('publish workflow', () => {
     expect(workflow).toContain('id-token: write');
     expect(workflow).not.toContain('NODE_AUTH_TOKEN');
     expect(workflow).not.toContain('NPM_TOKEN');
+    expect(workflow).not.toContain('registry-url');
   });
 
   it('does not self-upgrade npm before publishing', () => {
