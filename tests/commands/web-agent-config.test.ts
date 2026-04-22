@@ -173,4 +173,100 @@ describe('web-agent config commands', () => {
 
     expect(reset).toHaveBeenCalledWith('project');
   });
+
+  it('sets the default mode in project scope when given a single mode token', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: {
+          path: '/project/config.json',
+          exists: false,
+          rawConfig: { defaultMode: 'compact', tools: {} }
+        },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save,
+      reset: vi.fn()
+    });
+
+    await handler('mode preview', { ui: { notify: vi.fn() } });
+
+    expect(save).toHaveBeenCalledWith('project', {
+      defaultMode: 'preview',
+      tools: {}
+    });
+  });
+
+  it('sets a per-tool override when given tool name plus mode', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: {
+          path: '/project/config.json',
+          exists: true,
+          rawConfig: { defaultMode: 'compact', tools: {} }
+        },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save,
+      reset: vi.fn()
+    });
+
+    await handler('mode web_search verbose', { ui: { notify: vi.fn() } });
+
+    expect(save).toHaveBeenCalledWith('project', {
+      defaultMode: 'compact',
+      tools: { web_search: { mode: 'verbose' } }
+    });
+  });
+
+  it('clears a per-tool override when inherit is requested', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: {
+          path: '/project/config.json',
+          exists: true,
+          rawConfig: { defaultMode: 'compact', tools: { web_search: { mode: 'preview' } } }
+        },
+        effectiveConfig: {
+          defaultMode: 'compact',
+          tools: { web_search: { mode: 'preview' } }
+        }
+      }),
+      save,
+      reset: vi.fn()
+    });
+
+    await handler('mode web_search inherit', { ui: { notify: vi.fn() } });
+
+    expect(save).toHaveBeenCalledWith('project', {
+      defaultMode: 'compact',
+      tools: {}
+    });
+  });
 });

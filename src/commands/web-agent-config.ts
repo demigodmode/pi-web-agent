@@ -77,6 +77,14 @@ function buildSettingsItems(scope: PresentationScope, config: PresentationConfig
   ];
 }
 
+function isToolName(value: string): value is PresentationToolName {
+  return PRESENTATION_TOOL_NAMES.includes(value as PresentationToolName);
+}
+
+function isModeOrInherit(value: string): value is 'inherit' | 'compact' | 'preview' | 'verbose' {
+  return ['inherit', 'compact', 'preview', 'verbose'].includes(value);
+}
+
 function getScopeDraft(loaded: Awaited<LoadedPresentationConfig>, scope: PresentationScope) {
   if (scope === 'global') {
     return loaded.global.rawConfig
@@ -202,7 +210,35 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       }
 
       if (action === 'mode') {
-        ctx.ui.notify('mode command not implemented yet in this task', 'info');
+        const [, first, second] = (args ?? '').trim().split(/\s+/).filter(Boolean);
+        const loaded = await load();
+        const scope: PresentationScope = 'project';
+        const baseConfig = getScopeDraft(loaded, scope);
+
+        if (first && isModeOrInherit(first) && first !== 'inherit') {
+          await save(scope, { ...baseConfig, defaultMode: first });
+          ctx.ui.notify(`Saved project default mode = ${first}`, 'success');
+          return;
+        }
+
+        if (first && second && isToolName(first) && isModeOrInherit(second)) {
+          const nextTools = { ...baseConfig.tools };
+
+          if (second === 'inherit') {
+            delete nextTools[first];
+          } else {
+            nextTools[first] = { mode: second };
+          }
+
+          await save(scope, { ...baseConfig, tools: nextTools });
+          ctx.ui.notify(`Saved project ${first} = ${second}`, 'success');
+          return;
+        }
+
+        ctx.ui.notify(
+          'Usage: /web-agent mode <compact|preview|verbose> or /web-agent mode <tool> <inherit|compact|preview|verbose>',
+          'info'
+        );
         return;
       }
 
