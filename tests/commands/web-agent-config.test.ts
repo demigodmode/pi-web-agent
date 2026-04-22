@@ -146,6 +146,38 @@ describe('web-agent config commands', () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('Reset project config'), 'info');
   });
 
+  it('opens a custom settings UI when invoked with no args', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save: vi.fn(),
+      reset: vi.fn()
+    });
+
+    const custom = vi.fn().mockResolvedValue({
+      scope: 'project',
+      config: {
+        defaultMode: 'preview',
+        tools: { web_search: { mode: 'verbose' } }
+      },
+      action: 'save'
+    });
+
+    await handler('', { ui: { custom, notify: vi.fn() } });
+
+    expect(custom).toHaveBeenCalledOnce();
+  });
+
   it('opens a custom settings UI when invoked with settings', async () => {
     let handler: any;
     const pi = {

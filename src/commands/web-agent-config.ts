@@ -314,7 +314,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
     handler: async (args, ctx) => {
       const [action, maybeScope] = (args ?? '').trim().split(/\s+/).filter(Boolean);
 
-      if (!action || action === 'show') {
+      if (action === 'show') {
         const loaded = await load();
         ctx.ui.notify(
           [
@@ -371,7 +371,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         return;
       }
 
-      if (action === 'settings') {
+      if (!action || action === 'settings') {
         const loaded = await load();
         const initialScope: PresentationScope = 'project';
         const result = await openSettingsUi(ctx, loaded, initialScope);
