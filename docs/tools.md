@@ -49,6 +49,14 @@ What it should not do is turn into endless low-level tool churn after a decent a
 
 That tighter behavior is intentional.
 
+## Presentation and transcript output
+
+These tools now render in a compact transcript-friendly form by default.
+
+That means using a tool does not automatically dump its fullest possible body inline. If you want richer output, change the package settings instead of expecting the transcript to always show the maximum amount of detail.
+
+See [Presentation and settings](/presentation) for the config UI, JSON paths, and mode behavior.
+
 ## Which one should you reach for?
 
 A quick rule of thumb:
