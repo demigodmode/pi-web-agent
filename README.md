@@ -45,6 +45,62 @@ Build the docs:
 npm run docs:build
 ```
 
+## Presentation modes
+
+`pi-web-agent` renders web tool output in one visible mode at a time:
+
+- `compact` — short summary, default everywhere
+- `preview` — slightly richer bounded view
+- `verbose` — fuller bounded view
+
+## Settings
+
+Primary UI:
+
+```text
+/web-agent settings
+```
+
+Helper commands:
+
+```text
+/web-agent show
+/web-agent reset project
+/web-agent reset global
+/web-agent mode preview
+/web-agent mode web_search verbose
+/web-agent mode web_search inherit
+```
+
+Config files:
+
+```text
+Global:  ~/.pi/agent/extensions/pi-web-agent/config.json
+Project: .pi/extensions/pi-web-agent/config.json
+```
+
+Precedence:
+
+- built-in defaults
+- global config
+- project config
+
+Project config overrides global config.
+
+Example:
+
+```json
+{
+  "presentation": {
+    "defaultMode": "compact",
+    "tools": {
+      "web_search": { "mode": "preview" },
+      "web_explore": { "mode": "verbose" }
+    }
+  }
+}
+```
+
 ## Local development
 
 ```bash
