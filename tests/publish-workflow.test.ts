@@ -12,13 +12,18 @@ describe('publish workflow', () => {
     expect(workflow).not.toContain('NPM_TOKEN');
   });
 
-  it('upgrades npm before publishing so trusted publishing has a supported cli', () => {
-    expect(workflow).toContain('npm install -g npm@latest');
+  it('does not self-upgrade npm before publishing', () => {
+    expect(workflow).not.toContain('npm install -g npm@latest');
     expect(workflow).toContain('npm -v');
     expect(workflow).toContain('node -v');
   });
 
   it('still publishes the package with public access and provenance enabled', () => {
     expect(workflow).toContain('npm publish --access public --provenance');
+  });
+
+  it('creates a GitHub release from the published tag', () => {
+    expect(workflow).toContain('contents: write');
+    expect(workflow).toContain('gh release create "$GITHUB_REF_NAME"');
   });
 });
