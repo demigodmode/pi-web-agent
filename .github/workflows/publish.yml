@@ -43,6 +43,13 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
-      - run: npm publish --access public --provenance --loglevel verbose
+      - run: |
+          echo "=== .npmrc contents ==="
+          cat "$NPM_CONFIG_USERCONFIG"
+          echo "=== npm config get authToken ==="
+          npm config get "//registry.npmjs.org/:_authToken" | cut -c1-50
+          echo "=== npm whoami ==="
+          npm whoami --registry https://registry.npmjs.org 2>&1 || true
+      - run: npm publish --access public --provenance
       - if: failure()
         run: cat ~/.npm/_logs/*.log 2>/dev/null | tail -80 || echo "no debug log found"
