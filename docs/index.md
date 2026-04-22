@@ -2,6 +2,8 @@
 
 `@demigodmode/pi-web-agent` is a Pi package for web access that tries to stay honest about what it actually did.
 
+Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` keeps them separate, so transcripts stay cleaner and failures are easier to trust.
+
 The whole project is built around a simple rule: searching for a page is not the same thing as reading it, and reading it over plain HTTP is not the same thing as rendering it in a browser.
 
 That sounds obvious, but agent web tooling gets fuzzy right there all the time. Search snippets get treated like page reads. Browser fallback happens quietly. Thin or blocked reads get softened into fake confidence.

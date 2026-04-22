@@ -6,6 +6,8 @@
 
 `@demigodmode/pi-web-agent` is a Pi package for web access.
 
+Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` keeps them separate, so transcripts stay cleaner and failures are easier to trust.
+
 The whole point is keeping the boundaries straight:
 
 - `web_search` is for discovery
