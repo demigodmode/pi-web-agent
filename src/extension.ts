@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
+import { registerWebAgentConfigCommands } from './commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presentation/config.js';
+import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
 import type {
   PresentationConfig,
@@ -22,29 +24,36 @@ type ToolResultWithPresentation = {
   presentation?: PresentationEnvelope;
 };
 
-function getPresentationConfig(pi: ExtensionAPI): PresentationConfig {
-  const maybeConfig = (
+async function getEffectivePresentationConfig(pi: ExtensionAPI): Promise<PresentationConfig> {
+  const store = (
     pi as ExtensionAPI & {
-      getConfig?: () => {
-        presentation?: PresentationConfig;
+      __presentationConfigStore?: {
+        load?: typeof loadPresentationConfigLayers;
       };
     }
-  ).getConfig?.();
+  ).__presentationConfigStore;
 
-  return maybeConfig?.presentation ?? DEFAULT_PRESENTATION_CONFIG;
+  try {
+    const loaded = await (store?.load?.() ?? loadPresentationConfigLayers());
+    return loaded.effectiveConfig;
+  } catch {
+    return DEFAULT_PRESENTATION_CONFIG;
+  }
 }
 
-function renderToolText(
+async function renderToolText(
   pi: ExtensionAPI,
   toolName: PresentationToolName,
   details: ToolResultWithPresentation
-): string {
-  const config = getPresentationConfig(pi);
+): Promise<string> {
+  const config = await getEffectivePresentationConfig(pi);
   const mode = resolvePresentationMode(toolName, config);
   return selectPresentationView(details.presentation, mode) ?? JSON.stringify(details, null, 2);
 }
 
 export default function extension(pi: ExtensionAPI) {
+  registerWebAgentConfigCommands(pi);
+
   const webSearch = createWebSearchTool();
   const webFetch = createWebFetchTool();
   const webFetchHeadless = createWebFetchHeadlessTool();
@@ -56,7 +65,7 @@ export default function extension(pi: ExtensionAPI) {
       'web_explore already ran for this research task. Only use low-level web tools if there is a specific unresolved gap.'
   };
 
-  function guardSearchResponse() {
+  async function guardSearchResponse() {
     const result: WebSearchResponse = {
       status: 'error',
       results: [],
@@ -74,13 +83,13 @@ export default function extension(pi: ExtensionAPI) {
     };
 
     return {
-      content: [{ type: 'text' as const, text: renderToolText(pi, 'web_search', result) }],
+      content: [{ type: 'text' as const, text: await renderToolText(pi, 'web_search', result) }],
       details: result,
       isError: true as const
     };
   }
 
-  function guardFetchResponse(url: string) {
+  async function guardFetchResponse(url: string) {
     const result: WebFetchResponse = {
       status: 'error',
       url,
@@ -98,13 +107,13 @@ export default function extension(pi: ExtensionAPI) {
     };
 
     return {
-      content: [{ type: 'text' as const, text: renderToolText(pi, 'web_fetch', result) }],
+      content: [{ type: 'text' as const, text: await renderToolText(pi, 'web_fetch', result) }],
       details: result,
       isError: true as const
     };
   }
 
-  function guardHeadlessResponse(url: string) {
+  async function guardHeadlessResponse(url: string) {
     const result: WebFetchHeadlessResponse = {
       status: 'error',
       url,
@@ -123,7 +132,10 @@ export default function extension(pi: ExtensionAPI) {
 
     return {
       content: [
-        { type: 'text' as const, text: renderToolText(pi, 'web_fetch_headless', result) }
+        {
+          type: 'text' as const,
+          text: await renderToolText(pi, 'web_fetch_headless', result)
+        }
       ],
       details: result,
       isError: true as const
@@ -158,7 +170,7 @@ export default function extension(pi: ExtensionAPI) {
 
       const result = await webSearch({ query: params.query });
       return {
-        content: [{ type: 'text', text: renderToolText(pi, 'web_search', result) }],
+        content: [{ type: 'text', text: await renderToolText(pi, 'web_search', result) }],
         details: result,
         isError: result.status === 'error'
       };
@@ -180,7 +192,7 @@ export default function extension(pi: ExtensionAPI) {
 
       const result = await webFetch({ url: params.url });
       return {
-        content: [{ type: 'text', text: renderToolText(pi, 'web_fetch', result) }],
+        content: [{ type: 'text', text: await renderToolText(pi, 'web_fetch', result) }],
         details: result,
         isError: result.status === 'error'
       };
@@ -202,7 +214,7 @@ export default function extension(pi: ExtensionAPI) {
 
       const result = await webFetchHeadless({ url: params.url });
       return {
-        content: [{ type: 'text', text: renderToolText(pi, 'web_fetch_headless', result) }],
+        content: [{ type: 'text', text: await renderToolText(pi, 'web_fetch_headless', result) }],
         details: result,
         isError: result.status === 'error'
       };
@@ -227,7 +239,7 @@ export default function extension(pi: ExtensionAPI) {
         content: [
           {
             type: 'text',
-            text: renderToolText(pi, 'web_explore', result)
+            text: await renderToolText(pi, 'web_explore', result)
           }
         ],
         details: result,

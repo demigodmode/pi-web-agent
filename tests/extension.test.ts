@@ -2,9 +2,24 @@ import { describe, expect, it, vi } from 'vitest';
 import extension from '../src/extension.js';
 
 describe('Pi extension entrypoint', () => {
+  it('registers the web-agent config commands', () => {
+    const pi = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      on: vi.fn()
+    };
+
+    extension(pi as never);
+
+    expect(pi.registerCommand).toHaveBeenCalledWith(
+      'web-agent',
+      expect.objectContaining({ description: expect.stringContaining('settings') })
+    );
+  });
+
   it('registers four tools with Pi', () => {
     const registerTool = vi.fn();
-    const pi = { registerTool, on: vi.fn() };
+    const pi = { registerTool, registerCommand: vi.fn(), on: vi.fn() };
 
     extension(pi as never);
 
@@ -19,7 +34,7 @@ describe('Pi extension entrypoint', () => {
 
   it('describes web_explore as the preferred tool for research-style web questions', () => {
     const registerTool = vi.fn();
-    const pi = { registerTool, on: vi.fn() };
+    const pi = { registerTool, registerCommand: vi.fn(), on: vi.fn() };
 
     extension(pi as never);
 
@@ -36,7 +51,7 @@ describe('Pi extension entrypoint', () => {
 
   it('describes low-level tools as direct/manual tools and points research prompts to web_explore', () => {
     const registerTool = vi.fn();
-    const pi = { registerTool, on: vi.fn() };
+    const pi = { registerTool, registerCommand: vi.fn(), on: vi.fn() };
 
     extension(pi as never);
 
@@ -59,6 +74,7 @@ describe('Pi extension entrypoint', () => {
     const handlers = new Map<string, Function>();
     const pi = {
       registerTool: vi.fn(),
+      registerCommand: vi.fn(),
       on: vi.fn((eventName: string, handler: Function) => {
         handlers.set(eventName, handler);
       })
@@ -84,14 +100,19 @@ describe('Pi extension entrypoint', () => {
     expect(result.systemPrompt).toContain(
       'Use web_search, web_fetch, and web_fetch_headless for direct/manual operations'
     );
-    expect(result.systemPrompt).toContain('After using web_explore, only call low-level web tools if there is a specific unresolved gap');
-    expect(result.systemPrompt).toContain('Do not keep searching or fetching just for extra confirmation');
+    expect(result.systemPrompt).toContain(
+      'After using web_explore, only call low-level web tools if there is a specific unresolved gap'
+    );
+    expect(result.systemPrompt).toContain(
+      'Do not keep searching or fetching just for extra confirmation'
+    );
   });
 
   it('does not register a context hook that injects reminder text into the visible session', () => {
     const handlers = new Map<string, Function>();
     const pi = {
       registerTool: vi.fn(),
+      registerCommand: vi.fn(),
       on: vi.fn((eventName: string, handler: Function) => {
         handlers.set(eventName, handler);
       })
@@ -106,6 +127,7 @@ describe('Pi extension entrypoint', () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
       on: vi.fn()
     };
 
@@ -125,6 +147,7 @@ describe('Pi extension entrypoint', () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
       on: vi.fn()
     };
 
@@ -137,17 +160,20 @@ describe('Pi extension entrypoint', () => {
     expect(result.content[0].text).not.toContain('{\n');
   }, 15000);
 
-  it('can render preview mode when web_search is configured for preview', async () => {
+  it('prefers project config over global config for rendered output', async () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
       on: vi.fn(),
-      getConfig: () => ({
-        presentation: {
-          defaultMode: 'compact',
-          tools: { web_search: { mode: 'preview' } }
-        }
-      })
+      __presentationConfigStore: {
+        load: vi.fn().mockResolvedValue({
+          effectiveConfig: {
+            defaultMode: 'compact',
+            tools: { web_search: { mode: 'preview' } }
+          }
+        })
+      }
     };
 
     extension(pi as never);
@@ -159,10 +185,30 @@ describe('Pi extension entrypoint', () => {
     expect(result.content[0].text).not.toContain('Found 1 result');
   }, 15000);
 
+  it('falls back to built-in defaults when the store cannot load config', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __presentationConfigStore: {
+        load: vi.fn().mockRejectedValue(new Error('boom'))
+      }
+    };
+
+    extension(pi as never);
+
+    const webSearch = tools.find((tool) => tool.name === 'web_search');
+    const result = await webSearch.execute('tool-call-1', { query: 'plain search' });
+
+    expect(result.content[0].text).toContain('Found');
+  }, 15000);
+
   it('blocks low-level web_search after a successful web_explore in the same tool flow', async () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
       on: vi.fn()
     };
 
@@ -189,6 +235,7 @@ describe('Pi extension entrypoint', () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
       on: vi.fn()
     };
 
