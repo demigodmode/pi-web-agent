@@ -39,9 +39,5 @@ export type PresentationToolName =
 
 export type PresentationConfig = {
   defaultMode: PresentationMode;
-  allowExpansion: boolean;
-  preview: { maxItems: number; maxChars: number };
-  verbose: { maxItems: number };
-  showMetrics: boolean;
   tools: Partial<Record<PresentationToolName, { mode: PresentationMode }>>;
 };

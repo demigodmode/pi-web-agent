@@ -25,4 +25,17 @@ describe('buildFetchPresentation', () => {
 
     expect(presentation.views.compact).toBe('Fetch failed: Only http and https URLs are supported.');
   });
+
+  it('renders needs_headless as an escalation instead of a failure', () => {
+    const presentation = buildFetchPresentation({
+      status: 'needs_headless',
+      url: 'https://example.com',
+      metadata: { method: 'http', cacheHit: false },
+      error: { code: 'WEAK_EXTRACTION', message: 'not enough content' }
+    });
+
+    expect(presentation.views.compact).toBe(
+      'Needs headless rendering: not enough content'
+    );
+  });
 });

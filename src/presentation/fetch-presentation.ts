@@ -20,7 +20,9 @@ export function buildFetchPresentation(result: FetchLike): PresentationEnvelope 
   const compact =
     result.status === 'ok'
       ? `Fetched page · article extracted${wordCount ? ` · ${wordCount} words` : ''}`
-      : `Fetch failed: ${result.error?.message ?? 'Unknown fetch failure.'}`;
+      : result.status === 'needs_headless'
+        ? `Needs headless rendering: ${result.error?.message ?? 'Headless rendering recommended.'}`
+        : `Fetch failed: ${result.error?.message ?? 'Unknown fetch failure.'}`;
 
   return {
     mode: 'compact',

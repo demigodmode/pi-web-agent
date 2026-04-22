@@ -30,13 +30,9 @@ describe('presentation contracts', () => {
     expect(DEFAULT_PRESENTATION_CONFIG.defaultMode).toBe('compact');
   });
 
-  it('allows per-tool mode overrides', () => {
+  it('allows per-tool mode overrides without exposing inactive config fields', () => {
     const config: PresentationConfig = {
       defaultMode: 'compact',
-      allowExpansion: true,
-      preview: { maxItems: 3, maxChars: 240 },
-      verbose: { maxItems: 5 },
-      showMetrics: true,
       tools: {
         web_search: { mode: 'preview' }
       }

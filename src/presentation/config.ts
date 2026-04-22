@@ -2,10 +2,6 @@ import type { PresentationConfig, PresentationMode, PresentationToolName } from 
 
 export const DEFAULT_PRESENTATION_CONFIG: PresentationConfig = {
   defaultMode: 'compact',
-  allowExpansion: true,
-  preview: { maxItems: 3, maxChars: 240 },
-  verbose: { maxItems: 5 },
-  showMetrics: true,
   tools: {}
 };
 

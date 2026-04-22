@@ -30,7 +30,7 @@ describe('web_fetch tool', () => {
       status: 'needs_headless',
       presentation: {
         views: {
-          compact: 'Fetch failed: not enough content'
+          compact: 'Needs headless rendering: not enough content'
         }
       }
     });

@@ -145,10 +145,6 @@ describe('Pi extension entrypoint', () => {
       getConfig: () => ({
         presentation: {
           defaultMode: 'compact',
-          allowExpansion: true,
-          preview: { maxItems: 3, maxChars: 240 },
-          verbose: { maxItems: 5 },
-          showMetrics: true,
           tools: { web_search: { mode: 'preview' } }
         }
       })
