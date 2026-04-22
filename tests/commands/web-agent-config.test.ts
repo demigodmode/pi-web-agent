@@ -68,4 +68,109 @@ describe('web-agent config commands', () => {
     expect(reset).toHaveBeenCalledWith('project');
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('Reset project config'), 'success');
   });
+
+  it('opens a custom settings UI when invoked with settings', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save: vi.fn(),
+      reset: vi.fn()
+    });
+
+    const custom = vi.fn().mockResolvedValue({
+      scope: 'project',
+      config: {
+        defaultMode: 'preview',
+        tools: { web_search: { mode: 'verbose' } }
+      },
+      action: 'save'
+    });
+
+    await handler('settings', { ui: { custom, notify: vi.fn() } });
+
+    expect(custom).toHaveBeenCalledOnce();
+  });
+
+  it('saves the selected scope and config returned by the settings ui', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const notify = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save,
+      reset: vi.fn()
+    });
+
+    await handler('settings', {
+      ui: {
+        custom: vi.fn().mockResolvedValue({
+          action: 'save',
+          scope: 'global',
+          config: {
+            defaultMode: 'verbose',
+            tools: { web_explore: { mode: 'preview' } }
+          }
+        }),
+        notify
+      }
+    });
+
+    expect(save).toHaveBeenCalledWith('global', {
+      defaultMode: 'verbose',
+      tools: { web_explore: { mode: 'preview' } }
+    });
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved global config'), 'success');
+  });
+
+  it('resets the selected scope when the settings ui returns reset', async () => {
+    let handler: any;
+    const reset = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: true },
+        project: { path: '/project/config.json', exists: true },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save: vi.fn(),
+      reset
+    });
+
+    await handler('settings', {
+      ui: {
+        custom: vi.fn().mockResolvedValue({
+          action: 'reset',
+          scope: 'project'
+        }),
+        notify: vi.fn()
+      }
+    });
+
+    expect(reset).toHaveBeenCalledWith('project');
+  });
 });
