@@ -8,9 +8,10 @@ const workflow = readFileSync(workflowPath, 'utf8');
 describe('publish workflow', () => {
   it('uses npm trusted publishing instead of an npm token', () => {
     expect(workflow).toContain('id-token: write');
+    expect(workflow).toContain('registry-url: https://registry.npmjs.org');
+    expect(workflow).toContain("token: ''");
     expect(workflow).not.toContain('NODE_AUTH_TOKEN');
     expect(workflow).not.toContain('NPM_TOKEN');
-    expect(workflow).not.toContain('registry-url');
   });
 
   it('does not self-upgrade npm before publishing', () => {
