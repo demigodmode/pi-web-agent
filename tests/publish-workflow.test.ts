@@ -10,7 +10,7 @@ describe('publish workflow', () => {
     expect(workflow).toContain('id-token: write');
     expect(workflow).toContain('registry-url: https://registry.npmjs.org');
     expect(workflow).toContain("token: ''");
-    expect(workflow).toContain('npm install -g npm@latest');
+    expect(workflow).toContain('npx --yes npm@11.13.0 publish --access public --provenance');
     expect(workflow).not.toContain('NODE_AUTH_TOKEN');
     expect(workflow).not.toContain('NPM_TOKEN');
     expect(workflow).not.toContain('npm config set "//registry.npmjs.org/:_authToken"');
@@ -23,7 +23,7 @@ describe('publish workflow', () => {
   });
 
   it('still publishes the package with public access and provenance enabled', () => {
-    expect(workflow).toContain('npm publish --access public --provenance');
+    expect(workflow).toContain('npx --yes npm@11.13.0 publish --access public --provenance');
   });
 
   it('can be rerun manually for a tag after fixing the workflow on main', () => {
