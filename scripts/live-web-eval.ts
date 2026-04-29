@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 import {
   AuthStorage,
   createAgentSession,
@@ -51,6 +52,7 @@ type PromptMetrics = {
   webExploreFirstWebTool: boolean;
   totalToolCalls: number;
   totalWebToolCalls: number;
+  networkShellFallbacksAfterExplore: number;
 };
 
 type PromptEvaluation = {
@@ -198,7 +200,14 @@ function extractText(value: unknown): string {
   return '';
 }
 
-function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
+function isNetworkShellCommand(command: unknown): boolean {
+  if (typeof command !== 'string') return false;
+  return /\b(Invoke-WebRequest|Invoke-RestMethod|curl(?:\.exe)?|wget|npm\s+(?:view|search|pack)|pip\s+index)\b|https?:\/\//i.test(
+    command
+  );
+}
+
+export function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
   const webToolNames = new Set(['web_explore', 'web_search', 'web_fetch', 'web_fetch_headless']);
   const webToolCalls = toolCalls.filter((call) => webToolNames.has(call.toolName));
   const firstWebTool = webToolCalls[0];
@@ -208,11 +217,17 @@ function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
     webExploreUsed: firstWebExploreIndex !== -1,
     webExploreFirstWebTool: firstWebTool?.toolName === 'web_explore',
     totalToolCalls: toolCalls.length,
-    totalWebToolCalls: webToolCalls.length
+    totalWebToolCalls: webToolCalls.length,
+    networkShellFallbacksAfterExplore:
+      firstWebExploreIndex === -1
+        ? 0
+        : toolCalls
+            .slice(firstWebExploreIndex + 1)
+            .filter((call) => call.toolName === 'bash' && isNetworkShellCommand((call.args as { command?: unknown })?.command)).length
   };
 }
 
-function evaluateVerdict(metrics: PromptMetrics, finalAnswer: string): {
+export function evaluateVerdict(metrics: PromptMetrics, finalAnswer: string): {
   verdict: 'pass' | 'mixed' | 'fail';
   notes: string[];
 } {
@@ -227,12 +242,16 @@ function evaluateVerdict(metrics: PromptMetrics, finalAnswer: string): {
     notes.push('web_explore was not the first web research tool');
   }
 
+  if (metrics.networkShellFallbacksAfterExplore > 0) {
+    notes.push(`network-capable shell fallback after web_explore (${metrics.networkShellFallbacksAfterExplore})`);
+  }
+
   if (!finalAnswer.trim()) {
     notes.push('final answer text was empty');
     return { verdict: 'fail', notes };
   }
 
-  if (metrics.webExploreFirstWebTool) {
+  if (metrics.webExploreFirstWebTool && notes.length === 0) {
     return { verdict: 'pass', notes };
   }
 
@@ -278,6 +297,7 @@ function formatMarkdown(run: EvaluationRun): string {
         `- web_explore first web tool: ${prompt.metrics.webExploreFirstWebTool}\n` +
         `- total tool calls: ${prompt.metrics.totalToolCalls}\n` +
         `- total web tool calls: ${prompt.metrics.totalWebToolCalls}\n` +
+        `- network shell fallbacks after web_explore: ${prompt.metrics.networkShellFallbacksAfterExplore}\n` +
 
         `Tool order:\n${tools || '  none'}\n\n` +
         `Notes:\n${notes}\n\n` +
@@ -455,6 +475,7 @@ async function main() {
     console.log(`  web_explore used: ${prompt.metrics.webExploreUsed}`);
     console.log(`  web_explore first web tool: ${prompt.metrics.webExploreFirstWebTool}`);
     console.log(`  total web tool calls: ${prompt.metrics.totalWebToolCalls}`);
+    console.log(`  network shell fallbacks after web_explore: ${prompt.metrics.networkShellFallbacksAfterExplore}`);
   }
 
   for (const testCase of run.searchFailureCases) {
@@ -464,4 +485,6 @@ async function main() {
   }
 }
 
-await main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  await main();
+}

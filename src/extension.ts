@@ -52,7 +52,8 @@ export default function extension(pi: ExtensionAPI) {
     systemPrompt:
       `${event.systemPrompt}\n\n` +
       'For web research questions that require finding and comparing sources, use web_explore. ' +
-      'web_explore handles search, fetch, source ranking, and headless escalation internally.'
+      'web_explore handles search, fetch, source ranking, and headless escalation internally. ' +
+      'If more web evidence is needed after web_explore, call web_explore again with a narrower query; do not use shell/network commands such as curl, Invoke-WebRequest, npm view/search/pack, or direct HTTP URLs for web research.'
   }));
 
   pi.registerTool({

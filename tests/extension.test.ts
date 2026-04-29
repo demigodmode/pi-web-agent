@@ -68,6 +68,8 @@ describe('Pi extension entrypoint', () => {
 
     expect(result.systemPrompt).toContain('use web_explore');
     expect(result.systemPrompt).toContain('handles search, fetch, source ranking, and headless escalation internally');
+    expect(result.systemPrompt).toContain('call web_explore again with a narrower query');
+    expect(result.systemPrompt).toContain('do not use shell/network commands');
   });
 
   it('does not register a context hook that injects reminder text into the visible session', () => {
@@ -90,7 +92,10 @@ describe('Pi extension entrypoint', () => {
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
       registerCommand: vi.fn(),
-      on: vi.fn()
+      on: vi.fn(),
+      __presentationConfigStore: {
+        load: vi.fn().mockResolvedValue({ effectiveConfig: { defaultMode: 'compact', tools: {} } })
+      }
     };
 
     extension(pi as never);
