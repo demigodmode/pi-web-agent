@@ -28,8 +28,15 @@ function summarizeText(text: string, maxLength = 180): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
+function isBotCheckContent({ title = '', text }: { title?: string; text: string }) {
+  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
+    `${title}\n${text}`
+  );
+}
+
 function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
 
   return {
     title: result.content.title ?? result.url,

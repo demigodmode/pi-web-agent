@@ -28,6 +28,24 @@ describe('buildExplorePresentation', () => {
     expect(presentation.views.verbose).toContain('Internal tools');
   });
 
+  it('says when no usable evidence was found in preview and verbose views', () => {
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      findings: [],
+      sources: [],
+      metadata: {
+        searchPasses: 2,
+        fetchedPages: 4,
+        headlessAttempts: 0,
+        exhaustedBudget: true
+      }
+    });
+
+    expect(presentation.views.compact).toBe('No usable evidence found');
+    expect(presentation.views.preview).toContain('No usable evidence found.');
+    expect(presentation.views.verbose).toContain('No usable evidence found.');
+  });
+
   it('keeps invalid-query errors concise', () => {
     const presentation = buildExplorePresentation({
       status: 'error',

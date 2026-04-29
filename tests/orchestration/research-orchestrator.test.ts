@@ -191,6 +191,43 @@ describe('research orchestrator types', () => {
     expect(result.decision.action).toBe('answer');
   });
 
+  it('does not turn headless bot-check pages into evidence', async () => {
+    const headlessFetch = vi.fn().mockResolvedValue({
+      status: 'ok',
+      url: 'https://medium.com/example',
+      content: {
+        title: 'Performing security verification',
+        text: 'This website uses a security service to protect itself from online attacks. Please verify you are not a bot.'
+      },
+      metadata: {
+        method: 'headless',
+        cacheHit: false,
+        browser: 'edge',
+        navigationMs: 900,
+        truncated: false
+      }
+    });
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['medium ddg scraping'],
+          evidence: [],
+          gaps: [{ kind: 'fetch-failed', message: 'HTTP fetch was weak for https://medium.com/example' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://medium.com/example',
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'duckduckgo scraping medium source' });
+
+    expect(result.evidence).toEqual([]);
+    expect(result.decision.action).toBe('escalate-headless');
+  });
+
   it('fetches one specific page with headless only when approved by the orchestrator', async () => {
     const headlessFetch = vi.fn().mockResolvedValue({
       status: 'ok',
