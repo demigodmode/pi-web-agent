@@ -39,7 +39,6 @@ jobs:
       - run: node -v
       - run: npm -v
       - run: npm ci
-      - run: npm install --no-save @rollup/rollup-linux-x64-gnu
       - run: npm run lint
       - run: npm test
       - run: npm run build

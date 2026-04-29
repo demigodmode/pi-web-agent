@@ -1,25 +1,25 @@
 # pi-web-agent
 
-`@demigodmode/pi-web-agent` is a Pi package for web access that tries to stay honest about what it actually did.
+`@demigodmode/pi-web-agent` is a Pi package for web research.
 
-Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` keeps them separate, so transcripts stay cleaner and failures are easier to trust.
+Most agent web tooling turns search, fetch, browser rendering, and synthesis into one blurry thing. This package keeps the model-facing surface simple instead: use `web_explore` for web research, and let it handle the lower-level work internally.
 
-The whole project is built around a simple rule: searching for a page is not the same thing as reading it, and reading it over plain HTTP is not the same thing as rendering it in a browser.
-
-That sounds obvious, but agent web tooling gets fuzzy right there all the time. Search snippets get treated like page reads. Browser fallback happens quietly. Thin or blocked reads get softened into fake confidence.
-
-This package is trying to do the opposite.
+That lower-level work still matters. A search result is not the same as a page read. A plain HTTP read is not the same as rendering a page in a browser. But those are implementation details now, not separate tools the model has to juggle in normal use.
 
 ## The contract
 
-- `web_search` is for discovery
-- `web_fetch` is for plain HTTP reads
-- `web_fetch_headless` is the explicit browser path
-- `web_explore` is the bounded research path
+`web_explore` is the public research entrypoint.
 
-Those boundaries are the point.
+Internally it can:
 
-They make failures easier to reason about, and they make it harder for the tooling to quietly do something different from what you asked for.
+- search for candidate sources
+- fetch pages over HTTP
+- escalate selected pages to headless rendering
+- rank official sources above weaker sources
+- include community sources as practical context
+- stop with a caveat when the evidence is thin
+
+In `preview` or `verbose` mode, you can still see which internal reader produced each finding, for example `[web_fetch]` or `[web_fetch_headless]`. That gives you transparency without exposing a bunch of low-level public tools.
 
 ## What you get right now
 
@@ -27,11 +27,11 @@ This project is still early, but it is usable.
 
 Right now it gives you:
 
-- search results that stay search results
-- plain HTTP fetch that can say "this isn't reliable enough"
-- explicit headless fetch when a browser is actually needed
-- a higher-level research tool that is meant to stop after a bounded pass instead of wandering forever
-- compact-by-default transcript output with user-facing presentation settings
+- one public web research tool: `web_explore`
+- compact-by-default transcript output
+- preview/verbose modes that show internal research provenance
+- a `/web-agent` settings UI for presentation config
+- bounded research behavior that is willing to say when evidence was weak
 
 ## Start here
 

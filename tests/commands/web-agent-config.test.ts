@@ -23,7 +23,7 @@ describe('web-agent config draft helpers', () => {
         path: '/project/config.json',
         exists: true,
         rawConfig: {
-          tools: { web_search: { mode: 'compact' as const } }
+          tools: { web_explore: { mode: 'compact' as const } }
         }
       },
       effectiveConfig: mergePresentationConfigLayers(
@@ -33,7 +33,7 @@ describe('web-agent config draft helpers', () => {
           tools: { web_explore: { mode: 'verbose' } }
         },
         {
-          tools: { web_search: { mode: 'compact' } }
+          tools: { web_explore: { mode: 'compact' } }
         }
       )
     };
@@ -44,7 +44,7 @@ describe('web-agent config draft helpers', () => {
     expect(initialState.scope).toBe('project');
     expect(initialState.config).toEqual({
       defaultMode: 'preview',
-      tools: { web_explore: { mode: 'verbose' }, web_search: { mode: 'compact' } }
+      tools: { web_explore: { mode: 'compact' } }
     });
     expect(switchedState.scope).toBe('global');
     expect(switchedState.config).toEqual({
@@ -58,7 +58,7 @@ describe('web-agent config draft helpers', () => {
       collapsePresentationConfigToOverride(
         {
           defaultMode: 'preview',
-          tools: { web_search: { mode: 'verbose' } }
+          tools: { web_explore: { mode: 'verbose' } }
         },
         {
           defaultMode: 'preview',
@@ -66,7 +66,7 @@ describe('web-agent config draft helpers', () => {
         }
       )
     ).toEqual({
-      tools: { web_search: { mode: 'verbose' } }
+      tools: { web_explore: { mode: 'verbose' } }
     });
   });
 
@@ -108,11 +108,11 @@ describe('web-agent config commands', () => {
         project: {
           path: '/project/config.json',
           exists: true,
-          rawConfig: { defaultMode: 'preview', tools: { web_search: { mode: 'verbose' } } }
+          rawConfig: { defaultMode: 'preview', tools: { web_explore: { mode: 'verbose' } } }
         },
         effectiveConfig: {
           defaultMode: 'preview',
-          tools: { web_search: { mode: 'verbose' } }
+          tools: { web_explore: { mode: 'verbose' } }
         }
       }),
       reset: vi.fn()
@@ -122,7 +122,9 @@ describe('web-agent config commands', () => {
     await handler('show', { ui: { notify } });
 
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('defaultMode: preview'), 'info');
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining('web_search: verbose'), 'info');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('web_explore: verbose'), 'info');
+    expect(notify.mock.calls[0][0]).not.toContain('web_search:');
+    expect(notify.mock.calls[0][0]).not.toContain('web_fetch:');
   });
 
   it('resets project scope when explicitly requested', async () => {
@@ -168,7 +170,7 @@ describe('web-agent config commands', () => {
       scope: 'project',
       config: {
         defaultMode: 'preview',
-        tools: { web_search: { mode: 'verbose' } }
+        tools: { web_explore: { mode: 'verbose' } }
       },
       action: 'save'
     });
@@ -200,7 +202,7 @@ describe('web-agent config commands', () => {
       scope: 'project',
       config: {
         defaultMode: 'preview',
-        tools: { web_search: { mode: 'verbose' } }
+        tools: { web_explore: { mode: 'verbose' } }
       },
       action: 'save'
     });
@@ -342,11 +344,37 @@ describe('web-agent config commands', () => {
       reset: vi.fn()
     });
 
-    await handler('mode web_search verbose', { ui: { notify: vi.fn() } });
+    await handler('mode web_explore verbose', { ui: { notify: vi.fn() } });
 
     expect(save).toHaveBeenCalledWith('project', {
-      tools: { web_search: { mode: 'verbose' } }
+      tools: { web_explore: { mode: 'verbose' } }
     });
+  });
+
+  it('rejects removed low-level tool names in mode command', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const notify = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: { defaultMode: 'compact', tools: {} }
+      }),
+      save,
+      reset: vi.fn()
+    });
+
+    await handler('mode web_search verbose', { ui: { notify } });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Usage:'), 'info');
   });
 
   it('clears a per-tool override when inherit is requested', async () => {
@@ -364,18 +392,18 @@ describe('web-agent config commands', () => {
         project: {
           path: '/project/config.json',
           exists: true,
-          rawConfig: { defaultMode: 'compact', tools: { web_search: { mode: 'preview' } } }
+          rawConfig: { defaultMode: 'compact', tools: { web_explore: { mode: 'preview' } } }
         },
         effectiveConfig: {
           defaultMode: 'compact',
-          tools: { web_search: { mode: 'preview' } }
+          tools: { web_explore: { mode: 'preview' } }
         }
       }),
       save,
       reset: vi.fn()
     });
 
-    await handler('mode web_search inherit', { ui: { notify: vi.fn() } });
+    await handler('mode web_explore inherit', { ui: { notify: vi.fn() } });
 
     expect(save).toHaveBeenCalledWith('project', {
       tools: {}

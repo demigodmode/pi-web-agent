@@ -1,67 +1,62 @@
 # Tools
 
-The package works because the tools do not all pretend to do the same job.
-
-That might sound small, but it is most of the reason this package exists.
-
-## `web_search`
-
-Use it when you want discovery:
-
-- links
-- titles
-- snippets
-- a first pass at what sources exist
-
-What it should not do is imply that a page was actually read.
-
-If all you have is search output, then all you have is search output.
-
-## `web_fetch`
-
-Use it when you want to read one page over plain HTTP.
-
-This is the direct path for straightforward page reads.
-
-What it should not do is quietly switch into browser mode just because the target page is awkward.
-
-If the page looks too thin, too blocked, or too JS-heavy to trust, it should return `needs_headless` instead of bluffing.
-
-That is a feature, not a failure.
-
-## `web_fetch_headless`
-
-Use it when browser rendering is explicitly needed.
-
-That might be because the page is client-rendered, because the plain HTTP result was too weak, or because you already know the target is browser-first.
-
-What it should not do is act like a hidden fallback behind normal HTTP fetches.
-
-If a browser gets launched, it should be because you asked for the browser path.
+The public tool surface is intentionally small now.
 
 ## `web_explore`
 
-Use it for broader web research where the job is to gather and compare sources with a bounded search and fetch pass.
+Use `web_explore` for web research questions:
 
-This is the higher-level path when you are asking a research question, not just requesting one search or one page read.
+- current docs lookups
+- comparing sources
+- checking discussions or issues
+- getting a recommendation with citations
+- finding practical context around a library or API
 
-What it should not do is turn into endless low-level tool churn after a decent answer already exists.
+It runs a bounded research workflow instead of making the model manually chain separate search/fetch/browser tools.
 
-That tighter behavior is intentional.
+Internally, `web_explore` can do a few things:
 
-## Presentation and transcript output
+- plan search queries
+- run web search
+- pick candidate pages
+- read pages over HTTP
+- escalate selected pages to headless rendering
+- rank evidence
+- synthesize findings and caveats
 
-These tools now render in a compact transcript-friendly form by default.
+The important bit: those internal steps are not separate public tools for normal model use. If more web evidence is needed, the model should call `web_explore` again with a narrower query.
 
-That means using a tool does not automatically dump its fullest possible body inline. If you want richer output, change the package settings instead of expecting the transcript to always show the maximum amount of detail.
+## What preview and verbose show
 
-See [Presentation and settings](/presentation) for the config UI, JSON paths, and mode behavior.
+In compact mode, `web_explore` keeps the transcript short:
 
-## Which one should you reach for?
+```text
+Reviewed 3 sources · synthesized answer with 3 findings
+```
 
-A quick rule of thumb:
+In preview or verbose mode, findings include where the evidence came from internally:
 
-- if you want links and snippets, use `web_search`
-- if you want one page over HTTP, use `web_fetch`
-- if you want a browser-rendered page, use `web_fetch_headless`
-- if you want a bounded research workflow, use `web_explore`
+```text
+- [web_fetch] Official docs say ...
+- [web_fetch_headless] Rendered docs show ...
+
+Internal research: web_search ×2, web_fetch ×5, web_fetch_headless ×1
+```
+
+That is meant to be transparent, not an invitation to call those internal steps directly.
+
+## When evidence is weak
+
+Sometimes a research pass finds nothing useful. In that case the output says:
+
+```text
+No usable evidence found.
+```
+
+That is expected. Web pages can be thin, blocked, duplicated, or irrelevant. A follow-up `web_explore` call with a more specific query is usually the right next move.
+
+## A practical rule
+
+If the task is web research, use `web_explore`.
+
+If you need another angle, call `web_explore` again with a better query. Do not switch to shell network commands like `curl`, `Invoke-WebRequest`, or `npm view` just to continue web research.

@@ -62,26 +62,26 @@ describe('web_explore tool', () => {
 
     expect(result.status).toBe('ok');
     expect(result.findings).toEqual([
-      'Use channel for branded Chrome or Edge when possible.',
-      'Treat executablePath as a fallback because Playwright documents it as use-at-your-own-risk.'
+      'Use channel for branded browsers.',
+      'executablePath is supported but use at your own risk.'
     ]);
     expect(result.sources).toEqual([
       {
         title: 'Browsers | Playwright',
-        url: 'https://playwright.dev/docs/browsers'
+        url: 'https://playwright.dev/docs/browsers',
+        method: 'http'
       },
       {
         title: 'BrowserType | Playwright',
-        url: 'https://playwright.dev/docs/api/class-browsertype'
+        url: 'https://playwright.dev/docs/api/class-browsertype',
+        method: 'http'
       }
     ]);
     expect(result.caveat).toBeUndefined();
     expect(result.presentation?.views.compact).toBe(
       'Reviewed 2 sources · synthesized answer with 2 findings'
     );
-    expect(result.presentation?.views.preview).toContain(
-      'Use channel for branded Chrome or Edge when possible.'
-    );
+    expect(result.presentation?.views.preview).toContain('Use channel for branded browsers.');
     expect(result).not.toHaveProperty('text');
   });
 
@@ -120,15 +120,16 @@ describe('web_explore tool', () => {
 
     expect(result.status).toBe('ok');
     expect(result.findings).toEqual([
-      'Vitest coverage docs say to set coverage.provider to v8 and install @vitest/coverage-v8.'
+      'Set coverage.provider to v8 and install @vitest/coverage-v8.'
     ]);
     expect(result.sources).toEqual([
       {
         title: 'Coverage | Guide | Vitest',
-        url: 'https://vitest.dev/guide/coverage.html'
+        url: 'https://vitest.dev/guide/coverage.html',
+        method: 'headless'
       }
     ]);
-    expect(result.caveat).toBe('Evidence is partial, so this answer is based on the strongest source found so far.');
+    expect(result.caveat).toBe('Evidence is partial, so this answer is based on the strongest source found within the bounded research budget.');
     expect(result.presentation?.views.compact).toBe(
       'Reviewed 1 sources · synthesized answer with 1 findings'
     );
@@ -179,7 +180,7 @@ describe('web_explore tool', () => {
     expect(JSON.stringify(result)).not.toContain('searchQueries');
     expect(JSON.stringify(result)).not.toContain('lowValueOutcomes');
     expect(JSON.stringify(result)).not.toContain('suggestedHeadlessUrl');
-    expect(result.findings).toEqual(['A concise summary.']);
-    expect(result.presentation?.views.preview).toContain('- A concise summary.');
+    expect(result.findings).toEqual(['Community/practical context: A concise summary.']);
+    expect(result.presentation?.views.preview).toContain('- [web_fetch] Community/practical context: A concise summary.');
   });
 });

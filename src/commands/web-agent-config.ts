@@ -38,12 +38,7 @@ export type SettingsDraftState = {
   config: PresentationConfig;
 };
 
-const PRESENTATION_TOOL_NAMES: PresentationToolName[] = [
-  'web_search',
-  'web_fetch',
-  'web_fetch_headless',
-  'web_explore'
-];
+const PRESENTATION_TOOL_NAMES: PresentationToolName[] = ['web_explore'];
 
 function parseScopeToken(token: string | undefined): PresentationScope | undefined {
   return token === 'global' || token === 'project' ? token : undefined;

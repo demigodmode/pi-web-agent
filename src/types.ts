@@ -70,8 +70,14 @@ export type WebFetchHeadlessResponse = {
 export type WebExploreResponse = {
   status: 'ok' | 'error';
   findings: string[];
-  sources: Array<{ title: string; url: string }>;
+  sources: Array<{ title: string; url: string; method?: 'http' | 'headless' }>;
   caveat?: string;
+  metadata?: {
+    searchPasses: number;
+    fetchedPages: number;
+    headlessAttempts: number;
+    exhaustedBudget: boolean;
+  };
   presentation?: PresentationEnvelope;
   error?: ToolError;
 };

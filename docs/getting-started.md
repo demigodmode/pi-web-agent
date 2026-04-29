@@ -12,52 +12,29 @@ If Pi is already running, reload or restart it so the package gets picked up.
 
 ## What you get
 
-The package exposes four tools:
+The package exposes one public web research tool:
 
-- `web_search`
-- `web_fetch`
-- `web_fetch_headless`
 - `web_explore`
 
-The important part is that they do different jobs on purpose.
+Use it when you want Pi to find and compare current web sources.
 
-`web_search` finds sources.
+`web_explore` handles the annoying parts internally: search, HTTP reads, targeted headless rendering, source ranking, and caveats when the evidence is not strong enough.
 
-`web_fetch` tries to read one page over plain HTTP.
-
-`web_fetch_headless` is there for pages that really do need a browser.
-
-`web_explore` is the higher-level research path when the job is bigger than one search or one page read.
-
-## Try a few prompts
-
-### Search for sources
-
-> Search for recent docs about Playwright browser installation.
-
-That should push Pi toward `web_search` when the job is discovery.
-
-### Read one page directly
-
-> Fetch and summarize https://example.com/article
-
-That should favor `web_fetch` when the job is reading a specific page over HTTP.
-
-### Use the browser path explicitly
-
-> Use headless fetch to read https://example.com/app
-
-That should favor `web_fetch_headless` when browser rendering is actually the point.
-
-### Let the package do bounded research
+## Try a prompt
 
 > Find current docs and discussions about configuring Vitest coverage in TypeScript projects.
 
-That should favor `web_explore` for the broader research workflow.
+Pi should call `web_explore` and return a compact research result. If you need more detail inline, switch presentation mode to `preview` or `verbose`.
+
+Another example:
+
+> Find two or three current sources on DuckDuckGo HTML scraping in Node.js and tell me what the common parsing pitfalls are.
+
+That should still go through `web_explore`. If the first pass is thin, Pi can call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
 
 ## Presentation defaults
 
-The package renders web tool output in `compact` mode by default.
+The package renders web research output in `compact` mode by default.
 
 If you want to change that, open the settings UI with:
 
@@ -65,10 +42,10 @@ If you want to change that, open the settings UI with:
 /web-agent
 ```
 
-That lets you change the default mode and per-tool overrides without editing code.
+That lets you change the default presentation mode and the `web_explore` override without editing JSON by hand.
 
 If you want the full details, see [Presentation and settings](/presentation).
 
 ## One thing to keep in mind
 
-If the package says a page was too weak to trust over HTTP, that is not it being stubborn. That is the whole point of the contract.
+If the package says no usable evidence was found, or adds a caveat, that is intentional. It is better to admit the research pass was thin than to turn weak pages or bot-check screens into fake confidence.

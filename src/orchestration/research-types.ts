@@ -38,6 +38,13 @@ export type ResearchWorkerResult = {
   exhaustedBudget: boolean;
 };
 
+export type ResearchRunMetadata = {
+  searchPasses: number;
+  fetchedPages: number;
+  headlessAttempts: number;
+  exhaustedBudget: boolean;
+};
+
 export type ResearchOrchestratorDecision =
   | {
       action: 'answer';

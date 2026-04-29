@@ -134,7 +134,101 @@ describe('research orchestrator types', () => {
     expect(result.decision.action).toBe('research-again');
   });
 
-  it('escalates one specific page to headless only when approved by the orchestrator', async () => {
+  it('answers when successful headless content completes the evidence set', async () => {
+    const headlessFetch = vi.fn().mockResolvedValue({
+      status: 'ok',
+      url: 'https://vitest.dev/guide/coverage.html',
+      content: {
+        title: 'Coverage | Guide | Vitest',
+        text: 'Set coverage.provider to v8. Install @vitest/coverage-v8. Run vitest with --coverage.'
+      },
+      metadata: {
+        method: 'headless',
+        cacheHit: false,
+        browser: 'edge',
+        navigationMs: 900,
+        truncated: false
+      }
+    });
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['vitest coverage'],
+          evidence: [
+            {
+              title: 'vitest/docs/guide/coverage.md',
+              url: 'https://github.com/vitest-dev/vitest/blob/main/docs/guide/coverage.md',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Vitest supports native V8 coverage.',
+              supports: ['V8 coverage']
+            }
+          ],
+          gaps: [{ kind: 'fetch-failed', message: 'HTTP fetch was weak for https://vitest.dev/guide/coverage.html' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://vitest.dev/guide/coverage.html',
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'vitest coverage v8 provider' });
+
+    expect(result.evidence).toEqual([
+      expect.objectContaining({
+        title: 'vitest/docs/guide/coverage.md',
+        method: 'http'
+      }),
+      expect.objectContaining({
+        title: 'Coverage | Guide | Vitest',
+        url: 'https://vitest.dev/guide/coverage.html',
+        sourceKind: 'official-docs',
+        method: 'headless'
+      })
+    ]);
+    expect(result.decision.action).toBe('answer');
+  });
+
+  it('does not turn headless bot-check pages into evidence', async () => {
+    const headlessFetch = vi.fn().mockResolvedValue({
+      status: 'ok',
+      url: 'https://medium.com/example',
+      content: {
+        title: 'Performing security verification',
+        text: 'This website uses a security service to protect itself from online attacks. Please verify you are not a bot.'
+      },
+      metadata: {
+        method: 'headless',
+        cacheHit: false,
+        browser: 'edge',
+        navigationMs: 900,
+        truncated: false
+      }
+    });
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['medium ddg scraping'],
+          evidence: [],
+          gaps: [{ kind: 'fetch-failed', message: 'HTTP fetch was weak for https://medium.com/example' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://medium.com/example',
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'duckduckgo scraping medium source' });
+
+    expect(result.evidence).toEqual([]);
+    expect(result.decision.action).toBe('escalate-headless');
+  });
+
+  it('fetches one specific page with headless only when approved by the orchestrator', async () => {
     const headlessFetch = vi.fn().mockResolvedValue({
       status: 'ok',
       url: 'https://example.com/app',
@@ -164,7 +258,8 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'dynamic app' });
 
-    expect(result.decision.action).toBe('escalate-headless');
+    expect(result.decision.action).toBe('research-again');
+    expect(result.evidence).toHaveLength(1);
     expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app' });
   });
 
@@ -286,6 +381,62 @@ describe('research orchestrator types', () => {
 
     expect(result.decision.action).toBe('research-again');
     expect(result.evidence[0]?.sourceKind).not.toBe('package-page');
+  });
+
+  it('runs another search pass when first pass evidence is too thin', async () => {
+    const worker = {
+      run: vi
+        .fn()
+        .mockResolvedValueOnce({
+          searchQueries: ['vitest coverage'],
+          evidence: [
+            {
+              title: 'Blog',
+              url: 'https://example.com/blog',
+              sourceKind: 'community',
+              method: 'http',
+              summary: 'community summary',
+              supports: ['community support']
+            }
+          ],
+          gaps: [{ kind: 'needs-more-evidence', message: 'Need official docs.' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        })
+        .mockResolvedValueOnce({
+          searchQueries: ['site:vitest.dev Vitest coverage docs V8 provider'],
+          evidence: [
+            {
+              title: 'Coverage | Guide | Vitest',
+              url: 'https://vitest.dev/guide/coverage.html',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Official coverage docs',
+              supports: ['provider v8']
+            },
+            {
+              title: 'Config | Vitest',
+              url: 'https://vitest.dev/config/',
+              sourceKind: 'official-api',
+              method: 'http',
+              summary: 'Official config docs',
+              supports: ['coverage config']
+            }
+          ],
+          gaps: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        })
+    };
+
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch: vi.fn() });
+    const result = await orchestrator.run({ query: 'Find Vitest coverage V8 docs' });
+
+    expect(worker.run).toHaveBeenCalledTimes(2);
+    expect(result.decision.action).toBe('answer');
+    expect(result.evidence.map((item) => item.sourceKind)).toEqual(['official-docs', 'official-api', 'community']);
   });
 
   it('records low-value bot-check outcomes as a reason not to escalate again', async () => {

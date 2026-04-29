@@ -26,7 +26,6 @@ jobs:
           cache: npm
       - uses: actions/configure-pages@v5
       - run: npm ci
-      - run: npm install --no-save @rollup/rollup-linux-x64-gnu
       - run: npm run docs:build
       - uses: actions/upload-pages-artifact@v3
         with:
