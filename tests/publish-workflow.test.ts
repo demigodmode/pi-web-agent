@@ -25,9 +25,11 @@ describe('publish workflow', () => {
     expect(workflow).toContain('npm publish --access public --provenance');
   });
 
-  it('creates the GitHub release independently from npm publish', () => {
+  it('creates the GitHub release independently from npm publish with scoped release notes', () => {
     expect(workflow).toContain('release:');
     expect(workflow).toContain('needs: release');
-    expect(workflow).toContain('gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME"');
+    expect(workflow).toContain('node scripts/release-notes.mjs "$GITHUB_REF_NAME" release-notes.md');
+    expect(workflow).toContain('gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md');
+    expect(workflow).not.toContain('--notes-file CHANGELOG.md');
   });
 });
