@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.4.0] - 2026-04-29
+### Added
 - Made `web_explore` the single public web research tool, with search, fetch, source ranking, and headless escalation handled internally.
 - Added adaptive research helpers for query planning, candidate selection, evidence ranking, stop decisions, and answer synthesis.
 - Added preview/verbose provenance for `web_explore` showing which internal reader produced each finding.

@@ -1,6 +1,6 @@
 {
   "name": "@demigodmode/pi-web-agent",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Pi package for reliable web access with explicit search, fetch, and headless boundaries.",
   "type": "module",
   "main": "./dist/extension.js",
