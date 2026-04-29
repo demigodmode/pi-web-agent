@@ -4,16 +4,24 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.4.0
+        required: true
+        type: string
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-      - run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" release-notes.md
-      - run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+      - run: node scripts/release-notes.mjs "$TAG_NAME" release-notes.md
+      - run: gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --title "$TAG_NAME" --notes-file release-notes.md
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
@@ -30,26 +38,13 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
           token: ''
-      - run: npm config delete //registry.npmjs.org/:_authToken
-      - run: |
-          OIDC=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://registry.npmjs.org" \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" | jq -r '.value')
-          echo "JWT payload claims:"
-          echo "$OIDC" | cut -d'.' -f2 | base64 -d 2>/dev/null | jq '.' || true
-          npm config set "//registry.npmjs.org/:_authToken" "$OIDC"
+      - run: npm install -g npm@latest
       - run: node -v
       - run: npm -v
       - run: npm ci
       - run: npm run lint
       - run: npm test
       - run: npm run build
-      - run: |
-          echo "=== .npmrc contents ==="
-          cat "$NPM_CONFIG_USERCONFIG"
-          echo "=== npm config get authToken ==="
-          npm config get "//registry.npmjs.org/:_authToken" | cut -c1-50
-          echo "=== npm whoami ==="
-          npm whoami --registry https://registry.npmjs.org 2>&1 || true
       - run: npm publish --access public --provenance
       - if: failure()
         run: cat ~/.npm/_logs/*.log 2>/dev/null | tail -80 || echo "no debug log found"
