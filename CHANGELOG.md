@@ -7,13 +7,18 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Made `web_explore` the single public web research tool, with search, fetch, source ranking, and headless escalation handled internally.
+- Added adaptive research helpers for query planning, candidate selection, evidence ranking, stop decisions, and answer synthesis.
+- Added preview/verbose provenance for `web_explore` showing which internal reader produced each finding.
 
 ### Changed
-- Nothing yet.
+- Simplified `/web-agent` presentation settings to `defaultMode` and `web_explore` only.
+- Updated live web evals to treat shell/network fallbacks after `web_explore` as a quality issue.
 
 ### Fixed
-- Nothing yet.
+- Turned successful headless reads into usable `web_explore` evidence instead of returning empty results for dynamic docs pages.
+- Filtered headless bot-check/security-verification pages out of research evidence.
+- Made empty research results display as “No usable evidence found” instead of looking like a successful synthesis.
 
 ### Breaking
 - None.
