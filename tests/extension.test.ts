@@ -95,7 +95,19 @@ describe('Pi extension entrypoint', () => {
       on: vi.fn(),
       __presentationConfigStore: {
         load: vi.fn().mockResolvedValue({ effectiveConfig: { defaultMode: 'compact', tools: {} } })
-      }
+      },
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: ['A concise finding.'],
+        sources: [{ title: 'Source', url: 'https://example.com', method: 'http' }],
+        presentation: {
+          mode: 'compact',
+          views: {
+            compact: 'Reviewed 1 sources · synthesized answer with 1 findings',
+            verbose: 'Findings\n- A concise finding.'
+          }
+        }
+      })
     };
 
     extension(pi as never);
@@ -118,7 +130,18 @@ describe('Pi extension entrypoint', () => {
       on: vi.fn(),
       __presentationConfigStore: {
         load: vi.fn().mockRejectedValue(new Error('boom'))
-      }
+      },
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: ['A concise finding.'],
+        sources: [{ title: 'Source', url: 'https://example.com', method: 'http' }],
+        presentation: {
+          mode: 'compact',
+          views: {
+            compact: 'Reviewed 1 sources · synthesized answer with 1 findings'
+          }
+        }
+      })
     };
 
     extension(pi as never);

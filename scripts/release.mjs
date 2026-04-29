@@ -69,13 +69,6 @@ function rewriteChangelog(changelog, nextVersion) {
   );
 }
 
-function rewritePackageVersion(packageJsonText, nextVersion) {
-  return packageJsonText.replace(
-    /"version":\s*"[^"]+"/,
-    `"version": "${nextVersion}"`
-  );
-}
-
 export function rewritePackageLockVersion(packageLockText, nextVersion) {
   const packageLock = JSON.parse(packageLockText);
   packageLock.version = nextVersion;
@@ -95,7 +88,6 @@ function main() {
 
   const changelog = readFileSync(changelogPath, 'utf8');
   const packageJsonText = readFileSync(packageJsonPath, 'utf8');
-  const packageLockText = readFileSync(packageLockPath, 'utf8');
   const packageJson = JSON.parse(packageJsonText);
 
   const unreleased = parseUnreleasedSections(changelog);
@@ -121,8 +113,8 @@ function main() {
 
   ensureCleanWorkingTree();
 
-  writeFileSync(packageJsonPath, rewritePackageVersion(packageJsonText, nextVersion));
-  writeFileSync(packageLockPath, rewritePackageLockVersion(packageLockText, nextVersion));
+  execSync(`npm version ${nextVersion} --no-git-tag-version`, { stdio: 'inherit' });
+  execSync('npm install --package-lock-only --include=optional', { stdio: 'inherit' });
   writeFileSync(changelogPath, rewriteChangelog(changelog, nextVersion));
 
   execSync(`git add ${packageJsonPath} ${packageLockPath} ${changelogPath}`, { stdio: 'inherit' });

@@ -46,7 +46,9 @@ async function renderToolText(
 export default function extension(pi: ExtensionAPI) {
   registerWebAgentConfigCommands(pi);
 
-  const webExplore = createWebExploreTool();
+  const webExplore =
+    (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool ??
+    createWebExploreTool();
 
   pi.on('before_agent_start', async (event) => ({
     systemPrompt:

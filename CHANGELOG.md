@@ -14,11 +14,13 @@ The format is intentionally simple and release-oriented.
 ### Changed
 - Simplified `/web-agent` presentation settings to `defaultMode` and `web_explore` only.
 - Updated live web evals to treat shell/network fallbacks after `web_explore` as a quality issue.
+- Updated the release script to use `npm version --no-git-tag-version` before tagging so package metadata is changed through npm instead of regex replacement.
 
 ### Fixed
 - Turned successful headless reads into usable `web_explore` evidence instead of returning empty results for dynamic docs pages.
 - Filtered headless bot-check/security-verification pages out of research evidence.
 - Made empty research results display as “No usable evidence found” instead of looking like a successful synthesis.
+- Added the Linux Rollup optional package to the lockfile so GitHub Actions can build from `npm ci` without patch-installing Rollup.
 
 ### Breaking
 - None.
