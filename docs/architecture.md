@@ -2,29 +2,40 @@
 
 The code is split into small modules on purpose.
 
-That is partly for code health, but mostly because this package gets worse fast if search, fetch, browser rendering, and research orchestration all blur together.
+That is partly for code health, but mostly because this package gets worse fast if search, fetch, browser rendering, and research synthesis all blur together.
 
 ## Main boundaries
 
-- `src/extension.ts` wires the package into Pi
-- `src/tools/` contains thin Pi-facing tool adapters
+- `src/extension.ts` wires the package into Pi and registers the public `web_explore` tool
+- `src/tools/` contains tool adapters and internal tool-shaped helpers
 - `src/search/` holds search backend logic
 - `src/fetch/` handles HTTP and headless fetch logic
 - `src/extract/` handles readable-content extraction
-- `src/orchestration/` handles bounded research flow
+- `src/orchestration/` handles the bounded research flow
 - `src/cache/` holds small cache helpers
 - `src/types.ts` defines shared contracts
 
+## Public surface vs internals
+
+The public model-facing web research surface is `web_explore`.
+
+The lower-level capabilities still exist in code, but they are internal steps now:
+
+- search is for discovery
+- HTTP fetch is for plain page reads
+- headless fetch is for selected browser-rendered reads
+- orchestration decides when enough evidence exists
+
+Keeping those responsibilities separate still matters. It lets the package show provenance like `[web_fetch]` or `[web_fetch_headless]` in preview/verbose output without forcing the outer model to manually chain those steps.
+
 ## Why the split exists
 
-`web_search` should stay about discovery.
+A search result should not be treated as a page read.
 
-`web_fetch` should stay about plain HTTP reads.
+A weak HTTP extraction should not be treated as reliable evidence.
 
-`web_fetch_headless` should stay explicit.
+A bot-check page should not become a source.
 
-`web_explore` should stay the higher-level research path.
+And if more evidence is needed, the model should call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
 
-Once those responsibilities start leaking into each other, the package becomes harder to reason about and easier to lie with by accident.
-
-Keeping the boundaries explicit makes failures easier to understand and makes it easier to change one part without quietly changing the meaning of another.
+Those boundaries make failures easier to understand and make it harder for the package to lie by accident.
