@@ -6,14 +6,9 @@
 
 `@demigodmode/pi-web-agent` is a Pi package for web access.
 
-Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` keeps them separate, so transcripts stay cleaner and failures are easier to trust.
+Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` exposes one public research tool, `web_explore`, and keeps search/fetch/headless work inside that bounded workflow.
 
-The whole point is keeping the boundaries straight:
-
-- `web_search` is for discovery
-- `web_fetch` is for plain HTTP reads
-- `web_fetch_headless` is the explicit browser path
-- `web_explore` is the bounded research path
+The point is keeping the model-facing boundary simple: ask `web_explore` to research a question, and it handles discovery, HTTP reads, targeted browser rendering, source ranking, and caveats internally.
 
 That sounds obvious, but a lot of agent tooling gets fuzzy right there. This package is meant to be stricter about what it actually did and more willing to say when a read was not good enough to trust.
 
@@ -74,8 +69,8 @@ Helper commands:
 /web-agent reset project
 /web-agent reset global
 /web-agent mode preview
-/web-agent mode web_search verbose
-/web-agent mode web_search inherit
+/web-agent mode web_explore verbose
+/web-agent mode web_explore inherit
 ```
 
 Config files:
@@ -100,7 +95,6 @@ Example:
   "presentation": {
     "defaultMode": "compact",
     "tools": {
-      "web_search": { "mode": "preview" },
       "web_explore": { "mode": "verbose" }
     }
   }

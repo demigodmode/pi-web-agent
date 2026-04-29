@@ -1,4 +1,5 @@
 import type { WebFetchResponse, WebSearchResponse } from '../types.js';
+import { selectCandidates } from './candidate-selector.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -10,6 +11,7 @@ import type {
 function classifySource(url: string): ResearchSourceKind {
   if (url.includes('/docs/api/') || url.includes('/config/')) return 'official-api';
   if (url.includes('playwright.dev/docs') || url.includes('vitest.dev/guide/')) return 'official-docs';
+  if (url.includes('github.com/vitest-dev/vitest') && url.includes('/docs/')) return 'official-docs';
   if (url.includes('learn.microsoft.com')) return 'official-docs';
   if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
   if (url.includes('npmjs.com/package/')) return 'package-page';
@@ -117,7 +119,11 @@ export function createResearchWorker({
         };
       }
 
-      const candidates = searchResult.results.slice(0, maxFetches);
+      const candidates = selectCandidates({
+        results: searchResult.results,
+        seenUrls: new Set(evidence.map((item) => item.url)),
+        maxCandidates: maxFetches
+      });
 
       for (const candidate of candidates) {
         const fetched = await fetchPage({ url: candidate.url });

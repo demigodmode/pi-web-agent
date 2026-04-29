@@ -288,6 +288,62 @@ describe('research orchestrator types', () => {
     expect(result.evidence[0]?.sourceKind).not.toBe('package-page');
   });
 
+  it('runs another search pass when first pass evidence is too thin', async () => {
+    const worker = {
+      run: vi
+        .fn()
+        .mockResolvedValueOnce({
+          searchQueries: ['vitest coverage'],
+          evidence: [
+            {
+              title: 'Blog',
+              url: 'https://example.com/blog',
+              sourceKind: 'community',
+              method: 'http',
+              summary: 'community summary',
+              supports: ['community support']
+            }
+          ],
+          gaps: [{ kind: 'needs-more-evidence', message: 'Need official docs.' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        })
+        .mockResolvedValueOnce({
+          searchQueries: ['site:vitest.dev Vitest coverage docs V8 provider'],
+          evidence: [
+            {
+              title: 'Coverage | Guide | Vitest',
+              url: 'https://vitest.dev/guide/coverage.html',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Official coverage docs',
+              supports: ['provider v8']
+            },
+            {
+              title: 'Config | Vitest',
+              url: 'https://vitest.dev/config/',
+              sourceKind: 'official-api',
+              method: 'http',
+              summary: 'Official config docs',
+              supports: ['coverage config']
+            }
+          ],
+          gaps: [],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: undefined,
+          exhaustedBudget: false
+        })
+    };
+
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch: vi.fn() });
+    const result = await orchestrator.run({ query: 'Find Vitest coverage V8 docs' });
+
+    expect(worker.run).toHaveBeenCalledTimes(2);
+    expect(result.decision.action).toBe('answer');
+    expect(result.evidence.map((item) => item.sourceKind)).toEqual(['official-docs', 'official-api', 'community']);
+  });
+
   it('records low-value bot-check outcomes as a reason not to escalate again', async () => {
     const headlessFetch = vi.fn().mockResolvedValue({
       status: 'ok',

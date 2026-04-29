@@ -51,14 +51,6 @@ type PromptMetrics = {
   webExploreFirstWebTool: boolean;
   totalToolCalls: number;
   totalWebToolCalls: number;
-  searchCalls: number;
-  fetchCalls: number;
-  headlessCalls: number;
-  lowLevelCallsAfterExplore: number;
-  guardedLowLevelCallsAfterExplore: number;
-  emptySearches: number;
-  unsupportedFetches: number;
-  botCheckHeadlesses: number;
 };
 
 type PromptEvaluation = {
@@ -206,50 +198,8 @@ function extractText(value: unknown): string {
   return '';
 }
 
-function toolDetails(result: unknown): unknown {
-  if (!result || typeof result !== 'object') return result;
-  const record = result as Record<string, unknown>;
-  return record.details ?? result;
-}
-
-function isEmptySearchResult(result: unknown): boolean {
-  const details = toolDetails(result);
-  if (!details || typeof details !== 'object') return false;
-  const record = details as Record<string, unknown>;
-  return record.status === 'ok' && Array.isArray(record.results) && record.results.length === 0;
-}
-
-function isUnsupportedFetchResult(result: unknown): boolean {
-  const details = toolDetails(result);
-  return !!details && typeof details === 'object' && (details as Record<string, unknown>).status === 'unsupported';
-}
-
-function isBotCheckHeadlessResult(result: unknown): boolean {
-  const details = toolDetails(result);
-  if (!details || typeof details !== 'object') return false;
-  const record = details as Record<string, unknown>;
-  const content = record.content;
-  const text = extractText(content);
-  const title =
-    content && typeof content === 'object' && !Array.isArray(content)
-      ? String((content as Record<string, unknown>).title ?? '')
-      : '';
-
-  return /just a moment|security verification|verify you are not a bot/i.test(`${title}\n${text}`);
-}
-
-function isPostWebExploreGuardResult(result: unknown): boolean {
-  const details = toolDetails(result);
-  if (!details || typeof details !== 'object') return false;
-  const record = details as Record<string, unknown>;
-  const error = record.error;
-  if (!error || typeof error !== 'object') return false;
-  return (error as Record<string, unknown>).code === 'POST_WEB_EXPLORE_GUARD';
-}
-
 function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
   const webToolNames = new Set(['web_explore', 'web_search', 'web_fetch', 'web_fetch_headless']);
-  const lowLevelWebToolNames = new Set(['web_search', 'web_fetch', 'web_fetch_headless']);
   const webToolCalls = toolCalls.filter((call) => webToolNames.has(call.toolName));
   const firstWebTool = webToolCalls[0];
   const firstWebExploreIndex = toolCalls.findIndex((call) => call.toolName === 'web_explore');
@@ -258,39 +208,7 @@ function buildMetrics(toolCalls: ToolCallRecord[]): PromptMetrics {
     webExploreUsed: firstWebExploreIndex !== -1,
     webExploreFirstWebTool: firstWebTool?.toolName === 'web_explore',
     totalToolCalls: toolCalls.length,
-    totalWebToolCalls: webToolCalls.length,
-    searchCalls: toolCalls.filter((call) => call.toolName === 'web_search').length,
-    fetchCalls: toolCalls.filter((call) => call.toolName === 'web_fetch').length,
-    headlessCalls: toolCalls.filter((call) => call.toolName === 'web_fetch_headless').length,
-    lowLevelCallsAfterExplore:
-      firstWebExploreIndex === -1
-        ? toolCalls.filter(
-            (call) => lowLevelWebToolNames.has(call.toolName) && !isPostWebExploreGuardResult(call.result)
-          ).length
-        : toolCalls
-            .slice(firstWebExploreIndex + 1)
-            .filter(
-              (call) => lowLevelWebToolNames.has(call.toolName) && !isPostWebExploreGuardResult(call.result)
-            ).length,
-    guardedLowLevelCallsAfterExplore:
-      firstWebExploreIndex === -1
-        ? toolCalls.filter(
-            (call) => lowLevelWebToolNames.has(call.toolName) && isPostWebExploreGuardResult(call.result)
-          ).length
-        : toolCalls
-            .slice(firstWebExploreIndex + 1)
-            .filter(
-              (call) => lowLevelWebToolNames.has(call.toolName) && isPostWebExploreGuardResult(call.result)
-            ).length,
-    emptySearches: toolCalls.filter((call) => call.toolName === 'web_search' && isEmptySearchResult(call.result)).length,
-    unsupportedFetches: toolCalls.filter(
-      (call) =>
-        (call.toolName === 'web_fetch' || call.toolName === 'web_fetch_headless') &&
-        isUnsupportedFetchResult(call.result)
-    ).length,
-    botCheckHeadlesses: toolCalls.filter(
-      (call) => call.toolName === 'web_fetch_headless' && isBotCheckHeadlessResult(call.result)
-    ).length
+    totalWebToolCalls: webToolCalls.length
   };
 }
 
@@ -309,30 +227,12 @@ function evaluateVerdict(metrics: PromptMetrics, finalAnswer: string): {
     notes.push('web_explore was not the first web research tool');
   }
 
-  if (metrics.lowLevelCallsAfterExplore > 2) {
-    notes.push(`too many low-level calls after web_explore (${metrics.lowLevelCallsAfterExplore})`);
-  }
-
-  if (metrics.emptySearches > 0) {
-    notes.push(`empty web_search calls observed (${metrics.emptySearches})`);
-  }
-
-  if (metrics.botCheckHeadlesses > 0) {
-    notes.push(`headless bot-check pages observed (${metrics.botCheckHeadlesses})`);
-  }
-
   if (!finalAnswer.trim()) {
     notes.push('final answer text was empty');
     return { verdict: 'fail', notes };
   }
 
-  const looksClean =
-    metrics.webExploreFirstWebTool &&
-    metrics.lowLevelCallsAfterExplore <= 1 &&
-    metrics.emptySearches === 0 &&
-    metrics.botCheckHeadlesses === 0;
-
-  if (looksClean) {
+  if (metrics.webExploreFirstWebTool) {
     return { verdict: 'pass', notes };
   }
 
@@ -378,14 +278,7 @@ function formatMarkdown(run: EvaluationRun): string {
         `- web_explore first web tool: ${prompt.metrics.webExploreFirstWebTool}\n` +
         `- total tool calls: ${prompt.metrics.totalToolCalls}\n` +
         `- total web tool calls: ${prompt.metrics.totalWebToolCalls}\n` +
-        `- web_search calls: ${prompt.metrics.searchCalls}\n` +
-        `- web_fetch calls: ${prompt.metrics.fetchCalls}\n` +
-        `- web_fetch_headless calls: ${prompt.metrics.headlessCalls}\n` +
-        `- low-level calls after web_explore: ${prompt.metrics.lowLevelCallsAfterExplore}\n` +
-        `- guarded low-level calls after web_explore: ${prompt.metrics.guardedLowLevelCallsAfterExplore}\n` +
-        `- empty searches: ${prompt.metrics.emptySearches}\n` +
-        `- unsupported fetches: ${prompt.metrics.unsupportedFetches}\n` +
-        `- bot-check headlesses: ${prompt.metrics.botCheckHeadlesses}\n\n` +
+
         `Tool order:\n${tools || '  none'}\n\n` +
         `Notes:\n${notes}\n\n` +
         `Final answer:\n\n${prompt.finalAnswer.trim() || '(empty)'}\n`;
@@ -559,11 +452,9 @@ async function main() {
 
   for (const prompt of run.prompts) {
     console.log(`\n${prompt.id} -> ${prompt.verdict}`);
+    console.log(`  web_explore used: ${prompt.metrics.webExploreUsed}`);
     console.log(`  web_explore first web tool: ${prompt.metrics.webExploreFirstWebTool}`);
-    console.log(`  low-level calls after web_explore: ${prompt.metrics.lowLevelCallsAfterExplore}`);
-    console.log(`  guarded low-level calls after web_explore: ${prompt.metrics.guardedLowLevelCallsAfterExplore}`);
-    console.log(`  empty searches: ${prompt.metrics.emptySearches}`);
-    console.log(`  bot-check headlesses: ${prompt.metrics.botCheckHeadlesses}`);
+    console.log(`  total web tool calls: ${prompt.metrics.totalWebToolCalls}`);
   }
 
   for (const testCase of run.searchFailureCases) {
