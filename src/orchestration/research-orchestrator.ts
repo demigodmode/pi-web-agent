@@ -14,6 +14,33 @@ const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
 const DEFAULT_MAX_HEADLESS_ATTEMPTS = 2;
 
+function classifyEvidenceUrl(url: string): ResearchEvidence['sourceKind'] {
+  if (url.includes('/docs/api/') || url.includes('/config/')) return 'official-api';
+  if (url.includes('playwright.dev/docs') || url.includes('vitest.dev/guide/')) return 'official-docs';
+  if (url.includes('github.com/vitest-dev/vitest') && url.includes('/docs/')) return 'official-docs';
+  if (url.includes('learn.microsoft.com')) return 'official-docs';
+  if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
+  if (url.includes('npmjs.com/package/')) return 'package-page';
+  return 'community';
+}
+
+function summarizeText(text: string, maxLength = 180): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidence | null {
+  if (result.status !== 'ok' || !result.content?.text.trim()) return null;
+
+  return {
+    title: result.content.title ?? result.url,
+    url: result.url,
+    sourceKind: classifyEvidenceUrl(result.url),
+    method: 'headless',
+    summary: summarizeText(result.content.text),
+    supports: [summarizeText(result.content.text, 120)]
+  };
+}
+
 function fallbackWorkerPass({
   previousQueries,
   allGaps,
@@ -30,6 +57,29 @@ function fallbackWorkerPass({
     evidence: [],
     gaps: allGaps,
     lowValueOutcomes: allLowValueOutcomes,
+    exhaustedBudget
+  };
+}
+
+function buildMetadata({
+  previousQueries,
+  allEvidence,
+  allGaps,
+  allLowValueOutcomes,
+  headlessAttempts,
+  exhaustedBudget
+}: {
+  previousQueries: string[];
+  allEvidence: ResearchEvidence[];
+  allGaps: ResearchGap[];
+  allLowValueOutcomes: ResearchLowValueOutcome[];
+  headlessAttempts: number;
+  exhaustedBudget: boolean;
+}) {
+  return {
+    searchPasses: previousQueries.length,
+    fetchedPages: allEvidence.length + allGaps.length + allLowValueOutcomes.length,
+    headlessAttempts,
     exhaustedBudget
   };
 }
@@ -107,7 +157,39 @@ export function createResearchOrchestrator({
 
           if (decision.action === 'headless') {
             headlessAttempts++;
-            await headlessFetch({ url: decision.url });
+            const headlessResult = await headlessFetch({ url: decision.url });
+            const headlessEvidence = evidenceFromHeadless(headlessResult);
+            if (headlessEvidence) {
+              allEvidence.push(headlessEvidence);
+              const updatedRanked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+              const updatedDecision = decideNextResearchStep({
+                evidence: updatedRanked,
+                suggestedHeadlessUrls: [],
+                passIndex,
+                maxPasses: DEFAULT_MAX_PASSES,
+                headlessAttempts,
+                maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS
+              });
+
+              return {
+                decision: decisionForAnswer(
+                  updatedDecision.action === 'answer' ? 'answer' : 'answer-with-caveat',
+                  query,
+                  updatedRanked
+                ),
+                evidence: updatedRanked,
+                workerPass: lastPass,
+                metadata: buildMetadata({
+                  previousQueries,
+                  allEvidence,
+                  allGaps,
+                  allLowValueOutcomes,
+                  headlessAttempts,
+                  exhaustedBudget: updatedDecision.action !== 'answer'
+                })
+              };
+            }
+
             return {
               decision: {
                 action: 'escalate-headless',
@@ -116,7 +198,15 @@ export function createResearchOrchestrator({
                 approvedEvidence: ranked
               } satisfies ResearchOrchestratorDecision,
               evidence: ranked,
-              workerPass: lastPass
+              workerPass: lastPass,
+              metadata: buildMetadata({
+                previousQueries,
+                allEvidence,
+                allGaps,
+                allLowValueOutcomes,
+                headlessAttempts,
+                exhaustedBudget: false
+              })
             };
           }
 
@@ -124,7 +214,15 @@ export function createResearchOrchestrator({
             return {
               decision: decisionForAnswer(decision.action, query, ranked),
               evidence: ranked,
-              workerPass: lastPass
+              workerPass: lastPass,
+              metadata: buildMetadata({
+                previousQueries,
+                allEvidence,
+                allGaps,
+                allLowValueOutcomes,
+                headlessAttempts,
+                exhaustedBudget: decision.action === 'answer-with-caveat'
+              })
             };
           }
         }
@@ -141,7 +239,15 @@ export function createResearchOrchestrator({
             allGaps,
             allLowValueOutcomes,
             exhaustedBudget: true
-          })
+          }),
+        metadata: buildMetadata({
+          previousQueries,
+          allEvidence,
+          allGaps,
+          allLowValueOutcomes,
+          headlessAttempts,
+          exhaustedBudget: true
+        })
       };
     }
   };

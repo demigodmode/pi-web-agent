@@ -68,11 +68,13 @@ describe('web_explore tool', () => {
     expect(result.sources).toEqual([
       {
         title: 'Browsers | Playwright',
-        url: 'https://playwright.dev/docs/browsers'
+        url: 'https://playwright.dev/docs/browsers',
+        method: 'http'
       },
       {
         title: 'BrowserType | Playwright',
-        url: 'https://playwright.dev/docs/api/class-browsertype'
+        url: 'https://playwright.dev/docs/api/class-browsertype',
+        method: 'http'
       }
     ]);
     expect(result.caveat).toBeUndefined();
@@ -123,7 +125,8 @@ describe('web_explore tool', () => {
     expect(result.sources).toEqual([
       {
         title: 'Coverage | Guide | Vitest',
-        url: 'https://vitest.dev/guide/coverage.html'
+        url: 'https://vitest.dev/guide/coverage.html',
+        method: 'headless'
       }
     ]);
     expect(result.caveat).toBe('Evidence is partial, so this answer is based on the strongest source found within the bounded research budget.');
@@ -178,6 +181,6 @@ describe('web_explore tool', () => {
     expect(JSON.stringify(result)).not.toContain('lowValueOutcomes');
     expect(JSON.stringify(result)).not.toContain('suggestedHeadlessUrl');
     expect(result.findings).toEqual(['Community/practical context: A concise summary.']);
-    expect(result.presentation?.views.preview).toContain('- Community/practical context: A concise summary.');
+    expect(result.presentation?.views.preview).toContain('- [web_fetch] Community/practical context: A concise summary.');
   });
 });

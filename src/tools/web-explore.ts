@@ -13,12 +13,14 @@ export function createWebExploreTool({
           decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
           evidence: ResearchEvidence[];
           workerPass: unknown;
+          metadata?: WebExploreResponse['metadata'];
         }>;
       }
     | ((input: { query: string }) => Promise<{
         decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
         evidence: ResearchEvidence[];
         workerPass: unknown;
+        metadata?: WebExploreResponse['metadata'];
       }>);
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
@@ -43,7 +45,8 @@ export function createWebExploreTool({
     const result = await runExplore({ query: normalizedQuery });
     const sources = result.evidence.slice(0, 4).map((item) => ({
       title: item.title,
-      url: item.url
+      url: item.url,
+      method: item.method
     }));
     const synthesized = synthesizeAnswer({
       evidence: result.evidence,
@@ -54,7 +57,8 @@ export function createWebExploreTool({
       status: 'ok',
       findings: synthesized.findings,
       sources,
-      caveat: synthesized.caveat
+      caveat: synthesized.caveat,
+      metadata: result.metadata
     };
 
     return {

@@ -1,6 +1,12 @@
 import type { WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 
+function internalReaderLabel(method?: 'http' | 'headless') {
+  if (method === 'headless') return 'web_fetch_headless';
+  if (method === 'http') return 'web_fetch';
+  return 'web_explore';
+}
+
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   if (result.status === 'error') {
     return {
@@ -11,13 +17,22 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     };
   }
 
-  const preview = result.findings.map((finding) => `- ${finding}`).join('\n');
+  const internalSummary = result.metadata
+    ? `Internal research: web_search ×${result.metadata.searchPasses}, web_fetch ×${result.metadata.fetchedPages}, web_fetch_headless ×${result.metadata.headlessAttempts}`
+    : undefined;
+  const preview = [
+    ...result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${finding}`),
+    internalSummary ? `\n${internalSummary}` : undefined
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
   const verbose = [
     'Findings',
-    ...result.findings.map((finding) => `- ${finding}`),
+    ...result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${finding}`),
     '',
     'Sources',
-    ...result.sources.map((source) => `- ${source.title}: ${source.url}`),
+    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${source.title}: ${source.url}`),
+    internalSummary ? `\nInternal tools\n${internalSummary}` : undefined,
     result.caveat ? `\nCaveat\n${result.caveat}` : undefined
   ]
     .filter((line) => line !== undefined)

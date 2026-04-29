@@ -134,7 +134,64 @@ describe('research orchestrator types', () => {
     expect(result.decision.action).toBe('research-again');
   });
 
-  it('escalates one specific page to headless only when approved by the orchestrator', async () => {
+  it('answers when successful headless content completes the evidence set', async () => {
+    const headlessFetch = vi.fn().mockResolvedValue({
+      status: 'ok',
+      url: 'https://vitest.dev/guide/coverage.html',
+      content: {
+        title: 'Coverage | Guide | Vitest',
+        text: 'Set coverage.provider to v8. Install @vitest/coverage-v8. Run vitest with --coverage.'
+      },
+      metadata: {
+        method: 'headless',
+        cacheHit: false,
+        browser: 'edge',
+        navigationMs: 900,
+        truncated: false
+      }
+    });
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn().mockResolvedValue({
+          searchQueries: ['vitest coverage'],
+          evidence: [
+            {
+              title: 'vitest/docs/guide/coverage.md',
+              url: 'https://github.com/vitest-dev/vitest/blob/main/docs/guide/coverage.md',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Vitest supports native V8 coverage.',
+              supports: ['V8 coverage']
+            }
+          ],
+          gaps: [{ kind: 'fetch-failed', message: 'HTTP fetch was weak for https://vitest.dev/guide/coverage.html' }],
+          lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://vitest.dev/guide/coverage.html',
+          exhaustedBudget: false
+        })
+      },
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'vitest coverage v8 provider' });
+
+    expect(result.evidence).toEqual([
+      expect.objectContaining({
+        title: 'vitest/docs/guide/coverage.md',
+        method: 'http'
+      }),
+      expect.objectContaining({
+        title: 'Coverage | Guide | Vitest',
+        url: 'https://vitest.dev/guide/coverage.html',
+        sourceKind: 'official-docs',
+        method: 'headless'
+      })
+    ]);
+    expect(result.decision.action).toBe('answer');
+  });
+
+  it('fetches one specific page with headless only when approved by the orchestrator', async () => {
     const headlessFetch = vi.fn().mockResolvedValue({
       status: 'ok',
       url: 'https://example.com/app',
@@ -164,7 +221,8 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'dynamic app' });
 
-    expect(result.decision.action).toBe('escalate-headless');
+    expect(result.decision.action).toBe('research-again');
+    expect(result.evidence).toHaveLength(1);
     expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app' });
   });
 
