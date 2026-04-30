@@ -22,7 +22,7 @@ export type ToolError = {
 };
 
 export type SearchMetadata = {
-  backend: 'duckduckgo';
+  backend: 'duckduckgo' | 'tavily';
   cacheHit: boolean;
 };
 
