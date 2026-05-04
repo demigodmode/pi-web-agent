@@ -72,7 +72,7 @@ body:
   - type: dropdown
     id: web-agent-show
     attributes:
-      label: Does `/web-agent show` work?
+      label: "Does `/web-agent show` work?"
       options:
         - "Yes"
         - "No"
@@ -83,7 +83,7 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: `/web-agent doctor` output
+      label: "`/web-agent doctor` output"
       description: Run `/web-agent doctor` in Pi and paste the full output.
       render: text
     validations:

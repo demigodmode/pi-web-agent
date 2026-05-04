@@ -10,6 +10,7 @@ describe('GitHub issue templates', () => {
   it('collects useful diagnostics in the bug report form', () => {
     const template = readTemplate('bug_report.yml');
 
+    expect(template).not.toMatch(/^\s+label: `/m);
     expect(template).toContain('Pi version');
     expect(template).toContain('pi-web-agent package version');
     expect(template).toContain('Operating system');
