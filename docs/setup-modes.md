@@ -22,8 +22,6 @@ If you are evaluating the package early, check the issue tracker before assuming
 
 ## Self-hosted setups
 
-The same goes for self-hosted search backends like SearXNG.
+If you already run SearXNG or Firecrawl, `pi-web-agent` can connect to them through backend config.
 
-Those are a real direction for the project, but not something the current default package just turns on out of the box.
-
-It is better to say that plainly now than to make the docs sound more finished than the project actually is.
+See [Self-hosted backends](/self-hosted-backends) for the config shape, verification steps, and troubleshooting notes.

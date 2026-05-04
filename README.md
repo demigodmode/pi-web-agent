@@ -132,6 +132,8 @@ Self-hosted example for existing SearXNG/Firecrawl services:
 
 Prefer `PI_WEB_AGENT_FIRECRAWL_API_KEY` for Firecrawl auth instead of putting secrets in project config. `/web-agent doctor` validates required backend fields and checks configured self-hosted endpoints.
 
+Full guide: https://demigodmode.github.io/pi-web-agent/self-hosted-backends
+
 ## Local development
 
 ```bash
