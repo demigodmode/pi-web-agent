@@ -118,7 +118,7 @@ Backend config is also supported. Defaults are DuckDuckGo search, plain HTTP fet
 }
 ```
 
-Self-hosted example:
+Self-hosted example for existing SearXNG/Firecrawl services:
 
 ```json
 {
@@ -129,6 +129,8 @@ Self-hosted example:
   }
 }
 ```
+
+Prefer `PI_WEB_AGENT_FIRECRAWL_API_KEY` for Firecrawl auth instead of putting secrets in project config. `/web-agent doctor` validates required backend fields and checks configured self-hosted endpoints.
 
 ## Local development
 

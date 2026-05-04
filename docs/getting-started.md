@@ -70,7 +70,17 @@ If you run your own services, you can point search at SearXNG and page reading a
 }
 ```
 
-Use `/web-agent show` to confirm the effective backend config.
+Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check whether configured self-hosted endpoints respond.
+
+If your Firecrawl instance requires an API key, prefer an environment variable instead of committing secrets into project config:
+
+```text
+PI_WEB_AGENT_FIRECRAWL_API_KEY=...
+```
+
+You can still set `backends.fetch.apiKey` in config for local-only setups.
+
+This project only connects to existing SearXNG/Firecrawl services; it does not manage or document how to run those services.
 
 ## Browser rendering requirement
 

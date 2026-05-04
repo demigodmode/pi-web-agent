@@ -58,6 +58,20 @@ export function extractBackendConfigOverride(
   return override;
 }
 
+export function validateBackendConfig(config: BackendConfig): string[] {
+  const issues: string[] = [];
+
+  if (config.search.provider === 'searxng' && !config.search.baseUrl) {
+    issues.push('search provider searxng requires backends.search.baseUrl');
+  }
+
+  if (config.fetch.provider === 'firecrawl' && !config.fetch.baseUrl) {
+    issues.push('fetch provider firecrawl requires backends.fetch.baseUrl');
+  }
+
+  return issues;
+}
+
 export function mergeBackendConfigLayers(
   ...layers: Array<BackendConfig | BackendConfigOverride | undefined>
 ): BackendConfig {

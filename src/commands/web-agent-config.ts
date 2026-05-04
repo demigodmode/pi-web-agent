@@ -1,4 +1,5 @@
-import { DEFAULT_BACKEND_CONFIG, type BackendConfig } from '../backends/config.js';
+import { DEFAULT_BACKEND_CONFIG, validateBackendConfig, type BackendConfig } from '../backends/config.js';
+import { checkBackendHealth } from '../backends/doctor.js';
 import {
   DynamicBorder,
   getSettingsListTheme,
@@ -31,6 +32,7 @@ type CommandDeps = {
   resolveBrowser?: () => Promise<BrowserResolutionResult>;
   runtime?: { nodeVersion: string; platform: string; arch: string };
   checkTypebox?: () => Promise<boolean>;
+  checkBackends?: (config: BackendConfig) => Promise<string[]>;
 };
 
 type SettingsUiResult =
@@ -381,6 +383,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
     arch: process.arch
   };
   const checkTypebox = deps.checkTypebox ?? defaultCheckTypebox;
+  const checkBackends = deps.checkBackends ?? ((config: BackendConfig) => checkBackendHealth(config));
 
   pi.registerCommand('web-agent', {
     description: 'Open settings or manage pi-web-agent presentation config',
@@ -404,11 +407,16 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
       if (action === 'doctor') {
         const [typeboxOk, browser, loaded] = await Promise.all([checkTypebox(), resolveBrowser(), load()]);
+        const backendConfig = loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG;
+        const backendIssues = validateBackendConfig(backendConfig);
+        const backendHealth = await checkBackends(backendConfig);
         const lines = [
           'pi-web-agent: loaded',
           `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
           `typebox: ${typeboxOk ? 'ok' : 'missing'}`,
-          formatBackendSummary(loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG)
+          formatBackendSummary(backendConfig),
+          backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
+          ...backendHealth
         ];
 
         if (browser.ok) {

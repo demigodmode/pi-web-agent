@@ -113,7 +113,8 @@ describe('web-agent config commands', () => {
     registerWebAgentConfigCommands(pi as never, {
       resolveBrowser: vi.fn().mockResolvedValue(browser),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkBackends: vi.fn().mockResolvedValue(['search backend: duckduckgo', 'fetch backend: http'])
     });
 
     const notify = vi.fn();
@@ -126,6 +127,40 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
     expect(notify.mock.calls[0][0]).toContain('fetch: http');
     expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
+    expect(notify.mock.calls[0][0]).toContain('search backend: duckduckgo');
+    expect(notify.mock.calls[0][0]).toContain('fetch backend: http');
+  });
+
+  it('renders backend validation warnings in doctor output', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: true },
+        effectiveConfig: { defaultMode: 'compact', tools: {} },
+        effectiveBackends: {
+          search: { provider: 'searxng' },
+          fetch: { provider: 'firecrawl' },
+          headless: { provider: 'local-browser' }
+        }
+      }),
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true)
+    });
+
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+
+    expect(notify.mock.calls[0][0]).toContain('backend config: warning');
+    expect(notify.mock.calls[0][0]).toContain('search provider searxng requires backends.search.baseUrl');
+    expect(notify.mock.calls[0][0]).toContain('fetch provider firecrawl requires backends.fetch.baseUrl');
   });
 
   it('renders doctor browser failures without throwing', async () => {

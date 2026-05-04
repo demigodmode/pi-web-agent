@@ -20,4 +20,24 @@ describe('backend factory', () => {
     expect(backends.search).toEqual(expect.any(Function));
     expect(backends.fetchPage).toEqual(expect.any(Function));
   });
+
+  it('returns clear backend config errors instead of silently falling back', async () => {
+    const backends = createBackendSet({
+      search: { provider: 'searxng' },
+      fetch: { provider: 'firecrawl' },
+      headless: { provider: 'local-browser' }
+    });
+
+    await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
+      status: 'error',
+      metadata: { backend: 'searxng', cacheHit: false },
+      error: { code: 'BACKEND_CONFIG_INVALID' }
+    });
+
+    await expect(backends.fetchPage({ url: 'https://example.com' })).resolves.toMatchObject({
+      status: 'error',
+      metadata: { method: 'firecrawl', cacheHit: false },
+      error: { code: 'BACKEND_CONFIG_INVALID' }
+    });
+  });
 });
