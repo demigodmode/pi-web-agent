@@ -1,3 +1,4 @@
+import { DEFAULT_BACKEND_CONFIG, type BackendConfig } from '../backends/config.js';
 import {
   DynamicBorder,
   getSettingsListTheme,
@@ -65,6 +66,14 @@ async function defaultCheckTypebox(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function formatBackendSummary(config: BackendConfig = DEFAULT_BACKEND_CONFIG) {
+  return [
+    `search: ${config.search.provider}`,
+    `fetch: ${config.fetch.provider}`,
+    `headless: ${config.headless.provider}`
+  ].join('\n');
 }
 
 function formatConfigSummary(config: PresentationConfig) {
@@ -387,11 +396,12 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       }
 
       if (action === 'doctor') {
-        const [typeboxOk, browser] = await Promise.all([checkTypebox(), resolveBrowser()]);
+        const [typeboxOk, browser, loaded] = await Promise.all([checkTypebox(), resolveBrowser(), load()]);
         const lines = [
           'pi-web-agent: loaded',
           `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
-          `typebox: ${typeboxOk ? 'ok' : 'missing'}`
+          `typebox: ${typeboxOk ? 'ok' : 'missing'}`,
+          formatBackendSummary(loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG)
         ];
 
         if (browser.ok) {
@@ -411,6 +421,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         ctx.ui.notify(
           [
             formatConfigSummary(loaded.effectiveConfig),
+            formatBackendSummary(loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG),
             `global: ${loaded.global.path}${loaded.global.exists ? '' : ' (missing)'}`,
             `project: ${loaded.project.path}${loaded.project.exists ? '' : ' (missing)'}`
           ].join('\n'),

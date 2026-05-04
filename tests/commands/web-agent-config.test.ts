@@ -36,7 +36,12 @@ describe('web-agent config draft helpers', () => {
         {
           tools: { web_explore: { mode: 'compact' } }
         }
-      )
+      ),
+      effectiveBackends: {
+        search: { provider: 'duckduckgo' as const },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
     };
 
     const initialState = createSettingsDraftState(loaded, 'project');
@@ -118,6 +123,9 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('runtime: node v24.0.0 linux x64');
     expect(notify.mock.calls[0][0]).toContain('typebox: ok');
     expect(notify.mock.calls[0][0]).toContain('browser: chromium /usr/bin/chromium');
+    expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
+    expect(notify.mock.calls[0][0]).toContain('fetch: http');
+    expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
   });
 
   it('renders doctor browser failures without throwing', async () => {
@@ -170,6 +178,11 @@ describe('web-agent config commands', () => {
         effectiveConfig: {
           defaultMode: 'preview',
           tools: { web_explore: { mode: 'verbose' } }
+        },
+        effectiveBackends: {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
         }
       }),
       reset: vi.fn()
@@ -180,6 +193,9 @@ describe('web-agent config commands', () => {
 
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('defaultMode: preview'), 'info');
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('web_explore: verbose'), 'info');
+    expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
+    expect(notify.mock.calls[0][0]).toContain('fetch: http');
+    expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
     expect(notify.mock.calls[0][0]).not.toContain('web_search:');
     expect(notify.mock.calls[0][0]).not.toContain('web_fetch:');
   });

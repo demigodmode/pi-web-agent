@@ -38,6 +38,11 @@ describe('presentation config store', () => {
       defaultMode: 'compact',
       tools: {}
     });
+    expect(loaded.effectiveBackends).toEqual({
+      search: { provider: 'duckduckgo' },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    });
     expect(loaded.global.exists).toBe(false);
     expect(loaded.project.exists).toBe(false);
   });
@@ -85,6 +90,63 @@ describe('presentation config store', () => {
         web_explore: { mode: 'verbose' },
         web_search: { mode: 'compact' }
       }
+    });
+  });
+
+  it('loads legacy presentation-only config files', async () => {
+    const { globalPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    mkdirSync(path.dirname(globalPath), { recursive: true });
+    writeFileSync(
+      globalPath,
+      JSON.stringify({ defaultMode: 'preview', tools: { web_explore: { mode: 'verbose' } } }),
+      'utf8'
+    );
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+
+    expect(loaded.effectiveConfig).toEqual({
+      defaultMode: 'preview',
+      tools: { web_explore: { mode: 'verbose' } }
+    });
+  });
+
+  it('loads root presentation and backend config sections', async () => {
+    const { globalPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    mkdirSync(path.dirname(globalPath), { recursive: true });
+    writeFileSync(
+      globalPath,
+      JSON.stringify({
+        presentation: { defaultMode: 'verbose' },
+        backends: { search: { provider: 'duckduckgo' } }
+      }),
+      'utf8'
+    );
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+
+    expect(loaded.effectiveConfig.defaultMode).toBe('verbose');
+    expect(loaded.effectiveBackends).toEqual({
+      search: { provider: 'duckduckgo' },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    });
+  });
+
+  it('merges backend config layers with project taking precedence', async () => {
+    const { globalPath, projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    mkdirSync(path.dirname(globalPath), { recursive: true });
+    mkdirSync(path.dirname(projectPath), { recursive: true });
+    writeFileSync(globalPath, JSON.stringify({ backends: { search: { provider: 'duckduckgo' } } }), 'utf8');
+    writeFileSync(projectPath, JSON.stringify({ backends: { fetch: { provider: 'http' } } }), 'utf8');
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+
+    expect(loaded.global.rawBackends).toEqual({ search: { provider: 'duckduckgo' } });
+    expect(loaded.project.rawBackends).toEqual({ fetch: { provider: 'http' } });
+    expect(loaded.effectiveBackends).toEqual({
+      search: { provider: 'duckduckgo' },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
     });
   });
 
