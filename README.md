@@ -18,6 +18,10 @@ That sounds obvious, but a lot of agent tooling gets fuzzy right there. This pac
 pi install npm:@demigodmode/pi-web-agent
 ```
 
+After installing, reload or restart Pi. Run `/web-agent` for the action menu, or `/web-agent doctor` to check whether the package loaded cleanly and whether headless rendering can find a browser.
+
+Headless rendering currently requires a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave. Firefox/Safari-only systems can still use search and plain HTTP reads, but browser-rendered fallback pages need a supported Chromium-family browser for now.
+
 Later on, update installed packages with:
 
 ```bash
@@ -65,6 +69,7 @@ Primary UI:
 Helper commands:
 
 ```text
+/web-agent doctor
 /web-agent show
 /web-agent reset project
 /web-agent reset global

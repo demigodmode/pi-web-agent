@@ -17,6 +17,7 @@ describe('browser resolution', () => {
 
   it('falls back to detected Windows Chrome before Edge', async () => {
     const result = await resolveBrowserExecutable({
+      platform: 'win32',
       fileExists: vi.fn(async (path) =>
         path === 'C:/Program Files/Google/Chrome/Application/chrome.exe'
       )
@@ -40,6 +41,52 @@ describe('browser resolution', () => {
         code: 'BROWSER_NOT_FOUND',
         message: 'No compatible local browser was found for headless fetch.'
       }
+    });
+  });
+
+  it('detects Chrome from a macOS app bundle', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'darwin',
+      env: {},
+      fileExists: vi.fn(async (path) =>
+        path === '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+      )
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      browser: 'chrome'
+    });
+  });
+
+  it('detects Chromium from PATH on Linux', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'linux',
+      env: { PATH: '/usr/local/bin:/usr/bin' },
+      fileExists: vi.fn(async (path) => path === '/usr/bin/chromium')
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      executablePath: '/usr/bin/chromium',
+      browser: 'chromium'
+    });
+  });
+
+  it('detects Brave on Windows when Chrome and Edge are absent', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'win32',
+      env: {},
+      fileExists: vi.fn(async (path) =>
+        path === 'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe'
+      )
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      executablePath: 'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe',
+      browser: 'brave'
     });
   });
 });

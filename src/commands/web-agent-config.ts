@@ -1,8 +1,9 @@
 import {
+  DynamicBorder,
   getSettingsListTheme,
   type ExtensionAPI
 } from '@mariozechner/pi-coding-agent';
-import { Container, SettingsList, Text, type SettingItem } from '@mariozechner/pi-tui';
+import { Container, SelectList, SettingsList, Text, type SelectItem, type SettingItem } from '@mariozechner/pi-tui';
 import {
   DEFAULT_PRESENTATION_CONFIG,
   mergePresentationConfigLayers,
@@ -14,6 +15,7 @@ import {
   savePresentationConfigScope,
   type LoadedPresentationConfig
 } from '../presentation/config-store.js';
+import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import type {
   PresentationConfig,
   PresentationConfigOverride,
@@ -25,12 +27,17 @@ type CommandDeps = {
   load?: () => ReturnType<typeof loadPresentationConfigLayers>;
   save?: (scope: PresentationScope, config: PresentationConfigOverride) => Promise<void>;
   reset?: (scope: PresentationScope) => Promise<void>;
+  resolveBrowser?: () => Promise<BrowserResolutionResult>;
+  runtime?: { nodeVersion: string; platform: string; arch: string };
+  checkTypebox?: () => Promise<boolean>;
 };
 
 type SettingsUiResult =
   | { action: 'cancel' }
   | { action: 'reset'; scope: PresentationScope }
   | { action: 'save'; scope: PresentationScope; config: PresentationConfig };
+
+type WebAgentAction = 'settings' | 'show' | 'doctor' | 'reset-project' | 'reset-global';
 
 export type SettingsDraftState = {
   scope: PresentationScope;
@@ -49,6 +56,15 @@ function clonePresentationConfig(config: PresentationConfig): PresentationConfig
     defaultMode: config.defaultMode,
     tools: { ...config.tools }
   };
+}
+
+async function defaultCheckTypebox(): Promise<boolean> {
+  try {
+    await import('typebox');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function formatConfigSummary(config: PresentationConfig) {
@@ -230,6 +246,45 @@ export function handleSettingsShortcut(data: string): { action: 'cancel' | 'rese
   return undefined;
 }
 
+async function openActionMenu(ctx: any): Promise<WebAgentAction | undefined> {
+  return ctx.ui.custom((tui: any, theme: any, _kb: unknown, done: (value: WebAgentAction | undefined) => void) => {
+    const container = new Container();
+    const items: SelectItem[] = [
+      { value: 'settings', label: 'Settings', description: 'Edit presentation modes' },
+      { value: 'show', label: 'Show config', description: 'Print effective config paths and modes' },
+      { value: 'doctor', label: 'Doctor', description: 'Check runtime dependencies and browser detection' },
+      { value: 'reset-project', label: 'Reset project config', description: 'Delete project-level overrides' },
+      { value: 'reset-global', label: 'Reset global config', description: 'Delete global overrides' }
+    ];
+
+    container.addChild(new DynamicBorder((text: string) => theme.fg('accent', text)));
+    container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent')), 1, 0));
+
+    const list = new SelectList(items, Math.min(items.length, 8), {
+      selectedPrefix: (text: string) => theme.fg('accent', text),
+      selectedText: (text: string) => theme.fg('accent', text),
+      description: (text: string) => theme.fg('muted', text),
+      scrollInfo: (text: string) => theme.fg('dim', text),
+      noMatch: (text: string) => theme.fg('warning', text)
+    });
+
+    list.onSelect = (item) => done(item.value as WebAgentAction);
+    list.onCancel = () => done(undefined);
+    container.addChild(list);
+    container.addChild(new Text(theme.fg('dim', '↑↓ navigate • enter select • esc cancel'), 1, 0));
+    container.addChild(new DynamicBorder((text: string) => theme.fg('accent', text)));
+
+    return {
+      render: (width: number) => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput: (data: string) => {
+        list.handleInput?.(data);
+        tui.requestRender?.();
+      }
+    };
+  });
+}
+
 async function openSettingsUi(
   ctx: any,
   loaded: Awaited<LoadedPresentationConfig>,
@@ -303,11 +358,53 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
   const load = deps.load ?? (() => loadPresentationConfigLayers());
   const save = deps.save ?? ((scope, config) => savePresentationConfigScope({}, scope, config));
   const reset = deps.reset ?? ((scope) => resetPresentationConfigScope({}, scope));
+  const resolveBrowser = deps.resolveBrowser ?? (() => resolveBrowserExecutable({}));
+  const runtime = deps.runtime ?? {
+    nodeVersion: process.version,
+    platform: process.platform,
+    arch: process.arch
+  };
+  const checkTypebox = deps.checkTypebox ?? defaultCheckTypebox;
 
   pi.registerCommand('web-agent', {
     description: 'Open settings or manage pi-web-agent presentation config',
     handler: async (args, ctx) => {
-      const [action, maybeScope] = (args ?? '').trim().split(/\s+/).filter(Boolean);
+      let [action, maybeScope] = (args ?? '').trim().split(/\s+/).filter(Boolean);
+
+      if (!action) {
+        const selectedAction = await openActionMenu(ctx);
+        if (!selectedAction) return;
+
+        if (selectedAction === 'reset-project') {
+          action = 'reset';
+          maybeScope = 'project';
+        } else if (selectedAction === 'reset-global') {
+          action = 'reset';
+          maybeScope = 'global';
+        } else {
+          action = selectedAction;
+        }
+      }
+
+      if (action === 'doctor') {
+        const [typeboxOk, browser] = await Promise.all([checkTypebox(), resolveBrowser()]);
+        const lines = [
+          'pi-web-agent: loaded',
+          `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
+          `typebox: ${typeboxOk ? 'ok' : 'missing'}`
+        ];
+
+        if (browser.ok) {
+          lines.push(`browser: ${browser.browser} ${browser.executablePath}`);
+        } else {
+          lines.push(`browser: missing (${browser.error.code})`);
+          lines.push(browser.error.message);
+          lines.push('Install Chrome, Chromium, Edge, or Brave and run /web-agent doctor again.');
+        }
+
+        ctx.ui.notify(lines.join('\n'), 'info');
+        return;
+      }
 
       if (action === 'show') {
         const loaded = await load();
@@ -393,7 +490,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       }
 
       ctx.ui.notify(
-        'Use /web-agent, /web-agent show, /web-agent reset project, or /web-agent settings',
+        'Use /web-agent, /web-agent show, /web-agent doctor, /web-agent reset project, or /web-agent settings',
         'info'
       );
     }

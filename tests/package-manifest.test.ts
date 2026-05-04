@@ -19,6 +19,12 @@ describe('package manifest', () => {
     });
   });
 
+  it('keeps runtime imports in dependencies', () => {
+    expect(packageJson.dependencies).toHaveProperty('typebox');
+    expect(packageJson.dependencies?.['@sinclair/typebox']).toBeUndefined();
+    expect(packageJson.peerDependencies?.['@sinclair/typebox']).toBeUndefined();
+  });
+
   it('declares a clean package surface', () => {
     expect(packageJson.main).toBe('./dist/extension.js');
     expect(packageJson.types).toBe('./dist/extension.d.ts');

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import { registerWebAgentConfigCommands } from './commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presentation/config.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';

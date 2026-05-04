@@ -31,7 +31,7 @@ export type FetchMetadata = {
   cacheHit: boolean;
   contentType?: string;
   truncated?: boolean;
-  browser?: 'configured' | 'chrome' | 'edge';
+  browser?: 'configured' | 'chrome' | 'edge' | 'brave' | 'chromium';
   navigationMs?: number;
 };
 

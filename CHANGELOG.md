@@ -18,6 +18,34 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [0.5.1] - 2026-05-04
+### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Fixed the Windows browser-resolution test so it is deterministic on Linux CI.
+
+### Breaking
+- None.
+
+## [0.5.0] - 2026-05-04
+### Added
+- Added `/web-agent doctor` to report extension, runtime dependency, and browser detection status.
+- Added a `/web-agent` action menu for settings, config display, doctor, and reset actions.
+
+### Changed
+- Migrated runtime schema imports from `@sinclair/typebox` to `typebox` for Pi 0.69 compatibility.
+- Documented the current headless rendering browser requirement and doctor command.
+
+### Fixed
+- Fixed headless browser detection so Chrome, Chromium, Edge, and Brave can be found across Windows, macOS, and Linux instead of only checking Windows Chrome/Edge paths.
+
+### Breaking
+- None.
+
 ## [0.4.0] - 2026-04-29
 ### Added
 - Made `web_explore` the single public web research tool, with search, fetch, source ranking, and headless escalation handled internally.

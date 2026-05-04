@@ -10,6 +10,14 @@ pi install npm:@demigodmode/pi-web-agent
 
 If Pi is already running, reload or restart it so the package gets picked up.
 
+Then run:
+
+```text
+/web-agent doctor
+```
+
+That checks the extension, runtime dependency, and browser detection status.
+
 ## What you get
 
 The package exposes one public web research tool:
@@ -36,15 +44,21 @@ That should still go through `web_explore`. If the first pass is thin, Pi can ca
 
 The package renders web research output in `compact` mode by default.
 
-If you want to change that, open the settings UI with:
+If you want to change that, open the action menu with:
 
 ```text
 /web-agent
 ```
 
-That lets you change the default presentation mode and the `web_explore` override without editing JSON by hand.
+From there you can open settings, show config, run doctor, or reset config. Settings lets you change the default presentation mode and the `web_explore` override without editing JSON by hand.
 
 If you want the full details, see [Presentation and settings](/presentation).
+
+## Browser rendering requirement
+
+Headless rendering currently requires a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave.
+
+Firefox/Safari-only systems can still use search and plain HTTP reads, but pages that require browser rendering will not work until Playwright-managed browser fallback is added.
 
 ## One thing to keep in mind
 
