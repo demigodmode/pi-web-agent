@@ -1,5 +1,5 @@
-export type SearchBackendConfig = { provider: 'duckduckgo' };
-export type FetchBackendConfig = { provider: 'http' };
+export type SearchBackendConfig = { provider: 'duckduckgo' | 'searxng'; baseUrl?: string };
+export type FetchBackendConfig = { provider: 'http' | 'firecrawl'; baseUrl?: string; apiKey?: string };
 export type HeadlessBackendConfig = { provider: 'local-browser' };
 
 export type BackendConfig = {
@@ -16,8 +16,8 @@ export type BackendConfigOverride = {
 
 export type BackendConfigFile = {
   backends?: {
-    search?: { provider?: unknown };
-    fetch?: { provider?: unknown };
+    search?: { provider?: unknown; baseUrl?: unknown };
+    fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown };
     headless?: { provider?: unknown };
   };
 };
@@ -34,12 +34,21 @@ export function extractBackendConfigOverride(
   const backends = file?.backends;
   const override: BackendConfigOverride = {};
 
-  if (backends?.search?.provider === 'duckduckgo') {
-    override.search = { provider: 'duckduckgo' };
+  if (backends?.search?.provider === 'duckduckgo' || backends?.search?.provider === 'searxng') {
+    override.search = { provider: backends.search.provider };
+    if (typeof backends.search.baseUrl === 'string') {
+      override.search.baseUrl = backends.search.baseUrl;
+    }
   }
 
-  if (backends?.fetch?.provider === 'http') {
-    override.fetch = { provider: 'http' };
+  if (backends?.fetch?.provider === 'http' || backends?.fetch?.provider === 'firecrawl') {
+    override.fetch = { provider: backends.fetch.provider };
+    if (typeof backends.fetch.baseUrl === 'string') {
+      override.fetch.baseUrl = backends.fetch.baseUrl;
+    }
+    if (typeof backends.fetch.apiKey === 'string') {
+      override.fetch.apiKey = backends.fetch.apiKey;
+    }
   }
 
   if (backends?.headless?.provider === 'local-browser') {

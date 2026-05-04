@@ -7,7 +7,7 @@ export type ResearchSourceKind =
   | 'package-page'
   | 'other';
 
-export type ResearchMethod = 'search' | 'http' | 'headless';
+export type ResearchMethod = 'search' | 'http' | 'headless' | 'firecrawl';
 
 export type ResearchEvidence = {
   title: string;

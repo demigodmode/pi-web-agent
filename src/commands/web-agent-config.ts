@@ -69,9 +69,16 @@ async function defaultCheckTypebox(): Promise<boolean> {
 }
 
 function formatBackendSummary(config: BackendConfig = DEFAULT_BACKEND_CONFIG) {
+  const search = config.search.baseUrl
+    ? `search: ${config.search.provider} (${config.search.baseUrl})`
+    : `search: ${config.search.provider}`;
+  const fetch = config.fetch.baseUrl
+    ? `fetch: ${config.fetch.provider} (${config.fetch.baseUrl})`
+    : `fetch: ${config.fetch.provider}`;
+
   return [
-    `search: ${config.search.provider}`,
-    `fetch: ${config.fetch.provider}`,
+    search,
+    fetch,
     `headless: ${config.headless.provider}`
   ].join('\n');
 }

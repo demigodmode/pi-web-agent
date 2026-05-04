@@ -57,6 +57,34 @@ Project config overrides global config.
 
 If you change settings through `/web-agent`, those files are what get updated.
 
+## Backend config
+
+The default backend setup is:
+
+```json
+{
+  "backends": {
+    "search": { "provider": "duckduckgo" },
+    "fetch": { "provider": "http" },
+    "headless": { "provider": "local-browser" }
+  }
+}
+```
+
+For a self-hosted setup, run SearXNG and Firecrawl yourself and add:
+
+```json
+{
+  "backends": {
+    "search": { "provider": "searxng", "baseUrl": "http://localhost:8080" },
+    "fetch": { "provider": "firecrawl", "baseUrl": "http://localhost:3002" },
+    "headless": { "provider": "local-browser" }
+  }
+}
+```
+
+If your Firecrawl instance requires a key, add `"apiKey": "..."` to the `fetch` config.
+
 ## Watch out for mixed setups
 
 If you have both the npm-installed package and the local repo-based extension in play, it gets easy to think you are testing one copy when Pi is actually loading the other.

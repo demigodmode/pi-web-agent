@@ -1,3 +1,5 @@
+import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
+import { createSearxngSearchTool } from '../search/searxng.js';
 import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
@@ -10,10 +12,23 @@ export type BackendSet = {
   headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
 };
 
-export function createBackendSet(_config: BackendConfig = DEFAULT_BACKEND_CONFIG): BackendSet {
+export function createBackendSet(config: BackendConfig = DEFAULT_BACKEND_CONFIG): BackendSet {
+  const search = config.search.provider === 'searxng' && config.search.baseUrl
+    ? createSearxngSearchTool({ baseUrl: config.search.baseUrl })
+    : createWebSearchTool();
+
+  const fetchPage = config.fetch.provider === 'firecrawl' && config.fetch.baseUrl
+    ? createWebFetchTool({
+        fetchPage: createFirecrawlFetcher({
+          baseUrl: config.fetch.baseUrl,
+          apiKey: config.fetch.apiKey
+        })
+      })
+    : createWebFetchTool();
+
   return {
-    search: createWebSearchTool(),
-    fetchPage: createWebFetchTool(),
+    search,
+    fetchPage,
     headlessFetch: createWebFetchHeadlessTool()
   };
 }

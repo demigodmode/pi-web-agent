@@ -117,7 +117,10 @@ describe('presentation config store', () => {
       globalPath,
       JSON.stringify({
         presentation: { defaultMode: 'verbose' },
-        backends: { search: { provider: 'duckduckgo' } }
+        backends: {
+          search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
+          fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', apiKey: 'dev-key' }
+        }
       }),
       'utf8'
     );
@@ -126,8 +129,8 @@ describe('presentation config store', () => {
 
     expect(loaded.effectiveConfig.defaultMode).toBe('verbose');
     expect(loaded.effectiveBackends).toEqual({
-      search: { provider: 'duckduckgo' },
-      fetch: { provider: 'http' },
+      search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', apiKey: 'dev-key' },
       headless: { provider: 'local-browser' }
     });
   });

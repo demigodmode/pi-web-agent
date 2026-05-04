@@ -106,6 +106,30 @@ Example:
 }
 ```
 
+Backend config is also supported. Defaults are DuckDuckGo search, plain HTTP fetch, and local browser headless fallback:
+
+```json
+{
+  "backends": {
+    "search": { "provider": "duckduckgo" },
+    "fetch": { "provider": "http" },
+    "headless": { "provider": "local-browser" }
+  }
+}
+```
+
+Self-hosted example:
+
+```json
+{
+  "backends": {
+    "search": { "provider": "searxng", "baseUrl": "http://localhost:8080" },
+    "fetch": { "provider": "firecrawl", "baseUrl": "http://localhost:3002" },
+    "headless": { "provider": "local-browser" }
+  }
+}
+```
+
 ## Local development
 
 ```bash

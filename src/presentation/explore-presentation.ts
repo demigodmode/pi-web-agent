@@ -1,8 +1,9 @@
 import type { WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 
-function internalReaderLabel(method?: 'http' | 'headless') {
+function internalReaderLabel(method?: 'http' | 'headless' | 'firecrawl') {
   if (method === 'headless') return 'web_fetch_headless';
+  if (method === 'firecrawl') return 'firecrawl';
   if (method === 'http') return 'web_fetch';
   return 'web_explore';
 }

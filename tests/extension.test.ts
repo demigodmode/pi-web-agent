@@ -2,6 +2,48 @@ import { describe, expect, it, vi } from 'vitest';
 import extension from '../src/extension.js';
 
 describe('Pi extension entrypoint', () => {
+  it('passes configured backends into the default web_explore workflow', async () => {
+    vi.resetModules();
+    const createResearchWorkflow = vi.fn().mockReturnValue({
+      run: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence: [],
+        workerPass: {},
+        metadata: { searchPasses: 0, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false }
+      })
+    });
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __presentationConfigStore: {
+        load: vi.fn().mockResolvedValue({
+          effectiveConfig: { defaultMode: 'compact', tools: {} },
+          effectiveBackends: {
+            search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
+            fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002' },
+            headless: { provider: 'local-browser' }
+          }
+        })
+      }
+    };
+
+    dynamicExtension(pi as never);
+    await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'example' });
+
+    expect(createResearchWorkflow).toHaveBeenCalledWith({
+      backendConfig: {
+        search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
+        fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002' },
+        headless: { provider: 'local-browser' }
+      }
+    });
+  });
+
   it('registers the web-agent config commands', () => {
     const pi = {
       registerTool: vi.fn(),
