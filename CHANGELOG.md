@@ -13,7 +13,7 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Fixed
-- Nothing yet.
+- Fixed the Windows browser-resolution test so it is deterministic on Linux CI.
 
 ### Breaking
 - None.

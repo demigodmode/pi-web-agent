@@ -17,6 +17,7 @@ describe('browser resolution', () => {
 
   it('falls back to detected Windows Chrome before Edge', async () => {
     const result = await resolveBrowserExecutable({
+      platform: 'win32',
       fileExists: vi.fn(async (path) =>
         path === 'C:/Program Files/Google/Chrome/Application/chrome.exe'
       )
