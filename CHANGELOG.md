@@ -13,6 +13,19 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.5.1] - 2026-05-04
+### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
 - Fixed the Windows browser-resolution test so it is deterministic on Linux CI.
 
 ### Breaking
