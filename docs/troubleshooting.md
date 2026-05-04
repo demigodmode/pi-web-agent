@@ -34,9 +34,20 @@ That can happen when:
 
 `web_explore` can escalate selected pages to headless rendering internally, but that still does not guarantee a clean result. Some sites render bot checks, cookie walls, or noisy app shells even in a browser.
 
+## `/web-agent doctor` says no browser was found
+
+Headless rendering currently needs a detectable Chromium-family browser:
+
+- Chrome
+- Chromium
+- Edge
+- Brave
+
+If you only have Firefox or Safari, search and plain HTTP reads can still work, but browser-rendered fallback pages will not. Run `/web-agent doctor` after installing one of the supported browsers to check detection again.
+
 ## `/web-agent` did something unexpected
 
-`/web-agent` opens the settings UI.
+`/web-agent` opens an action menu with settings, show config, doctor, and reset options.
 
 If you just want to inspect the currently effective config instead, use:
 
@@ -50,6 +61,12 @@ If the current behavior does not match what you expected, check both config scop
 - project: `.pi/extensions/pi-web-agent/config.json`
 
 Project config overrides global config.
+
+If you want the diagnostic report directly, use:
+
+```text
+/web-agent doctor
+```
 
 The settings UI currently exposes:
 

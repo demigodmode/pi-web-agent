@@ -7,6 +7,7 @@ import {
   registerWebAgentConfigCommands
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
+import type { BrowserResolutionResult } from '../../src/fetch/browser-resolution.js';
 
 describe('web-agent config draft helpers', () => {
   it('switches to the selected scope draft instead of keeping the old scope values', () => {
@@ -90,6 +91,62 @@ describe('web-agent config commands', () => {
     );
   });
 
+  it('renders doctor output with runtime and detected browser', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    const browser: BrowserResolutionResult = {
+      ok: true,
+      executablePath: '/usr/bin/chromium',
+      browser: 'chromium'
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      resolveBrowser: vi.fn().mockResolvedValue(browser),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true)
+    });
+
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('pi-web-agent: loaded'), 'info');
+    expect(notify.mock.calls[0][0]).toContain('runtime: node v24.0.0 linux x64');
+    expect(notify.mock.calls[0][0]).toContain('typebox: ok');
+    expect(notify.mock.calls[0][0]).toContain('browser: chromium /usr/bin/chromium');
+  });
+
+  it('renders doctor browser failures without throwing', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      resolveBrowser: vi.fn().mockResolvedValue({
+        ok: false,
+        error: {
+          code: 'BROWSER_NOT_FOUND',
+          message: 'No compatible local browser was found for headless fetch.'
+        }
+      }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'darwin', arch: 'arm64' },
+      checkTypebox: vi.fn().mockResolvedValue(true)
+    });
+
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+
+    expect(notify.mock.calls[0][0]).toContain('browser: missing');
+    expect(notify.mock.calls[0][0]).toContain('Install Chrome, Chromium, Edge, or Brave');
+  });
+
   it('renders effective config from the store for show', async () => {
     let handler: any;
     const pi = {
@@ -148,7 +205,7 @@ describe('web-agent config commands', () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('Reset project config'), 'info');
   });
 
-  it('opens a custom settings UI when invoked with no args', async () => {
+  it('opens an action menu before settings when invoked with no args', async () => {
     let handler: any;
     const pi = {
       registerCommand: vi.fn((_name: string, command: any) => {
@@ -166,18 +223,46 @@ describe('web-agent config commands', () => {
       reset: vi.fn()
     });
 
-    const custom = vi.fn().mockResolvedValue({
-      scope: 'project',
-      config: {
-        defaultMode: 'preview',
-        tools: { web_explore: { mode: 'verbose' } }
-      },
-      action: 'save'
-    });
+    const custom = vi
+      .fn()
+      .mockResolvedValueOnce('settings')
+      .mockResolvedValueOnce({
+        scope: 'project',
+        config: {
+          defaultMode: 'preview',
+          tools: { web_explore: { mode: 'verbose' } }
+        },
+        action: 'save'
+      });
 
     await handler('', { ui: { custom, notify: vi.fn() } });
 
-    expect(custom).toHaveBeenCalledOnce();
+    expect(custom).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs doctor from the action menu', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      resolveBrowser: vi.fn().mockResolvedValue({
+        ok: true,
+        executablePath: '/usr/bin/chromium',
+        browser: 'chromium'
+      }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true)
+    });
+
+    const notify = vi.fn();
+    await handler('', { ui: { custom: vi.fn().mockResolvedValue('doctor'), notify } });
+
+    expect(notify.mock.calls[0][0]).toContain('pi-web-agent: loaded');
+    expect(notify.mock.calls[0][0]).toContain('browser: chromium /usr/bin/chromium');
   });
 
   it('opens a custom settings UI when invoked with settings', async () => {

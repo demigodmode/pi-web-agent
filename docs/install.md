@@ -17,6 +17,20 @@ That installs the published package.
 
 For the published package, Pi loads the compiled runtime from `dist/extension.js` through the `pi.extensions` entry in `package.json`.
 
+After install/reload, run:
+
+```text
+/web-agent doctor
+```
+
+That checks whether the package loaded and whether headless rendering can find a supported local browser.
+
+## Browser requirement for headless rendering
+
+Headless rendering currently uses a local Chromium-family browser. Supported browsers are Chrome, Chromium, Edge, and Brave when they can be detected on Windows, macOS, or Linux.
+
+Firefox/Safari-only systems can still use search and plain HTTP reads, but browser-rendered fallback pages need one of the supported Chromium-family browsers for now.
+
 ## Work from the repo locally
 
 This repo also includes a project-local Pi extension entrypoint at `.pi/extensions/pi-web-agent.ts`.

@@ -7,13 +7,15 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added `/web-agent doctor` to report extension, runtime dependency, and browser detection status.
+- Added a `/web-agent` action menu for settings, config display, doctor, and reset actions.
 
 ### Changed
-- Nothing yet.
+- Migrated runtime schema imports from `@sinclair/typebox` to `typebox` for Pi 0.69 compatibility.
+- Documented the current headless rendering browser requirement and doctor command.
 
 ### Fixed
-- Nothing yet.
+- Fixed headless browser detection so Chrome, Chromium, Edge, and Brave can be found across Windows, macOS, and Linux instead of only checking Windows Chrome/Edge paths.
 
 ### Breaking
 - None.
