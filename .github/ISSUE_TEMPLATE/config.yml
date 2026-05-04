@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: pi-web-agent docs
+    url: https://demigodmode.github.io/pi-web-agent/
+    about: Check the docs before opening an issue.
