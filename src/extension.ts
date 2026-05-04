@@ -1,7 +1,9 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import { DEFAULT_BACKEND_CONFIG, type BackendConfig } from './backends/config.js';
 import { Type } from 'typebox';
 import { registerWebAgentConfigCommands } from './commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presentation/config.js';
+import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
 import type {
@@ -16,7 +18,7 @@ type ToolResultWithPresentation = {
   presentation?: PresentationEnvelope;
 };
 
-async function getEffectivePresentationConfig(pi: ExtensionAPI): Promise<PresentationConfig> {
+async function loadWebAgentConfig(pi: ExtensionAPI) {
   const store = (
     pi as ExtensionAPI & {
       __presentationConfigStore?: {
@@ -25,11 +27,24 @@ async function getEffectivePresentationConfig(pi: ExtensionAPI): Promise<Present
     }
   ).__presentationConfigStore;
 
+  return store?.load?.() ?? loadPresentationConfigLayers();
+}
+
+async function getEffectivePresentationConfig(pi: ExtensionAPI): Promise<PresentationConfig> {
   try {
-    const loaded = await (store?.load?.() ?? loadPresentationConfigLayers());
+    const loaded = await loadWebAgentConfig(pi);
     return loaded.effectiveConfig;
   } catch {
     return DEFAULT_PRESENTATION_CONFIG;
+  }
+}
+
+async function getEffectiveBackendConfig(pi: ExtensionAPI): Promise<BackendConfig> {
+  try {
+    const loaded = await loadWebAgentConfig(pi);
+    return loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG;
+  } catch {
+    return DEFAULT_BACKEND_CONFIG;
   }
 }
 
@@ -46,9 +61,24 @@ async function renderToolText(
 export default function extension(pi: ExtensionAPI) {
   registerWebAgentConfigCommands(pi);
 
-  const webExplore =
-    (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool ??
-    createWebExploreTool();
+  const injectedWebExplore = (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool;
+  let cachedBackendKey: string | undefined;
+  let cachedWebExplore: ReturnType<typeof createWebExploreTool> | undefined;
+
+  async function getConfiguredWebExplore() {
+    if (injectedWebExplore) return injectedWebExplore;
+
+    const backendConfig = await getEffectiveBackendConfig(pi);
+    const backendKey = JSON.stringify(backendConfig);
+    if (!cachedWebExplore || cachedBackendKey !== backendKey) {
+      cachedBackendKey = backendKey;
+      cachedWebExplore = createWebExploreTool({
+        explore: createResearchWorkflow({ backendConfig })
+      });
+    }
+
+    return cachedWebExplore;
+  }
 
   pi.on('before_agent_start', async (event) => ({
     systemPrompt:
@@ -67,6 +97,7 @@ export default function extension(pi: ExtensionAPI) {
       query: Type.String({ description: 'Web research question to explore.' })
     }),
     async execute(_toolCallId, params) {
+      const webExplore = await getConfiguredWebExplore();
       const result: WebExploreResponse = await webExplore({ query: params.query });
       return {
         content: [

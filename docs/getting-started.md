@@ -54,6 +54,36 @@ From there you can open settings, show config, run doctor, or reset config. Sett
 
 If you want the full details, see [Presentation and settings](/presentation).
 
+## Optional self-hosted backends
+
+By default, `web_explore` uses DuckDuckGo HTML search, plain HTTP page reads, and local browser fallback when needed.
+
+If you run your own services, you can point search at SearXNG and page reading at Firecrawl by editing either config file:
+
+```json
+{
+  "backends": {
+    "search": { "provider": "searxng", "baseUrl": "http://localhost:8080" },
+    "fetch": { "provider": "firecrawl", "baseUrl": "http://localhost:3002" },
+    "headless": { "provider": "local-browser" }
+  }
+}
+```
+
+Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check whether configured self-hosted endpoints respond.
+
+For the full setup guide, see [Self-hosted backends](/self-hosted-backends).
+
+If your Firecrawl instance requires an API key, prefer an environment variable instead of committing secrets into project config:
+
+```text
+PI_WEB_AGENT_FIRECRAWL_API_KEY=...
+```
+
+You can still set `backends.fetch.apiKey` in config for local-only setups.
+
+This project only connects to existing SearXNG/Firecrawl services; it does not manage or document how to run those services.
+
 ## Browser rendering requirement
 
 Headless rendering currently requires a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave.

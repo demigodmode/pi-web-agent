@@ -7,13 +7,17 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added configurable web backends for `web_explore`, including SearXNG search and Firecrawl fetch support.
+- Added backend diagnostics to `/web-agent doctor`, including config validation and self-hosted endpoint checks.
+- Added dedicated self-hosted backend docs for connecting existing SearXNG and Firecrawl services.
 
 ### Changed
-- Nothing yet.
+- `/web-agent show` now includes the effective backend configuration.
+- `web_explore` now loads the effective backend config while preserving the default DuckDuckGo, HTTP, and local-browser behavior.
 
 ### Fixed
-- Nothing yet.
+- Fixed backend config merging so provider-specific fields do not leak when a higher-precedence config changes providers.
+- Kept the configured `web_explore` workflow reusable while backend config is unchanged, avoiding unnecessary backend/cache recreation.
 
 ### Breaking
 - None.

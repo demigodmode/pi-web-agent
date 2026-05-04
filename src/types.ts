@@ -22,12 +22,12 @@ export type ToolError = {
 };
 
 export type SearchMetadata = {
-  backend: 'duckduckgo';
+  backend: 'duckduckgo' | 'searxng';
   cacheHit: boolean;
 };
 
 export type FetchMetadata = {
-  method: 'http' | 'headless';
+  method: 'http' | 'headless' | 'firecrawl';
   cacheHit: boolean;
   contentType?: string;
   truncated?: boolean;
@@ -70,7 +70,7 @@ export type WebFetchHeadlessResponse = {
 export type WebExploreResponse = {
   status: 'ok' | 'error';
   findings: string[];
-  sources: Array<{ title: string; url: string; method?: 'http' | 'headless' }>;
+  sources: Array<{ title: string; url: string; method?: 'http' | 'headless' | 'firecrawl' }>;
   caveat?: string;
   metadata?: {
     searchPasses: number;

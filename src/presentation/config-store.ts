@@ -1,6 +1,14 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  DEFAULT_BACKEND_CONFIG,
+  extractBackendConfigOverride,
+  mergeBackendConfigLayers,
+  type BackendConfig,
+  type BackendConfigFile,
+  type BackendConfigOverride
+} from '../backends/config.js';
+import {
   DEFAULT_PRESENTATION_CONFIG,
   extractPresentationConfigOverride,
   mergePresentationConfigLayers
@@ -21,6 +29,7 @@ export type PresentationConfigLayer = {
   path: string;
   exists: boolean;
   rawConfig?: PresentationConfigOverride;
+  rawBackends?: BackendConfigOverride;
   error?: string;
 };
 
@@ -28,6 +37,7 @@ export type LoadedPresentationConfig = {
   global: PresentationConfigLayer;
   project: PresentationConfigLayer;
   effectiveConfig: PresentationConfig;
+  effectiveBackends: BackendConfig;
 };
 
 export function getPresentationConfigPaths(options: PresentationConfigStoreOptions = {}) {
@@ -40,15 +50,27 @@ export function getPresentationConfigPaths(options: PresentationConfigStoreOptio
   };
 }
 
+type AgentConfigFile = PresentationConfigFile & BackendConfigFile;
+
+type LegacyPresentationConfigFile = NonNullable<PresentationConfigFile['presentation']>;
+
+function hasPresentationRoot(parsed: AgentConfigFile) {
+  return parsed.presentation !== undefined;
+}
+
 async function readPresentationConfigFile(filePath: string): Promise<PresentationConfigLayer> {
   try {
     const rawText = await readFile(filePath, 'utf8');
-    const parsed = JSON.parse(rawText) as PresentationConfigFile;
+    const parsed = JSON.parse(rawText) as AgentConfigFile;
+    const presentationFile: PresentationConfigFile = hasPresentationRoot(parsed)
+      ? parsed
+      : { presentation: parsed as LegacyPresentationConfigFile };
 
     return {
       path: filePath,
       exists: true,
-      rawConfig: extractPresentationConfigOverride(parsed)
+      rawConfig: extractPresentationConfigOverride(presentationFile),
+      rawBackends: extractBackendConfigOverride(parsed)
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
@@ -92,6 +114,11 @@ export async function loadPresentationConfigLayers(
       DEFAULT_PRESENTATION_CONFIG,
       global.rawConfig,
       project.rawConfig
+    ),
+    effectiveBackends: mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      global.rawBackends,
+      project.rawBackends
     )
   };
 }
