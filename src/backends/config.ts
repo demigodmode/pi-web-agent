@@ -72,13 +72,35 @@ export function validateBackendConfig(config: BackendConfig): string[] {
   return issues;
 }
 
+function mergeSearchConfig(
+  current: SearchBackendConfig,
+  override: Partial<SearchBackendConfig> | undefined
+): SearchBackendConfig {
+  if (!override) return current;
+  if (override.provider && override.provider !== current.provider) {
+    return { ...override, provider: override.provider };
+  }
+  return { ...current, ...override };
+}
+
+function mergeFetchConfig(
+  current: FetchBackendConfig,
+  override: Partial<FetchBackendConfig> | undefined
+): FetchBackendConfig {
+  if (!override) return current;
+  if (override.provider && override.provider !== current.provider) {
+    return { ...override, provider: override.provider };
+  }
+  return { ...current, ...override };
+}
+
 export function mergeBackendConfigLayers(
   ...layers: Array<BackendConfig | BackendConfigOverride | undefined>
 ): BackendConfig {
   return layers.reduce<BackendConfig>(
     (merged, layer) => ({
-      search: { ...merged.search, ...layer?.search },
-      fetch: { ...merged.fetch, ...layer?.fetch },
+      search: mergeSearchConfig(merged.search, layer?.search),
+      fetch: mergeFetchConfig(merged.fetch, layer?.fetch),
       headless: { ...merged.headless, ...layer?.headless }
     }),
     DEFAULT_BACKEND_CONFIG

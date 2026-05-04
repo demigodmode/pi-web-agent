@@ -62,6 +62,23 @@ export default function extension(pi: ExtensionAPI) {
   registerWebAgentConfigCommands(pi);
 
   const injectedWebExplore = (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool;
+  let cachedBackendKey: string | undefined;
+  let cachedWebExplore: ReturnType<typeof createWebExploreTool> | undefined;
+
+  async function getConfiguredWebExplore() {
+    if (injectedWebExplore) return injectedWebExplore;
+
+    const backendConfig = await getEffectiveBackendConfig(pi);
+    const backendKey = JSON.stringify(backendConfig);
+    if (!cachedWebExplore || cachedBackendKey !== backendKey) {
+      cachedBackendKey = backendKey;
+      cachedWebExplore = createWebExploreTool({
+        explore: createResearchWorkflow({ backendConfig })
+      });
+    }
+
+    return cachedWebExplore;
+  }
 
   pi.on('before_agent_start', async (event) => ({
     systemPrompt:
@@ -80,9 +97,7 @@ export default function extension(pi: ExtensionAPI) {
       query: Type.String({ description: 'Web research question to explore.' })
     }),
     async execute(_toolCallId, params) {
-      const webExplore = injectedWebExplore ?? createWebExploreTool({
-        explore: createResearchWorkflow({ backendConfig: await getEffectiveBackendConfig(pi) })
-      });
+      const webExplore = await getConfiguredWebExplore();
       const result: WebExploreResponse = await webExplore({ query: params.query });
       return {
         content: [

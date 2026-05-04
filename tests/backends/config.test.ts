@@ -18,8 +18,28 @@ describe('backend config', () => {
         { search: { provider: 'duckduckgo' }, fetch: { provider: 'firecrawl', baseUrl: 'http://firecrawl' } }
       )
     ).toEqual({
-      search: { provider: 'duckduckgo', baseUrl: 'http://global-searxng' },
+      search: { provider: 'duckduckgo' },
       fetch: { provider: 'firecrawl', baseUrl: 'http://firecrawl' },
+      headless: { provider: 'local-browser' }
+    });
+  });
+
+  it('drops provider-specific fields when a higher-precedence layer changes provider', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        {
+          search: { provider: 'searxng', baseUrl: 'http://global-searxng' },
+          fetch: { provider: 'firecrawl', baseUrl: 'http://global-firecrawl', apiKey: 'global-key' }
+        },
+        {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' }
+        }
+      )
+    ).toEqual({
+      search: { provider: 'duckduckgo' },
+      fetch: { provider: 'http' },
       headless: { provider: 'local-browser' }
     });
   });
