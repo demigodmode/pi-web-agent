@@ -106,33 +106,9 @@ Example:
 }
 ```
 
-Backend config is also supported. Defaults are DuckDuckGo search, plain HTTP fetch, and local browser headless fallback:
+Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local browser headless fallback. If you already run SearXNG or Firecrawl, see the self-hosted backend guide:
 
-```json
-{
-  "backends": {
-    "search": { "provider": "duckduckgo" },
-    "fetch": { "provider": "http" },
-    "headless": { "provider": "local-browser" }
-  }
-}
-```
-
-Self-hosted example for existing SearXNG/Firecrawl services:
-
-```json
-{
-  "backends": {
-    "search": { "provider": "searxng", "baseUrl": "http://localhost:8080" },
-    "fetch": { "provider": "firecrawl", "baseUrl": "http://localhost:3002" },
-    "headless": { "provider": "local-browser" }
-  }
-}
-```
-
-Prefer `PI_WEB_AGENT_FIRECRAWL_API_KEY` for Firecrawl auth instead of putting secrets in project config. `/web-agent doctor` validates required backend fields and checks configured self-hosted endpoints.
-
-Full guide: https://demigodmode.github.io/pi-web-agent/self-hosted-backends
+- https://demigodmode.github.io/pi-web-agent/self-hosted-backends
 
 ## Local development
 
