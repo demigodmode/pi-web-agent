@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.5.0] - 2026-05-04
+### Added
 - Added `/web-agent doctor` to report extension, runtime dependency, and browser detection status.
 - Added a `/web-agent` action menu for settings, config display, doctor, and reset actions.
 
