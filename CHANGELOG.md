@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [0.6.0] - 2026-05-04
+### Added
 - Added configurable web backends for `web_explore`, including SearXNG search and Firecrawl fetch support.
 - Added backend diagnostics to `/web-agent doctor`, including config validation and self-hosted endpoint checks.
 - Added dedicated self-hosted backend docs for connecting existing SearXNG and Firecrawl services.
