@@ -7,7 +7,7 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added one-time `pi-web-agent` changelog notices after package updates and `/web-agent changelog` for manual viewing.
 
 ### Changed
 - Migrated Pi package imports to `@earendil-works/*` after the upstream Pi scope move.

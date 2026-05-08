@@ -44,6 +44,6 @@ describe('package manifest', () => {
         import: './dist/extension.js'
       }
     });
-    expect(packageJson.files).toEqual(['dist', 'README.md']);
+    expect(packageJson.files).toEqual(['dist', 'README.md', 'CHANGELOG.md']);
   });
 });

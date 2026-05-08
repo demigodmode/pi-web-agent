@@ -240,6 +240,24 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).not.toContain('web_fetch:');
   });
 
+  it('shows the latest changelog entry on request', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      getChangelog: vi.fn().mockResolvedValue('## [1.0.0]\n- Requires Pi 0.74+.')
+    });
+
+    const notify = vi.fn();
+    await handler('changelog', { ui: { notify } });
+
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Requires Pi 0.74+'), 'info');
+  });
+
   it('resets project scope when explicitly requested', async () => {
     let handler: any;
     const reset = vi.fn();

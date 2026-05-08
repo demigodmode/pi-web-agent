@@ -13,6 +13,7 @@ import type {
 } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
 import type { WebExploreResponse } from './types.js';
+import { getUpdateChangelogNotice } from './changelog-notice.js';
 
 type ToolResultWithPresentation = {
   presentation?: PresentationEnvelope;
@@ -79,6 +80,17 @@ export default function extension(pi: ExtensionAPI) {
 
     return cachedWebExplore;
   }
+
+  pi.on('session_start', async (_event, ctx) => {
+    try {
+      const notice = await getUpdateChangelogNotice();
+      if (notice) {
+        ctx.ui.notify(`pi-web-agent updated\n\n${notice}`, 'info');
+      }
+    } catch {
+      // Never block extension startup on changelog display.
+    }
+  });
 
   pi.on('before_agent_start', async (event) => ({
     systemPrompt:

@@ -73,6 +73,7 @@ Helper commands:
 ```text
 /web-agent doctor
 /web-agent show
+/web-agent changelog
 /web-agent reset project
 /web-agent reset global
 /web-agent mode preview
