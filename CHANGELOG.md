@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [1.0.0] - 2026-05-08
+### Added
 - Added one-time `pi-web-agent` changelog notices after package updates and `/web-agent changelog` for manual viewing.
 
 ### Changed
