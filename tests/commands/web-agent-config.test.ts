@@ -7,6 +7,7 @@ import {
   registerWebAgentConfigCommands
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
+import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 import type { BrowserResolutionResult } from '../../src/fetch/browser-resolution.js';
 
 describe('web-agent config draft helpers', () => {
@@ -114,6 +115,10 @@ describe('web-agent config commands', () => {
       resolveBrowser: vi.fn().mockResolvedValue(browser),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
+      load: vi.fn().mockResolvedValue({
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
+      }),
       checkBackends: vi.fn().mockResolvedValue(['search backend: duckduckgo', 'fetch backend: http'])
     });
 
@@ -233,6 +238,24 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
     expect(notify.mock.calls[0][0]).not.toContain('web_search:');
     expect(notify.mock.calls[0][0]).not.toContain('web_fetch:');
+  });
+
+  it('shows the latest changelog entry on request', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      getChangelog: vi.fn().mockResolvedValue('## [1.0.0]\n- Requires Pi 0.74+.')
+    });
+
+    const notify = vi.fn();
+    await handler('changelog', { ui: { notify } });
+
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Requires Pi 0.74+'), 'info');
   });
 
   it('resets project scope when explicitly requested', async () => {

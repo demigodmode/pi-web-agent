@@ -4,8 +4,8 @@ import {
   DynamicBorder,
   getSettingsListTheme,
   type ExtensionAPI
-} from '@mariozechner/pi-coding-agent';
-import { Container, SelectList, SettingsList, Text, type SelectItem, type SettingItem } from '@mariozechner/pi-tui';
+} from '@earendil-works/pi-coding-agent';
+import { Container, SelectList, SettingsList, Text, type SelectItem, type SettingItem } from '@earendil-works/pi-tui';
 import {
   DEFAULT_PRESENTATION_CONFIG,
   mergePresentationConfigLayers,
@@ -18,6 +18,7 @@ import {
   type LoadedPresentationConfig
 } from '../presentation/config-store.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
+import { getLatestChangelogEntry } from '../changelog-notice.js';
 import type {
   PresentationConfig,
   PresentationConfigOverride,
@@ -33,6 +34,7 @@ type CommandDeps = {
   runtime?: { nodeVersion: string; platform: string; arch: string };
   checkTypebox?: () => Promise<boolean>;
   checkBackends?: (config: BackendConfig) => Promise<string[]>;
+  getChangelog?: () => Promise<string | undefined>;
 };
 
 type SettingsUiResult =
@@ -384,6 +386,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
   };
   const checkTypebox = deps.checkTypebox ?? defaultCheckTypebox;
   const checkBackends = deps.checkBackends ?? ((config: BackendConfig) => checkBackendHealth(config));
+  const getChangelog = deps.getChangelog ?? (() => getLatestChangelogEntry());
 
   pi.registerCommand('web-agent', {
     description: 'Open settings or manage pi-web-agent presentation config',
@@ -442,6 +445,12 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           ].join('\n'),
           'info'
         );
+        return;
+      }
+
+      if (action === 'changelog') {
+        const changelog = await getChangelog();
+        ctx.ui.notify(changelog ?? 'No pi-web-agent changelog entries found.', 'info');
         return;
       }
 
@@ -516,7 +525,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       }
 
       ctx.ui.notify(
-        'Use /web-agent, /web-agent show, /web-agent doctor, /web-agent reset project, or /web-agent settings',
+        'Use /web-agent, /web-agent show, /web-agent doctor, /web-agent changelog, /web-agent reset project, or /web-agent settings',
         'info'
       );
     }

@@ -7,16 +7,16 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added one-time `pi-web-agent` changelog notices after package updates and `/web-agent changelog` for manual viewing.
 
 ### Changed
-- Nothing yet.
+- Migrated Pi package imports to `@earendil-works/*` after the upstream Pi scope move.
 
 ### Fixed
 - Nothing yet.
 
 ### Breaking
-- None.
+- This release requires Pi 0.74+. Users on older Pi versions should stay on `@demigodmode/pi-web-agent@0.6.x` until they update Pi.
 
 ## [0.6.0] - 2026-05-04
 ### Added

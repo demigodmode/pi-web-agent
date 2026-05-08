@@ -82,6 +82,52 @@ describe('Pi extension entrypoint', () => {
     });
   });
 
+  it('shows update changelog notice on session start when available', async () => {
+    vi.resetModules();
+    const getUpdateChangelogNotice = vi.fn().mockResolvedValue('## [1.0.0]\n- Breaking change.');
+    vi.doMock('../src/changelog-notice.js', () => ({ getUpdateChangelogNotice, getLatestChangelogEntry: vi.fn() }));
+
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers = new Map<string, Function>();
+    const notify = vi.fn();
+    const pi = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    dynamicExtension(pi as never);
+    await handlers.get('session_start')?.({ reason: 'startup' }, { ui: { notify } });
+
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('pi-web-agent updated'), 'info');
+    expect(notify.mock.calls[0][0]).toContain('Breaking change.');
+  });
+
+  it('does not fail startup when changelog notice loading fails', async () => {
+    vi.resetModules();
+    vi.doMock('../src/changelog-notice.js', () => ({
+      getUpdateChangelogNotice: vi.fn().mockRejectedValue(new Error('missing changelog')),
+      getLatestChangelogEntry: vi.fn()
+    }));
+
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers = new Map<string, Function>();
+    const notify = vi.fn();
+    const pi = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      on: vi.fn((eventName: string, handler: Function) => {
+        handlers.set(eventName, handler);
+      })
+    };
+
+    dynamicExtension(pi as never);
+    await expect(handlers.get('session_start')?.({ reason: 'startup' }, { ui: { notify } })).resolves.toBeUndefined();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it('registers the web-agent config commands', () => {
     const pi = {
       registerTool: vi.fn(),

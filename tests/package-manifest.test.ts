@@ -25,6 +25,16 @@ describe('package manifest', () => {
     expect(packageJson.peerDependencies?.['@sinclair/typebox']).toBeUndefined();
   });
 
+  it('declares the migrated pi package scope only', () => {
+    expect(packageJson.peerDependencies).toMatchObject({
+      '@earendil-works/pi-coding-agent': '*',
+      '@earendil-works/pi-tui': '*'
+    });
+    expect(packageJson.peerDependencies?.['@mariozechner/pi-coding-agent']).toBeUndefined();
+    expect(packageJson.peerDependencies?.['@mariozechner/pi-tui']).toBeUndefined();
+    expect(packageJson.peerDependenciesMeta).toBeUndefined();
+  });
+
   it('declares a clean package surface', () => {
     expect(packageJson.main).toBe('./dist/extension.js');
     expect(packageJson.types).toBe('./dist/extension.d.ts');
@@ -34,6 +44,6 @@ describe('package manifest', () => {
         import: './dist/extension.js'
       }
     });
-    expect(packageJson.files).toEqual(['dist', 'README.md']);
+    expect(packageJson.files).toEqual(['dist', 'README.md', 'CHANGELOG.md']);
   });
 });

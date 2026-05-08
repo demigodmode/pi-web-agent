@@ -14,6 +14,8 @@ That sounds obvious, but a lot of agent tooling gets fuzzy right there. This pac
 
 ## Install
 
+Compatibility notice: current `pi-web-agent` requires Pi 0.74+ because Pi packages moved to the `@earendil-works/*` scope. Update Pi before updating this package. If you are on an older Pi version, stay on `@demigodmode/pi-web-agent@0.6.x` until Pi is updated.
+
 ```bash
 pi install npm:@demigodmode/pi-web-agent
 ```
@@ -71,6 +73,7 @@ Helper commands:
 ```text
 /web-agent doctor
 /web-agent show
+/web-agent changelog
 /web-agent reset project
 /web-agent reset global
 /web-agent mode preview
