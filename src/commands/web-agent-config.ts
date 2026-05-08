@@ -4,8 +4,8 @@ import {
   DynamicBorder,
   getSettingsListTheme,
   type ExtensionAPI
-} from '@mariozechner/pi-coding-agent';
-import { Container, SelectList, SettingsList, Text, type SelectItem, type SettingItem } from '@mariozechner/pi-tui';
+} from '@earendil-works/pi-coding-agent';
+import { Container, SelectList, SettingsList, Text, type SelectItem, type SettingItem } from '@earendil-works/pi-tui';
 import {
   DEFAULT_PRESENTATION_CONFIG,
   mergePresentationConfigLayers,

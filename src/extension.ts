@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { DEFAULT_BACKEND_CONFIG, type BackendConfig } from './backends/config.js';
 import { Type } from 'typebox';
 import { registerWebAgentConfigCommands } from './commands/web-agent-config.js';

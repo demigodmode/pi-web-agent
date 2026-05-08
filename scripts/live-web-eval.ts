@@ -7,7 +7,7 @@ import {
   createAgentSession,
   ModelRegistry,
   SessionManager
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import { createWebSearchTool } from '../src/tools/web-search.js';
 
 type PromptCase = {

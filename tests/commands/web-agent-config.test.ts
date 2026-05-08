@@ -7,6 +7,7 @@ import {
   registerWebAgentConfigCommands
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
+import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 import type { BrowserResolutionResult } from '../../src/fetch/browser-resolution.js';
 
 describe('web-agent config draft helpers', () => {
@@ -114,6 +115,10 @@ describe('web-agent config commands', () => {
       resolveBrowser: vi.fn().mockResolvedValue(browser),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
+      load: vi.fn().mockResolvedValue({
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
+      }),
       checkBackends: vi.fn().mockResolvedValue(['search backend: duckduckgo', 'fetch backend: http'])
     });
 
