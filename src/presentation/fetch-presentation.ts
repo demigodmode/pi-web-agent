@@ -17,12 +17,15 @@ function firstExcerpt(text: string | undefined, maxChars = 240): string | undefi
 
 export function buildFetchPresentation(result: FetchLike): PresentationEnvelope {
   const wordCount = countWords(result.content?.text);
+  const fallbackPrefix = result.metadata.fallbackFrom
+    ? `${result.metadata.fallbackFrom} failed; used ${result.metadata.method} fallback. `
+    : '';
   const compact =
     result.status === 'ok'
-      ? `Fetched page · article extracted${wordCount ? ` · ${wordCount} words` : ''}`
+      ? `${fallbackPrefix}Fetched page · article extracted${wordCount ? ` · ${wordCount} words` : ''}`
       : result.status === 'needs_headless'
-        ? `Needs headless rendering: ${result.error?.message ?? 'Headless rendering recommended.'}`
-        : `Fetch failed: ${result.error?.message ?? 'Unknown fetch failure.'}`;
+        ? `${fallbackPrefix}Needs headless rendering: ${result.error?.message ?? 'Headless rendering recommended.'}`
+        : `${fallbackPrefix}Fetch failed: ${result.error?.message ?? 'Unknown fetch failure.'}`;
 
   return {
     mode: 'compact',

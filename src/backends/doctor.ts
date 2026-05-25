@@ -1,4 +1,4 @@
-import type { BackendConfig } from './config.js';
+import type { BackendConfig, FirecrawlOptions, SearxngOptions } from './config.js';
 
 function withTimeout(timeoutMs: number) {
   const controller = new AbortController();
@@ -10,11 +10,22 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function searxngDoctorUrl(baseUrl: string) {
+function searxngDoctorUrl(baseUrl: string, options: SearxngOptions = {}) {
   const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', 'pi-web-agent-doctor');
   url.searchParams.set('format', 'json');
+  if (options.categories?.length) url.searchParams.set('categories', options.categories.join(','));
+  if (options.language) url.searchParams.set('language', options.language);
+  if (options.safesearch !== undefined) url.searchParams.set('safesearch', String(options.safesearch));
   return url.toString();
+}
+
+function firecrawlDoctorBody(options: FirecrawlOptions = {}) {
+  return {
+    url: 'https://example.com',
+    formats: options.formats ?? ['markdown'],
+    ...(options.onlyMainContent !== undefined ? { onlyMainContent: options.onlyMainContent } : {})
+  };
 }
 
 export async function checkBackendHealth(
@@ -36,7 +47,7 @@ export async function checkBackendHealth(
   } else {
     const timeout = withTimeout(timeoutMs);
     try {
-      const response = await fetchImpl(searxngDoctorUrl(config.search.baseUrl), { signal: timeout.signal });
+      const response = await fetchImpl(searxngDoctorUrl(config.search.baseUrl, config.search.options), { signal: timeout.signal });
       const json = (await response.json()) as { results?: unknown };
       lines.push(response.ok && Array.isArray(json.results)
         ? 'search backend: searxng ok'
@@ -46,6 +57,10 @@ export async function checkBackendHealth(
     } finally {
       timeout.done();
     }
+  }
+
+  if (config.search.fallback) {
+    lines.push(`search fallback: ${config.search.fallback}`);
   }
 
   if (config.fetch.provider === 'http') {
@@ -62,7 +77,7 @@ export async function checkBackendHealth(
       const response = await fetchImpl(new URL('/v1/scrape', config.fetch.baseUrl).toString(), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ url: 'https://example.com', formats: ['markdown'] }),
+        body: JSON.stringify(firecrawlDoctorBody(config.fetch.options)),
         signal: timeout.signal
       });
       lines.push(response.ok ? 'fetch backend: firecrawl ok' : `fetch backend: firecrawl warning (HTTP ${response.status})`);
@@ -71,6 +86,10 @@ export async function checkBackendHealth(
     } finally {
       timeout.done();
     }
+  }
+
+  if (config.fetch.fallback) {
+    lines.push(`fetch fallback: ${config.fetch.fallback}`);
   }
 
   return lines;

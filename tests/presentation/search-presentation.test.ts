@@ -29,4 +29,14 @@ describe('buildSearchPresentation', () => {
       'Search failed: DuckDuckGo returned no usable results for this query.'
     );
   });
+
+  it('shows search fallback in compact output', () => {
+    const presentation = buildSearchPresentation({
+      status: 'ok',
+      results: [{ title: 'Example', url: 'https://example.com', snippet: 'Fallback result' }],
+      metadata: { backend: 'duckduckgo', cacheHit: false, fallbackFrom: 'searxng', fallbackReason: 'down' }
+    });
+
+    expect(presentation.views.compact).toBe('searxng failed; used duckduckgo fallback. Found 1 result');
+  });
 });

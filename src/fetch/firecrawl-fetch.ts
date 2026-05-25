@@ -1,3 +1,4 @@
+import type { FirecrawlOptions } from '../backends/config.js';
 import type { WebFetchResponse } from '../types.js';
 
 type FirecrawlResponse = {
@@ -24,10 +25,12 @@ function errorMessage(error: unknown) {
 export function createFirecrawlFetcher({
   baseUrl,
   apiKey,
+  options,
   fetchImpl = fetch
 }: {
   baseUrl: string;
   apiKey?: string;
+  options?: FirecrawlOptions;
   fetchImpl?: typeof fetch;
 }) {
   return async function firecrawlFetch(url: string): Promise<WebFetchResponse> {
@@ -37,10 +40,16 @@ export function createFirecrawlFetcher({
         headers.Authorization = `Bearer ${apiKey}`;
       }
 
+      const body = {
+        url,
+        formats: options?.formats ?? ['markdown'],
+        ...(options?.onlyMainContent !== undefined ? { onlyMainContent: options.onlyMainContent } : {})
+      };
+
       const response = await fetchImpl(buildScrapeUrl(baseUrl), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ url, formats: ['markdown'] })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {

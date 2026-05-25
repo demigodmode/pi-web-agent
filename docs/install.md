@@ -93,7 +93,7 @@ For local-only configs you can also add `"apiKey": "..."` to the `fetch` config.
 
 Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values and checks configured SearXNG/Firecrawl endpoints with a short timeout.
 
-For the full guide, see [Self-hosted backends](/self-hosted-backends).
+Self-hosted backend config also supports explicit fallback and a small set of provider options. See [Self-hosted backends](/self-hosted-backends) for the full shape.
 
 This package integrates with existing self-hosted services. SearXNG/Firecrawl installation, Docker Compose files, reverse proxies, TLS, and auth setup belong to those projects' docs.
 

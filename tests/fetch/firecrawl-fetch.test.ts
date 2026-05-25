@@ -36,6 +36,32 @@ describe('firecrawl fetch backend', () => {
     });
   });
 
+  it('passes supported Firecrawl scrape options', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, data: { markdown: 'Useful content', metadata: {} } })
+    } as Response);
+
+    const fetcher = createFirecrawlFetcher({
+      baseUrl: 'http://localhost:3002',
+      options: { formats: ['markdown', 'html'], onlyMainContent: true },
+      fetchImpl
+    });
+
+    await fetcher('https://example.com/docs');
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://localhost:3002/v1/scrape',
+      expect.objectContaining({
+        body: JSON.stringify({
+          url: 'https://example.com/docs',
+          formats: ['markdown', 'html'],
+          onlyMainContent: true
+        })
+      })
+    );
+  });
+
   it('returns needs_headless when Firecrawl succeeds without useful text', async () => {
     const fetcher = createFirecrawlFetcher({
       baseUrl: 'http://localhost:3002',

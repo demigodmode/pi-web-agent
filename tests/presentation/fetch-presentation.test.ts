@@ -38,4 +38,15 @@ describe('buildFetchPresentation', () => {
       'Needs headless rendering: not enough content'
     );
   });
+
+  it('shows fetch fallback in compact output', () => {
+    const presentation = buildFetchPresentation({
+      status: 'ok',
+      url: 'https://example.com',
+      content: { text: 'Fallback content' },
+      metadata: { method: 'http', cacheHit: false, fallbackFrom: 'firecrawl', fallbackReason: 'weak' }
+    });
+
+    expect(presentation.views.compact).toBe('firecrawl failed; used http fallback. Fetched page · article extracted · 2 words');
+  });
 });

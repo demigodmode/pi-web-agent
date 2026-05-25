@@ -56,4 +56,64 @@ describe('backend config', () => {
       headless: { provider: 'local-browser' }
     });
   });
+
+  it('extracts fallback and supported backend options', () => {
+    expect(
+      mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, {
+        search: {
+          provider: 'searxng',
+          baseUrl: 'http://localhost:8080',
+          fallback: 'duckduckgo',
+          options: { categories: ['general', 'it'], language: 'en', safesearch: 1 }
+        },
+        fetch: {
+          provider: 'firecrawl',
+          baseUrl: 'http://localhost:3002',
+          fallback: 'http',
+          options: { formats: ['markdown'], onlyMainContent: true }
+        }
+      })
+    ).toEqual({
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://localhost:8080',
+        fallback: 'duckduckgo',
+        options: { categories: ['general', 'it'], language: 'en', safesearch: 1 }
+      },
+      fetch: {
+        provider: 'firecrawl',
+        baseUrl: 'http://localhost:3002',
+        fallback: 'http',
+        options: { formats: ['markdown'], onlyMainContent: true }
+      },
+      headless: { provider: 'local-browser' }
+    });
+  });
+
+  it('drops provider-specific fallback and options when provider changes', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        {
+          search: {
+            provider: 'searxng',
+            baseUrl: 'http://localhost:8080',
+            fallback: 'duckduckgo',
+            options: { categories: ['it'] }
+          },
+          fetch: {
+            provider: 'firecrawl',
+            baseUrl: 'http://localhost:3002',
+            fallback: 'http',
+            options: { formats: ['markdown'] }
+          }
+        },
+        { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' } }
+      )
+    ).toEqual({
+      search: { provider: 'duckduckgo' },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    });
+  });
 });

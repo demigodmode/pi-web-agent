@@ -14,6 +14,14 @@ export type BackendSet = {
   headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
 };
 
+export type BackendFactoryDeps = {
+  createDuckDuckGoSearch?: typeof createWebSearchTool;
+  createSearxngSearch?: typeof createSearxngSearchTool;
+  createHttpFetch?: typeof createWebFetchTool;
+  createFirecrawlFetch?: typeof createFirecrawlFetcher;
+  createHeadlessFetch?: typeof createWebFetchHeadlessTool;
+};
+
 function invalidSearxngSearch() {
   return async function search() {
     const result: WebSearchResponse = {
@@ -46,27 +54,88 @@ function invalidFirecrawlFetch() {
   };
 }
 
-export function createBackendSet(config: BackendConfig = DEFAULT_BACKEND_CONFIG): BackendSet {
-  const search = config.search.provider === 'searxng'
-    ? config.search.baseUrl
-      ? createSearxngSearchTool({ baseUrl: config.search.baseUrl })
-      : invalidSearxngSearch()
-    : createWebSearchTool();
+function withSearchFallback(
+  primary: BackendSet['search'],
+  fallback: BackendSet['search']
+): BackendSet['search'] {
+  return async (input) => {
+    const first = await primary(input);
+    if (first.status !== 'error') return first;
 
-  const fetchPage = config.fetch.provider === 'firecrawl'
+    const second = await fallback(input);
+    const result: WebSearchResponse = {
+      ...second,
+      metadata: {
+        ...second.metadata,
+        fallbackFrom: 'searxng',
+        fallbackReason: first.error?.message ?? 'SearXNG search failed.'
+      }
+    };
+    return { ...result, presentation: buildSearchPresentation(result) };
+  };
+}
+
+function withFetchFallback(
+  primary: BackendSet['fetchPage'],
+  fallback: BackendSet['fetchPage']
+): BackendSet['fetchPage'] {
+  return async (input) => {
+    const first = await primary(input);
+    if (first.status !== 'error' && first.status !== 'needs_headless') return first;
+
+    const second = await fallback(input);
+    const result: WebFetchResponse = {
+      ...second,
+      metadata: {
+        ...second.metadata,
+        fallbackFrom: 'firecrawl',
+        fallbackReason: first.error?.message ?? 'Firecrawl fetch failed.'
+      }
+    };
+    return { ...result, presentation: buildFetchPresentation(result) };
+  };
+}
+
+export function createBackendSet(
+  config: BackendConfig = DEFAULT_BACKEND_CONFIG,
+  deps: BackendFactoryDeps = {}
+): BackendSet {
+  const createDuckDuckGoSearch = deps.createDuckDuckGoSearch ?? createWebSearchTool;
+  const createSearxngSearch = deps.createSearxngSearch ?? createSearxngSearchTool;
+  const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
+  const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
+  const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
+
+  let search = config.search.provider === 'searxng'
+    ? config.search.baseUrl
+      ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options })
+      : invalidSearxngSearch()
+    : createDuckDuckGoSearch();
+
+  if (config.search.provider === 'searxng' && config.search.fallback === 'duckduckgo') {
+    search = withSearchFallback(search, createDuckDuckGoSearch());
+  }
+
+  const httpFetch = createHttpFetch();
+  let fetchPage = config.fetch.provider === 'firecrawl'
     ? config.fetch.baseUrl
-      ? createWebFetchTool({
-          fetchPage: createFirecrawlFetcher({
+      ? createHttpFetch({
+          fetchPage: createFirecrawlFetch({
             baseUrl: config.fetch.baseUrl,
-            apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY
+            apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY,
+            options: config.fetch.options
           })
         })
-      : createWebFetchTool({ fetchPage: invalidFirecrawlFetch() })
-    : createWebFetchTool();
+      : createHttpFetch({ fetchPage: invalidFirecrawlFetch() })
+    : httpFetch;
+
+  if (config.fetch.provider === 'firecrawl' && config.fetch.fallback === 'http') {
+    fetchPage = withFetchFallback(fetchPage, httpFetch);
+  }
 
   return {
     search,
     fetchPage,
-    headlessFetch: createWebFetchHeadlessTool()
+    headlessFetch: createHeadlessFetch()
   };
 }
