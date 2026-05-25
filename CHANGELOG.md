@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [1.1.0] - 2026-05-25
+### Added
 - Added explicit opt-in fallback from SearXNG to DuckDuckGo and Firecrawl to HTTP.
 - Added supported SearXNG and Firecrawl backend options in config.
 - Added env-gated live tests for local SearXNG and Firecrawl instances.
