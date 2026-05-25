@@ -118,8 +118,19 @@ describe('presentation config store', () => {
       JSON.stringify({
         presentation: { defaultMode: 'verbose' },
         backends: {
-          search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
-          fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', apiKey: 'dev-key' }
+          search: {
+            provider: 'searxng',
+            baseUrl: 'http://localhost:8080',
+            fallback: 'duckduckgo',
+            options: { categories: ['general'], language: 'en', safesearch: 1 }
+          },
+          fetch: {
+            provider: 'firecrawl',
+            baseUrl: 'http://localhost:3002',
+            apiKey: 'dev-key',
+            fallback: 'http',
+            options: { formats: ['markdown'], onlyMainContent: true }
+          }
         }
       }),
       'utf8'
@@ -129,8 +140,19 @@ describe('presentation config store', () => {
 
     expect(loaded.effectiveConfig.defaultMode).toBe('verbose');
     expect(loaded.effectiveBackends).toEqual({
-      search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
-      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', apiKey: 'dev-key' },
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://localhost:8080',
+        fallback: 'duckduckgo',
+        options: { categories: ['general'], language: 'en', safesearch: 1 }
+      },
+      fetch: {
+        provider: 'firecrawl',
+        baseUrl: 'http://localhost:3002',
+        apiKey: 'dev-key',
+        fallback: 'http',
+        options: { formats: ['markdown'], onlyMainContent: true }
+      },
       headless: { provider: 'local-browser' }
     });
   });

@@ -72,17 +72,36 @@ async function defaultCheckTypebox(): Promise<boolean> {
   }
 }
 
+function formatSearchOptions(config: BackendConfig['search']) {
+  return [
+    config.fallback ? `fallback ${config.fallback}` : undefined,
+    config.options?.categories?.length ? `categories ${config.options.categories.join(',')}` : undefined,
+    config.options?.language ? `language ${config.options.language}` : undefined,
+    config.options?.safesearch !== undefined ? `safesearch ${config.options.safesearch}` : undefined
+  ].filter(Boolean).join(' ');
+}
+
+function formatFetchOptions(config: BackendConfig['fetch']) {
+  return [
+    config.fallback ? `fallback ${config.fallback}` : undefined,
+    config.options?.formats?.length ? `formats ${config.options.formats.join(',')}` : undefined,
+    config.options?.onlyMainContent !== undefined ? `onlyMainContent ${config.options.onlyMainContent}` : undefined
+  ].filter(Boolean).join(' ');
+}
+
 function formatBackendSummary(config: BackendConfig = DEFAULT_BACKEND_CONFIG) {
-  const search = config.search.baseUrl
+  const searchSuffix = formatSearchOptions(config.search);
+  const fetchSuffix = formatFetchOptions(config.fetch);
+  const searchBase = config.search.baseUrl
     ? `search: ${config.search.provider} (${config.search.baseUrl})`
     : `search: ${config.search.provider}`;
-  const fetch = config.fetch.baseUrl
+  const fetchBase = config.fetch.baseUrl
     ? `fetch: ${config.fetch.provider} (${config.fetch.baseUrl})`
     : `fetch: ${config.fetch.provider}`;
 
   return [
-    search,
-    fetch,
+    searchSuffix ? `${searchBase} ${searchSuffix}` : searchBase,
+    fetchSuffix ? `${fetchBase} ${fetchSuffix}` : fetchBase,
     `headless: ${config.headless.provider}`
   ].join('\n');
 }

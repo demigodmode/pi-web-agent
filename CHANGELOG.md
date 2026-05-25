@@ -7,10 +7,12 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added explicit opt-in fallback from SearXNG to DuckDuckGo and Firecrawl to HTTP.
+- Added supported SearXNG and Firecrawl backend options in config.
+- Added env-gated live tests for local SearXNG and Firecrawl instances.
 
 ### Changed
-- Nothing yet.
+- `/web-agent show` and `/web-agent doctor` now report configured backend fallback/options.
 
 ### Fixed
 - Nothing yet.

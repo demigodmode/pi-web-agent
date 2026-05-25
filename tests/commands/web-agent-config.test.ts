@@ -220,8 +220,18 @@ describe('web-agent config commands', () => {
           tools: { web_explore: { mode: 'verbose' } }
         },
         effectiveBackends: {
-          search: { provider: 'duckduckgo' },
-          fetch: { provider: 'http' },
+          search: {
+            provider: 'searxng',
+            baseUrl: 'http://localhost:8080',
+            fallback: 'duckduckgo',
+            options: { categories: ['general', 'it'], language: 'en', safesearch: 1 }
+          },
+          fetch: {
+            provider: 'firecrawl',
+            baseUrl: 'http://localhost:3002',
+            fallback: 'http',
+            options: { formats: ['markdown'], onlyMainContent: true }
+          },
           headless: { provider: 'local-browser' }
         }
       }),
@@ -233,8 +243,8 @@ describe('web-agent config commands', () => {
 
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('defaultMode: preview'), 'info');
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('web_explore: verbose'), 'info');
-    expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
-    expect(notify.mock.calls[0][0]).toContain('fetch: http');
+    expect(notify.mock.calls[0][0]).toContain('search: searxng (http://localhost:8080) fallback duckduckgo categories general,it language en safesearch 1');
+    expect(notify.mock.calls[0][0]).toContain('fetch: firecrawl (http://localhost:3002) fallback http formats markdown onlyMainContent true');
     expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
     expect(notify.mock.calls[0][0]).not.toContain('web_search:');
     expect(notify.mock.calls[0][0]).not.toContain('web_fetch:');

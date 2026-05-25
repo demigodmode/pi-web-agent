@@ -83,6 +83,26 @@ Run this after editing config:
 
 Doctor checks that the configured SearXNG endpoint responds with JSON that looks like search results.
 
+Supported SearXNG options can stay in config:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "searxng",
+      "baseUrl": "http://localhost:8080",
+      "options": {
+        "categories": ["general", "it"],
+        "language": "en",
+        "safesearch": 1
+      }
+    }
+  }
+}
+```
+
+These map to SearXNG search query params. Unsupported or malformed values show up as config warnings in `/web-agent doctor`.
+
 ## Firecrawl fetch
 
 To use Firecrawl for page reading, set `backends.fetch.provider` to `firecrawl` and provide `baseUrl`:
@@ -126,6 +146,48 @@ You can also set an API key in config for local-only setups:
 
 Avoid committing project config files that contain secrets.
 
+Supported Firecrawl options can stay in config:
+
+```json
+{
+  "backends": {
+    "fetch": {
+      "provider": "firecrawl",
+      "baseUrl": "http://localhost:3002",
+      "options": {
+        "formats": ["markdown"],
+        "onlyMainContent": true
+      }
+    }
+  }
+}
+```
+
+These are sent in the Firecrawl scrape request body. The supported set is intentionally small for now.
+
+## Explicit fallback
+
+Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend unless you configure it.
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "searxng",
+      "baseUrl": "http://localhost:8080",
+      "fallback": "duckduckgo"
+    },
+    "fetch": {
+      "provider": "firecrawl",
+      "baseUrl": "http://localhost:3002",
+      "fallback": "http"
+    }
+  }
+}
+```
+
+When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG and Firecrawl failures stay visible instead of silently switching to external/default backends.
+
 ## Full self-hosted example
 
 ```json
@@ -133,11 +195,22 @@ Avoid committing project config files that contain secrets.
   "backends": {
     "search": {
       "provider": "searxng",
-      "baseUrl": "http://localhost:8080"
+      "baseUrl": "http://localhost:8080",
+      "fallback": "duckduckgo",
+      "options": {
+        "categories": ["general"],
+        "language": "en",
+        "safesearch": 1
+      }
     },
     "fetch": {
       "provider": "firecrawl",
-      "baseUrl": "http://localhost:3002"
+      "baseUrl": "http://localhost:3002",
+      "fallback": "http",
+      "options": {
+        "formats": ["markdown"],
+        "onlyMainContent": true
+      }
     },
     "headless": {
       "provider": "local-browser"
@@ -156,11 +229,13 @@ You can combine this with presentation settings in the same file:
   "backends": {
     "search": {
       "provider": "searxng",
-      "baseUrl": "http://localhost:8080"
+      "baseUrl": "http://localhost:8080",
+      "fallback": "duckduckgo"
     },
     "fetch": {
       "provider": "firecrawl",
-      "baseUrl": "http://localhost:3002"
+      "baseUrl": "http://localhost:3002",
+      "fallback": "http"
     },
     "headless": {
       "provider": "local-browser"
@@ -186,11 +261,13 @@ Run diagnostics:
 Expected healthy output includes lines like:
 
 ```text
-search: searxng (http://localhost:8080)
-fetch: firecrawl (http://localhost:3002)
+search: searxng (http://localhost:8080) fallback duckduckgo
+fetch: firecrawl (http://localhost:3002) fallback http
 backend config: ok
 search backend: searxng ok
+search fallback: duckduckgo
 fetch backend: firecrawl ok
+fetch fallback: http
 ```
 
 Then try a normal research prompt:
@@ -230,4 +307,4 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG to DuckDuckGo or from Firecrawl to plain HTTP when you choose self-hosted providers. Fallback policy needs to be explicit because some users choose self-hosted backends specifically to avoid external services.
+`pi-web-agent` does not silently fall back from SearXNG to DuckDuckGo or from Firecrawl to plain HTTP when you choose self-hosted providers. Fallback only happens when `fallback` is configured because some users choose self-hosted backends specifically to avoid external services.

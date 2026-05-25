@@ -24,11 +24,15 @@ export type ToolError = {
 export type SearchMetadata = {
   backend: 'duckduckgo' | 'searxng';
   cacheHit: boolean;
+  fallbackFrom?: 'searxng';
+  fallbackReason?: string;
 };
 
 export type FetchMetadata = {
   method: 'http' | 'headless' | 'firecrawl';
   cacheHit: boolean;
+  fallbackFrom?: 'firecrawl';
+  fallbackReason?: string;
   contentType?: string;
   truncated?: boolean;
   browser?: 'configured' | 'chrome' | 'edge' | 'brave' | 'chromium';

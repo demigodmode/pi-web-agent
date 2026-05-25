@@ -2,12 +2,16 @@ import type { WebSearchResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 
 function formatCompact(result: WebSearchResponse): string {
+  const fallbackPrefix = result.metadata.fallbackFrom
+    ? `${result.metadata.fallbackFrom} failed; used ${result.metadata.backend} fallback. `
+    : '';
+
   if (result.status === 'error') {
-    return `Search failed: ${result.error?.message ?? 'Unknown search failure.'}`;
+    return `${fallbackPrefix}Search failed: ${result.error?.message ?? 'Unknown search failure.'}`;
   }
 
   const suffix = result.results.length === 1 ? 'result' : 'results';
-  return `Found ${result.results.length} ${suffix}`;
+  return `${fallbackPrefix}Found ${result.results.length} ${suffix}`;
 }
 
 export function buildSearchPresentation(result: WebSearchResponse): PresentationEnvelope {

@@ -27,6 +27,25 @@ describe('searxng search backend', () => {
     });
   });
 
+  it('passes supported SearXNG options as query params', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ title: 'Docs', url: 'https://example.com', content: 'Snippet' }] })
+    } as Response);
+
+    const search = createSearxngSearchTool({
+      baseUrl: 'http://localhost:8080',
+      options: { categories: ['general', 'it'], language: 'en', safesearch: 1 },
+      fetchImpl
+    });
+
+    await search({ query: 'example docs' });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://localhost:8080/search?q=example+docs&format=json&categories=general%2Cit&language=en&safesearch=1'
+    );
+  });
+
   it('returns a useful error when SearXNG is unreachable', async () => {
     const search = createSearxngSearchTool({
       baseUrl: 'http://localhost:8080',

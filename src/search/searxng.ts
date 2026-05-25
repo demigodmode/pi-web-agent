@@ -1,3 +1,4 @@
+import type { SearxngOptions } from '../backends/config.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import type { SearchResult, WebSearchResponse } from '../types.js';
 
@@ -11,10 +12,13 @@ type SearxngResponse = {
   results?: SearxngResult[];
 };
 
-function buildSearchUrl(baseUrl: string, query: string) {
+function buildSearchUrl(baseUrl: string, query: string, options: SearxngOptions = {}) {
   const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'json');
+  if (options.categories?.length) url.searchParams.set('categories', options.categories.join(','));
+  if (options.language) url.searchParams.set('language', options.language);
+  if (options.safesearch !== undefined) url.searchParams.set('safesearch', String(options.safesearch));
   return url.toString();
 }
 
@@ -36,9 +40,11 @@ function normalizeResults(response: SearxngResponse): SearchResult[] {
 
 export function createSearxngSearchTool({
   baseUrl,
+  options,
   fetchImpl = fetch
 }: {
   baseUrl: string;
+  options?: SearxngOptions;
   fetchImpl?: typeof fetch;
 }) {
   return async function searxngSearch({ query }: { query: string }): Promise<WebSearchResponse> {
@@ -55,7 +61,7 @@ export function createSearxngSearchTool({
     }
 
     try {
-      const response = await fetchImpl(buildSearchUrl(baseUrl, normalizedQuery));
+      const response = await fetchImpl(buildSearchUrl(baseUrl, normalizedQuery, options));
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }

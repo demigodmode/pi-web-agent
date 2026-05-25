@@ -72,7 +72,7 @@ If you run your own services, you can point search at SearXNG and page reading a
 
 Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check whether configured self-hosted endpoints respond.
 
-For the full setup guide, see [Self-hosted backends](/self-hosted-backends).
+Self-hosted backend config also supports explicit fallback and a small set of provider options. See [Self-hosted backends](/self-hosted-backends) for the full shape.
 
 If your Firecrawl instance requires an API key, prefer an environment variable instead of committing secrets into project config:
 
