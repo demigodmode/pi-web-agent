@@ -7,7 +7,8 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added backend provider and fallback editing to `/web-agent settings`.
+- Added interactive URL prompts for SearXNG and Firecrawl backend setup.
 
 ### Changed
 - Nothing yet.

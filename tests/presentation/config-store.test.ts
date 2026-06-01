@@ -6,6 +6,7 @@ import {
   getPresentationConfigPaths,
   loadPresentationConfigLayers,
   resetPresentationConfigScope,
+  saveBackendConfigScope,
   savePresentationConfigScope
 } from '../../src/presentation/config-store.js';
 
@@ -218,6 +219,31 @@ describe('presentation config store', () => {
       presentation: {
         tools: { web_search: { mode: 'verbose' } }
       }
+    });
+  });
+
+  it('saves backend overrides without dropping existing presentation config', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+
+    await savePresentationConfigScope({ homeDir, projectDir }, 'project', {
+      defaultMode: 'preview',
+      tools: { web_explore: { mode: 'verbose' } }
+    });
+
+    await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
+      search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http', apiKey: 'do-not-write' }
+    });
+
+    const parsed = JSON.parse(readFileSync(projectPath, 'utf8'));
+
+    expect(parsed.presentation).toEqual({
+      defaultMode: 'preview',
+      tools: { web_explore: { mode: 'verbose' } }
+    });
+    expect(parsed.backends).toEqual({
+      search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }
     });
   });
 

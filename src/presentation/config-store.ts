@@ -100,6 +100,42 @@ function serializePresentationConfigOverride(config: PresentationConfigOverride)
   return { presentation };
 }
 
+function serializeBackendConfigOverride(config: BackendConfigOverride): BackendConfigFile {
+  const backends: NonNullable<BackendConfigFile['backends']> = {};
+
+  if (config.search && Object.keys(config.search).length > 0) {
+    backends.search = { ...config.search };
+  }
+
+  if (config.fetch && Object.keys(config.fetch).length > 0) {
+    const { apiKey: _apiKey, ...fetch } = config.fetch;
+    backends.fetch = { ...fetch };
+  }
+
+  if (config.headless && Object.keys(config.headless).length > 0) {
+    backends.headless = { ...config.headless };
+  }
+
+  return { backends };
+}
+
+async function readConfigFileForWrite(filePath: string): Promise<AgentConfigFile> {
+  try {
+    return JSON.parse(await readFile(filePath, 'utf8')) as AgentConfigFile;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+      return {};
+    }
+
+    throw error;
+  }
+}
+
+async function writeConfigFile(filePath: string, config: AgentConfigFile) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+}
+
 export async function loadPresentationConfigLayers(
   options: PresentationConfigStoreOptions = {}
 ): Promise<LoadedPresentationConfig> {
@@ -130,13 +166,27 @@ export async function savePresentationConfigScope(
 ) {
   const { globalPath, projectPath } = getPresentationConfigPaths(options);
   const filePath = scope === 'global' ? globalPath : projectPath;
+  const existing = await readConfigFileForWrite(filePath);
 
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(
-    filePath,
-    JSON.stringify(serializePresentationConfigOverride(config), null, 2) + '\n',
-    'utf8'
-  );
+  await writeConfigFile(filePath, {
+    ...existing,
+    ...serializePresentationConfigOverride(config)
+  });
+}
+
+export async function saveBackendConfigScope(
+  options: PresentationConfigStoreOptions,
+  scope: PresentationScope,
+  config: BackendConfigOverride
+) {
+  const { globalPath, projectPath } = getPresentationConfigPaths(options);
+  const filePath = scope === 'global' ? globalPath : projectPath;
+  const existing = await readConfigFileForWrite(filePath);
+
+  await writeConfigFile(filePath, {
+    ...existing,
+    ...serializeBackendConfigOverride(config)
+  });
 }
 
 export async function resetPresentationConfigScope(

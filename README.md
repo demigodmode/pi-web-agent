@@ -109,7 +109,17 @@ Example:
 }
 ```
 
-Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local browser headless fallback. If you already run SearXNG or Firecrawl, see the self-hosted backend guide:
+Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local browser headless fallback.
+
+Backend settings can be changed from:
+
+```text
+/web-agent settings
+```
+
+Choose **Backends** to edit search/fetch providers, fallback behavior, and SearXNG or Firecrawl base URLs interactively. Firecrawl API keys should stay in environment variables rather than being written into config files.
+
+If you already run SearXNG or Firecrawl, see the self-hosted backend guide:
 
 - https://demigodmode.github.io/pi-web-agent/self-hosted-backends
 
