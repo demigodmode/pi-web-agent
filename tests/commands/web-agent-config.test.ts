@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applySettingsValue,
+  collapseBackendConfigToOverride,
   collapsePresentationConfigToOverride,
   createSettingsDraftState,
   handleSettingsShortcut,
-  registerWebAgentConfigCommands
+  registerWebAgentConfigCommands,
+  validateBackendUrl
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
@@ -75,6 +77,98 @@ describe('web-agent config draft helpers', () => {
     ).toEqual({
       tools: { web_explore: { mode: 'verbose' } }
     });
+  });
+
+  it('switches backend settings with the selected scope draft', () => {
+    const loaded = {
+      global: {
+        path: '/global/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'http://global-searxng', fallback: 'duckduckgo' as const },
+          fetch: { provider: 'http' as const }
+        }
+      },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          fetch: { provider: 'firecrawl' as const, baseUrl: 'http://project-firecrawl', fallback: 'http' as const }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'http://global-searxng', fallback: 'duckduckgo' as const },
+        fetch: { provider: 'firecrawl' as const, baseUrl: 'http://project-firecrawl', fallback: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const initial = createSettingsDraftState(loaded, 'project');
+    expect(initial.backends.fetch.provider).toBe('firecrawl');
+
+    const switched = applySettingsValue(initial, 'scope', 'global');
+    expect(switched.backends.fetch.provider).toBe('http');
+  });
+
+  it('collapses backend values inherited from the parent scope', () => {
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        {
+          search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        }
+      )
+    ).toEqual({});
+  });
+
+  it('applies backend provider, fallback, and url draft values', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+
+    const searchProviderState = applySettingsValue(state, 'backend:search:provider', 'searxng');
+    const fetchProviderState = applySettingsValue(state, 'backend:fetch:provider', 'firecrawl');
+
+    expect(searchProviderState.backends.search.provider).toBe('searxng');
+    expect(applySettingsValue(searchProviderState, 'backend:search:fallback', 'duckduckgo').backends.search.fallback).toBe('duckduckgo');
+    expect(fetchProviderState.backends.fetch.provider).toBe('firecrawl');
+    expect(applySettingsValue(fetchProviderState, 'backend:fetch:fallback', 'http').backends.fetch.fallback).toBe('http');
+    expect(applySettingsValue(state, 'backend:search:baseUrl', 'http://localhost:8080').backends.search.baseUrl).toBe('http://localhost:8080');
+    expect(applySettingsValue(state, 'backend:fetch:baseUrl', 'http://localhost:3002').backends.fetch.baseUrl).toBe('http://localhost:3002');
+  });
+
+  it('does not set fallback values for providers that do not support them', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+
+    expect(applySettingsValue(state, 'backend:search:fallback', 'duckduckgo').backends.search.fallback).toBeUndefined();
+    expect(applySettingsValue(state, 'backend:fetch:fallback', 'http').backends.fetch.fallback).toBeUndefined();
+  });
+
+  it('validates backend urls for interactive prompts', () => {
+    expect(validateBackendUrl('localhost:8080')).toEqual({ ok: false, message: 'Invalid URL. Include http:// or https://.' });
+    expect(validateBackendUrl('ftp://localhost:8080')).toEqual({ ok: false, message: 'Invalid URL. Include http:// or https://.' });
+    expect(validateBackendUrl('http://localhost:8080')).toEqual({ ok: true, value: 'http://localhost:8080' });
   });
 
   it('supports real cancel and reset shortcuts in the settings UI', () => {
@@ -310,18 +404,20 @@ describe('web-agent config commands', () => {
     const custom = vi
       .fn()
       .mockResolvedValueOnce('settings')
+      .mockResolvedValueOnce('presentation')
       .mockResolvedValueOnce({
         scope: 'project',
         config: {
           defaultMode: 'preview',
           tools: { web_explore: { mode: 'verbose' } }
         },
+        backends: DEFAULT_BACKEND_CONFIG,
         action: 'save'
       });
 
     await handler('', { ui: { custom, notify: vi.fn() } });
 
-    expect(custom).toHaveBeenCalledTimes(2);
+    expect(custom).toHaveBeenCalledTimes(3);
   });
 
   it('runs doctor from the action menu', async () => {
@@ -367,18 +463,117 @@ describe('web-agent config commands', () => {
       reset: vi.fn()
     });
 
-    const custom = vi.fn().mockResolvedValue({
-      scope: 'project',
-      config: {
-        defaultMode: 'preview',
-        tools: { web_explore: { mode: 'verbose' } }
-      },
-      action: 'save'
-    });
+    const custom = vi
+      .fn()
+      .mockResolvedValueOnce('presentation')
+      .mockResolvedValueOnce({
+        scope: 'project',
+        config: {
+          defaultMode: 'preview',
+          tools: { web_explore: { mode: 'verbose' } }
+        },
+        backends: DEFAULT_BACKEND_CONFIG,
+        action: 'save'
+      });
 
     await handler('settings', { ui: { custom, notify: vi.fn() } });
 
-    expect(custom).toHaveBeenCalledOnce();
+    expect(custom).toHaveBeenCalledTimes(2);
+  });
+
+  it('saves only presentation overrides from the presentation settings section', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const notify = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: { defaultMode: 'compact', tools: {} },
+        effectiveBackends: {
+          search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+          fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' },
+          headless: { provider: 'local-browser' }
+        }
+      }),
+      save,
+      saveBackends,
+      reset: vi.fn()
+    });
+
+    await handler('settings', {
+      ui: {
+        custom: vi
+          .fn()
+          .mockResolvedValueOnce('presentation')
+          .mockResolvedValueOnce({
+            action: 'save',
+            scope: 'project',
+            config: { defaultMode: 'preview', tools: {} },
+            backends: DEFAULT_BACKEND_CONFIG
+          }),
+        notify
+      }
+    });
+
+    expect(save).toHaveBeenCalledWith('project', { defaultMode: 'preview', tools: {} });
+    expect(saveBackends).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved project presentation config'), 'info');
+  });
+
+  it('saves only backend overrides from the backend settings section', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: { defaultMode: 'compact', tools: {} },
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
+      }),
+      save,
+      saveBackends,
+      reset: vi.fn()
+    });
+
+    await handler('settings', {
+      ui: {
+        custom: vi
+          .fn()
+          .mockResolvedValueOnce('backends')
+          .mockResolvedValueOnce({
+            action: 'save',
+            scope: 'project',
+            config: { defaultMode: 'compact', tools: {} },
+            backends: {
+              search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+              fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' },
+              headless: { provider: 'local-browser' }
+            }
+          }),
+        notify: vi.fn()
+      }
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(saveBackends).toHaveBeenCalledWith('project', {
+      search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }
+    });
   });
 
   it('saves sparse project overrides from settings instead of copying inherited defaults', async () => {
@@ -399,22 +594,28 @@ describe('web-agent config commands', () => {
           rawConfig: { defaultMode: 'preview', tools: {} }
         },
         project: { path: '/project/config.json', exists: false },
-        effectiveConfig: { defaultMode: 'preview', tools: {} }
+        effectiveConfig: { defaultMode: 'preview', tools: {} },
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
       }),
       save,
+      saveBackends: vi.fn(),
       reset: vi.fn()
     });
 
     await handler('settings', {
       ui: {
-        custom: vi.fn().mockResolvedValue({
-          action: 'save',
-          scope: 'project',
-          config: {
-            defaultMode: 'preview',
-            tools: { web_explore: { mode: 'verbose' } }
-          }
-        }),
+        custom: vi
+          .fn()
+          .mockResolvedValueOnce('presentation')
+          .mockResolvedValueOnce({
+            action: 'save',
+            scope: 'project',
+            config: {
+              defaultMode: 'preview',
+              tools: { web_explore: { mode: 'verbose' } }
+            },
+            backends: DEFAULT_BACKEND_CONFIG
+          }),
         notify
       }
     });
@@ -422,7 +623,7 @@ describe('web-agent config commands', () => {
     expect(save).toHaveBeenCalledWith('project', {
       tools: { web_explore: { mode: 'verbose' } }
     });
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved project config'), 'info');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved project presentation config'), 'info');
   });
 
   it('resets the selected scope when the settings ui returns reset', async () => {
