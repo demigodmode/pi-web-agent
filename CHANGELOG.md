@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [1.2.0] - 2026-06-01
+### Added
 - Added backend provider and fallback editing to `/web-agent settings`.
 - Added interactive URL prompts for SearXNG and Firecrawl backend setup.
 
