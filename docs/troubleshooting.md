@@ -47,7 +47,7 @@ If you only have Firefox or Safari, search and plain HTTP reads can still work, 
 
 ## `/web-agent` did something unexpected
 
-`/web-agent` opens an action menu with settings, show config, doctor, and reset options.
+`/web-agent` opens an action menu with settings, show config, doctor, changelog, and reset options.
 
 If you just want to inspect the currently effective config instead, use:
 
@@ -68,10 +68,10 @@ If you want the diagnostic report directly, use:
 /web-agent doctor
 ```
 
-The settings UI currently exposes:
+The settings UI currently has two sections:
 
-- `defaultMode`
-- `web_explore`
+- **Presentation** — `defaultMode` and `web_explore`
+- **Backends** — search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and an env-var reminder for Firecrawl API keys
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
 

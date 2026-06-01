@@ -90,13 +90,14 @@ These also work:
 
 ## What `/web-agent` does
 
-`/web-agent` and `/web-agent settings` both open the interactive settings UI.
+`/web-agent` opens the action menu. Choose **Settings** to pick between:
 
-From there you can:
+- **Presentation** — default output mode and the `web_explore` override
+- **Backends** — search/fetch providers, base URLs, fallback behavior, and the Firecrawl API-key note
+
+From either settings screen you can:
 
 - choose whether you are editing global or project settings
-- change the default mode
-- change the `web_explore` override
 - save, reset the current scope, or cancel
 
 Keyboard shortcuts in the settings UI:
@@ -107,7 +108,7 @@ Keyboard shortcuts in the settings UI:
 
 ## Config files
 
-Settings are stored in real JSON files.
+Settings are stored in real JSON files. The UI writes presentation and backend sections separately so changing one does not wipe the other.
 
 Global config:
 
@@ -150,9 +151,16 @@ When you switch `web_explore` back to `inherit`, the package removes that overri
     "tools": {
       "web_explore": { "mode": "verbose" }
     }
+  },
+  "backends": {
+    "search": { "provider": "duckduckgo" },
+    "fetch": { "provider": "http" },
+    "headless": { "provider": "local-browser" }
   }
 }
 ```
+
+Backend provider, URL, and fallback settings are usually easier to edit through **Settings → Backends** than by hand.
 
 ## When to use each mode
 

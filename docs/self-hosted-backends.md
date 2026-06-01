@@ -38,6 +38,25 @@ Without any backend config, `pi-web-agent` uses:
 
 That path does not require SearXNG or Firecrawl.
 
+## Easiest setup path
+
+Open:
+
+```text
+/web-agent settings
+```
+
+Choose **Backends**. From there you can:
+
+- switch search between DuckDuckGo and SearXNG
+- edit the SearXNG base URL
+- enable SearXNG → DuckDuckGo fallback
+- switch fetch between plain HTTP and Firecrawl
+- edit the Firecrawl base URL
+- enable Firecrawl → HTTP fallback
+
+Firecrawl API keys are intentionally not edited in the settings UI. Prefer `PI_WEB_AGENT_FIRECRAWL_API_KEY` for secrets.
+
 ## Config file locations
 
 Global config:
@@ -56,7 +75,7 @@ Project config overrides global config.
 
 ## SearXNG search
 
-To use SearXNG for search, set `backends.search.provider` to `searxng` and provide `baseUrl`:
+To use SearXNG for search, choose **Settings → Backends**, set search provider to `searxng`, and enter the base URL. The equivalent config is:
 
 ```json
 {
@@ -105,7 +124,7 @@ These map to SearXNG search query params. Unsupported or malformed values show u
 
 ## Firecrawl fetch
 
-To use Firecrawl for page reading, set `backends.fetch.provider` to `firecrawl` and provide `baseUrl`:
+To use Firecrawl for page reading, choose **Settings → Backends**, set fetch provider to `firecrawl`, and enter the base URL. The equivalent config is:
 
 ```json
 {
@@ -130,7 +149,7 @@ If your Firecrawl instance requires an API key, prefer an environment variable:
 PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 ```
 
-You can also set an API key in config for local-only setups:
+The settings UI does not write API keys. You can still set an API key in config for local-only setups:
 
 ```json
 {
@@ -167,7 +186,7 @@ These are sent in the Firecrawl scrape request body. The supported set is intent
 
 ## Explicit fallback
 
-Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend unless you configure it.
+Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend unless you configure it. You can turn fallback on from **Settings → Backends**. The equivalent config is:
 
 ```json
 {
@@ -219,7 +238,7 @@ When fallback happens, output indicates which backend failed and which fallback 
 }
 ```
 
-You can combine this with presentation settings in the same file:
+You can combine this with presentation settings in the same file. The settings UI preserves both sections when saving:
 
 ```json
 {

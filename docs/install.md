@@ -39,7 +39,7 @@ That path is for local development and reloads while you are working in this rep
 
 ## Config files after install
 
-The package stores presentation settings in real JSON files.
+The package stores presentation and backend settings in real JSON files.
 
 Global config:
 
@@ -71,17 +71,19 @@ The default backend setup is:
 }
 ```
 
-For a self-hosted setup, run SearXNG and Firecrawl yourself and add:
+For a self-hosted setup, run SearXNG and Firecrawl yourself, then open:
 
-```json
-{
-  "backends": {
-    "search": { "provider": "searxng", "baseUrl": "http://localhost:8080" },
-    "fetch": { "provider": "firecrawl", "baseUrl": "http://localhost:3002" },
-    "headless": { "provider": "local-browser" }
-  }
-}
+```text
+/web-agent settings
 ```
+
+Choose **Backends** to set:
+
+- search provider: `searxng`
+- SearXNG URL, for example `http://localhost:8080`
+- fetch provider: `firecrawl`
+- Firecrawl URL, for example `http://localhost:3002`
+- optional fallback behavior
 
 If your Firecrawl instance requires a key, prefer an environment variable:
 
@@ -89,7 +91,7 @@ If your Firecrawl instance requires a key, prefer an environment variable:
 PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 ```
 
-For local-only configs you can also add `"apiKey": "..."` to the `fetch` config.
+The settings UI does not write API keys. For local-only configs you can still add `"apiKey": "..."` to the `fetch` config manually.
 
 Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values and checks configured SearXNG/Firecrawl endpoints with a short timeout.
 

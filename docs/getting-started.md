@@ -50,7 +50,7 @@ If you want to change that, open the action menu with:
 /web-agent
 ```
 
-From there you can open settings, show config, run doctor, or reset config. Settings lets you change the default presentation mode and the `web_explore` override without editing JSON by hand.
+From there you can open settings, show config, run doctor, or reset config. Settings lets you change presentation modes and backend providers without editing JSON by hand.
 
 If you want the full details, see [Presentation and settings](/presentation).
 
@@ -58,17 +58,13 @@ If you want the full details, see [Presentation and settings](/presentation).
 
 By default, `web_explore` uses DuckDuckGo HTML search, plain HTTP page reads, and local browser fallback when needed.
 
-If you run your own services, you can point search at SearXNG and page reading at Firecrawl by editing either config file:
+If you run your own services, open:
 
-```json
-{
-  "backends": {
-    "search": { "provider": "searxng", "baseUrl": "http://localhost:8080" },
-    "fetch": { "provider": "firecrawl", "baseUrl": "http://localhost:3002" },
-    "headless": { "provider": "local-browser" }
-  }
-}
+```text
+/web-agent settings
 ```
+
+Choose **Backends** to point search at SearXNG and page reading at Firecrawl. The settings UI can edit providers, base URLs, and fallback behavior.
 
 Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check whether configured self-hosted endpoints respond.
 
@@ -80,7 +76,7 @@ If your Firecrawl instance requires an API key, prefer an environment variable i
 PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 ```
 
-You can still set `backends.fetch.apiKey` in config for local-only setups.
+The settings UI does not write API keys. You can still set `backends.fetch.apiKey` manually for local-only setups, but env vars are the safer default.
 
 This project only connects to existing SearXNG/Firecrawl services; it does not manage or document how to run those services.
 

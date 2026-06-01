@@ -30,7 +30,7 @@ Right now it gives you:
 - one public web research tool: `web_explore`
 - compact-by-default transcript output
 - preview/verbose modes that show internal research provenance
-- a `/web-agent` settings UI for presentation config
+- a `/web-agent` settings UI for presentation and backend config
 - bounded research behavior that is willing to say when evidence was weak
 
 ## Start here
@@ -38,5 +38,5 @@ Right now it gives you:
 - If you want to try it quickly, start with [Getting started](/getting-started).
 - If you want the install details, go to [Install](/install).
 - If you want to understand the tool behavior first, go to [Tools](/tools).
-- If you want to change transcript output and config, go to [Presentation and settings](/presentation).
+- If you want to change transcript output or backend config, go to [Presentation and settings](/presentation).
 - If you want to work on the repo, go to [Development](/development).
