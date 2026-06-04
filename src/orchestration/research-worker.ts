@@ -115,6 +115,7 @@ export function createResearchWorker({
       }
 
       const candidates = selectCandidates({
+        query,
         results: searchResult.results,
         seenUrls: new Set(evidence.map((item) => item.url)),
         maxCandidates: maxFetches
