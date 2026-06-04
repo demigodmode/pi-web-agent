@@ -20,5 +20,9 @@ export function createResearchWorkflow({
   const resolvedFetchPage = fetchPage ?? backends.fetchPage;
   const resolvedHeadlessFetch = headlessFetch ?? backends.headlessFetch;
   const worker = createResearchWorker({ search: resolvedSearch, fetchPage: resolvedFetchPage });
-  return createResearchOrchestrator({ worker, headlessFetch: resolvedHeadlessFetch });
+  return createResearchOrchestrator({
+    worker,
+    fetchDirect: resolvedFetchPage,
+    headlessFetch: resolvedHeadlessFetch
+  });
 }
