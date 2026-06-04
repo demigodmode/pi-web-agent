@@ -1,6 +1,7 @@
 import type { WebFetchHeadlessResponse } from '../types.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
+import { classifySourceProfile } from './source-profile.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -15,13 +16,7 @@ const DEFAULT_MAX_FETCHES_PER_PASS = 4;
 const DEFAULT_MAX_HEADLESS_ATTEMPTS = 2;
 
 function classifyEvidenceUrl(url: string): ResearchEvidence['sourceKind'] {
-  if (url.includes('/docs/api/') || url.includes('/config/')) return 'official-api';
-  if (url.includes('playwright.dev/docs') || url.includes('vitest.dev/guide/')) return 'official-docs';
-  if (url.includes('github.com/vitest-dev/vitest') && url.includes('/docs/')) return 'official-docs';
-  if (url.includes('learn.microsoft.com')) return 'official-docs';
-  if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
-  if (url.includes('npmjs.com/package/')) return 'package-page';
-  return 'community';
+  return classifySourceProfile(url).sourceKind;
 }
 
 function summarizeText(text: string, maxLength = 180): string {
