@@ -16,13 +16,13 @@ export async function headlessFetch(
     configuredPath,
     resolveBrowser = (options?: { configuredPath?: string }) =>
       resolveBrowserExecutable({ configuredPath: options?.configuredPath }),
-    launchBrowser = ({ executablePath }: { executablePath: string }) =>
-      chromium.launch({ executablePath, headless: true }),
+    launchBrowser = ({ executablePath, headless }: { executablePath?: string; headless: true }) =>
+      chromium.launch(executablePath ? { executablePath, headless } : { headless }),
     now = () => Date.now()
   }: {
     configuredPath?: string;
     resolveBrowser?: (options?: { configuredPath?: string }) => Promise<BrowserResolutionResult>;
-    launchBrowser?: (options: { executablePath: string }) => Promise<{
+    launchBrowser?: (options: { executablePath?: string; headless: true }) => Promise<{
       newContext: () => Promise<{ newPage: () => Promise<any>; close: () => Promise<void> }>;
       close: () => Promise<void>;
     }>;
@@ -30,7 +30,7 @@ export async function headlessFetch(
   } = {}
 ): Promise<WebFetchHeadlessResponse> {
   const resolved = await resolveBrowser({ configuredPath });
-  if (!resolved.ok) {
+  if (!resolved.ok && resolved.error.code === 'CONFIGURED_BROWSER_NOT_FOUND') {
     return {
       status: 'error',
       url,
@@ -39,12 +39,17 @@ export async function headlessFetch(
     };
   }
 
+  const browserName = resolved.ok ? resolved.browser : 'chromium';
+  const launchOptions = resolved.ok
+    ? { executablePath: resolved.executablePath, headless: true as const }
+    : { headless: true as const };
+
   let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
   let context: Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newContext']>> | undefined;
   let page: Awaited<ReturnType<Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newContext']>>['newPage']>> | undefined;
 
   try {
-    browser = await launchBrowser({ executablePath: resolved.executablePath });
+    browser = await launchBrowser(launchOptions);
     context = await browser.newContext();
     page = await context.newPage();
 
@@ -68,7 +73,7 @@ export async function headlessFetch(
         metadata: {
           method: 'headless',
           cacheHit: false,
-          browser: resolved.browser,
+          browser: browserName,
           navigationMs: finishedAt - startedAt
         },
         error: {
@@ -85,7 +90,7 @@ export async function headlessFetch(
       metadata: {
         method: 'headless',
         cacheHit: false,
-        browser: resolved.browser,
+        browser: browserName,
         navigationMs: finishedAt - startedAt,
         truncated: cleanedContent.text.length >= 4000
       }
@@ -97,7 +102,7 @@ export async function headlessFetch(
       metadata: {
         method: 'headless',
         cacheHit: false,
-        browser: resolved.browser
+        browser: browserName
       },
       error: {
         code: 'HEADLESS_NAVIGATION_FAILED',
