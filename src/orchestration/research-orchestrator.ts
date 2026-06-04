@@ -58,24 +58,33 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidenc
   };
 }
 
-function fallbackWorkerPass({
+function combinedWorkerPass({
+  lastPass,
   previousQueries,
   allGaps,
   allLowValueOutcomes,
   exhaustedBudget
 }: {
+  lastPass?: ResearchWorkerResult;
   previousQueries: string[];
   allGaps: ResearchGap[];
   allLowValueOutcomes: ResearchLowValueOutcome[];
   exhaustedBudget: boolean;
 }): ResearchWorkerResult {
   return {
-    searchQueries: previousQueries,
-    evidence: [],
+    searchQueries: lastPass?.searchQueries ?? previousQueries,
+    evidence: lastPass?.evidence ?? [],
     gaps: allGaps,
     lowValueOutcomes: allLowValueOutcomes,
+    suggestedHeadlessUrl: lastPass?.suggestedHeadlessUrl,
     exhaustedBudget
   };
+}
+
+function directUnreadableMessage(url: string) {
+  return classifySourceProfile(url).kind === 'forum-thread'
+    ? `Thread source could not be read reliably: ${url}`
+    : `Direct URL could not be read reliably: ${url}`;
 }
 
 function buildMetadata({
@@ -157,7 +166,7 @@ export function createResearchOrchestrator({
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);
             } else {
-              allGaps.push({ kind: 'fetch-failed', message: `Direct URL could not be read reliably: ${directResult.url}` });
+              allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
             }
           } else if (directResult.status !== 'ok') {
             allGaps.push({
@@ -223,7 +232,13 @@ export function createResearchOrchestrator({
                   updatedRanked
                 ),
                 evidence: updatedRanked,
-                workerPass: lastPass,
+                workerPass: combinedWorkerPass({
+                  lastPass,
+                  previousQueries,
+                  allGaps,
+                  allLowValueOutcomes,
+                  exhaustedBudget: updatedDecision.action !== 'answer'
+                }),
                 metadata: buildMetadata({
                   previousQueries,
                   allEvidence,
@@ -243,7 +258,13 @@ export function createResearchOrchestrator({
                 approvedEvidence: ranked
               } satisfies ResearchOrchestratorDecision,
               evidence: ranked,
-              workerPass: lastPass,
+              workerPass: combinedWorkerPass({
+                lastPass,
+                previousQueries,
+                allGaps,
+                allLowValueOutcomes,
+                exhaustedBudget: false
+              }),
               metadata: buildMetadata({
                 previousQueries,
                 allEvidence,
@@ -259,7 +280,13 @@ export function createResearchOrchestrator({
             return {
               decision: decisionForAnswer(decision.action, query, ranked),
               evidence: ranked,
-              workerPass: lastPass,
+              workerPass: combinedWorkerPass({
+                lastPass,
+                previousQueries,
+                allGaps,
+                allLowValueOutcomes,
+                exhaustedBudget: decision.action === 'answer-with-caveat'
+              }),
               metadata: buildMetadata({
                 previousQueries,
                 allEvidence,
@@ -277,14 +304,13 @@ export function createResearchOrchestrator({
       return {
         decision: decisionForAnswer('answer-with-caveat', query, ranked),
         evidence: ranked,
-        workerPass:
-          lastPass ??
-          fallbackWorkerPass({
-            previousQueries,
-            allGaps,
-            allLowValueOutcomes,
-            exhaustedBudget: true
-          }),
+        workerPass: combinedWorkerPass({
+          lastPass,
+          previousQueries,
+          allGaps,
+          allLowValueOutcomes,
+          exhaustedBudget: true
+        }),
         metadata: buildMetadata({
           previousQueries,
           allEvidence,
