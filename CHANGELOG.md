@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [1.3.0] - 2026-06-04
+### Added
 - Added direct URL handling in `web_explore` so linked pages are read before search results.
 - Added forum/thread source classification for Reddit-style discussions, forums, Stack Overflow, and GitHub issues/discussions.
 - Added Playwright-managed Chromium fallback when no local Chromium-family browser is detected.
