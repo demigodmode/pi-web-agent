@@ -62,6 +62,38 @@ describe('research workflow composition', () => {
     expect(result.decision.action).toBeDefined();
   });
 
+  it('uses fetchPage for direct urls before relying on search', async () => {
+    const fetchPage = vi.fn(async ({ url }) => ({
+      status: 'ok' as const,
+      url,
+      content: {
+        title: 'Direct page',
+        text: 'Direct page content is readable and useful enough for the result.'
+      },
+      metadata: { method: 'http' as const, cacheHit: false, contentType: 'text/html', truncated: false }
+    }));
+
+    const workflow = createResearchWorkflow({
+      search: async () => ({
+        status: 'ok',
+        results: [],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage,
+      headlessFetch: async () => ({
+        status: 'error',
+        url: 'https://example.com',
+        metadata: { method: 'headless', cacheHit: false },
+        error: { code: 'BROWSER_NOT_FOUND', message: 'No browser found.' }
+      })
+    });
+
+    const result = await workflow.run({ query: 'Read https://example.com/post?utm_source=x' });
+
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com/post' });
+    expect(result.evidence[0]?.url).toBe('https://example.com/post');
+  });
+
   it('does not spend headless on a low-value npm package page when other technical sources exist', async () => {
     const workflow = createResearchWorkflow({
       search: async () => ({

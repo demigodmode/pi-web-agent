@@ -40,6 +40,8 @@ Another example:
 
 That should still go through `web_explore`. If the first pass is thin, Pi can call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
 
+You can also include direct links in the prompt. `web_explore` reads HTTP/HTTPS links first, strips common tracking params, and then searches if it still needs more evidence.
+
 ## Presentation defaults
 
 The package renders web research output in `compact` mode by default.
@@ -56,7 +58,7 @@ If you want the full details, see [Presentation and settings](/presentation).
 
 ## Optional self-hosted backends
 
-By default, `web_explore` uses DuckDuckGo HTML search, plain HTTP page reads, and local browser fallback when needed.
+By default, `web_explore` uses DuckDuckGo HTML search, plain HTTP page reads, and local-browser headless rendering with managed Chromium fallback when needed.
 
 If you run your own services, open:
 
@@ -82,9 +84,9 @@ This project only connects to existing SearXNG/Firecrawl services; it does not m
 
 ## Browser rendering requirement
 
-Headless rendering currently requires a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave.
+Headless rendering first tries a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave.
 
-Firefox/Safari-only systems can still use search and plain HTTP reads, but pages that require browser rendering will not work until Playwright-managed browser fallback is added.
+If none is found, it falls back to Playwright-managed Chromium and still runs headless. Firefox/Safari-only systems can still use search and plain HTTP reads; browser-rendered fallback uses Chromium.
 
 ## One thing to keep in mind
 

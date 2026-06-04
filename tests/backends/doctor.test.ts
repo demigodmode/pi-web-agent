@@ -11,7 +11,11 @@ describe('backend doctor checks', () => {
         fetch: { provider: 'http' },
         headless: { provider: 'local-browser' }
       }, { fetchImpl })
-    ).resolves.toEqual(['search backend: duckduckgo', 'fetch backend: http']);
+    ).resolves.toEqual([
+      'search backend: duckduckgo',
+      'fetch backend: http',
+      'headless backend: local-browser (managed Chromium fallback configured)'
+    ]);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

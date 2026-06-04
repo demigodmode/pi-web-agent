@@ -27,4 +27,22 @@ describe('selectCandidates', () => {
       }).map((item) => item.url)
     ).not.toContain('https://vitest.dev/guide/coverage.html');
   });
+
+  it('prioritizes forum threads when the query asks for reddit or discussion sources', () => {
+    const selected = selectCandidates({
+      query: 'reddit discussions about self hosted search tools',
+      results: [
+        { title: 'Generic blog', url: 'https://example.com/blog', snippet: '' },
+        { title: 'Reddit thread', url: 'https://www.reddit.com/r/selfhosted/comments/abc/example/', snippet: '' },
+        { title: 'Forum topic', url: 'https://forum.example.com/topic/123', snippet: '' }
+      ],
+      seenUrls: new Set(),
+      maxCandidates: 2
+    });
+
+    expect(selected.map((item) => item.url)).toEqual([
+      'https://www.reddit.com/r/selfhosted/comments/abc/example/',
+      'https://forum.example.com/topic/123'
+    ]);
+  });
 });

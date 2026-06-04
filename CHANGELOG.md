@@ -7,13 +7,16 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added direct URL handling in `web_explore` so linked pages are read before search results.
+- Added forum/thread source classification for Reddit-style discussions, forums, Stack Overflow, and GitHub issues/discussions.
+- Added Playwright-managed Chromium fallback when no local Chromium-family browser is detected.
 
 ### Changed
-- Nothing yet.
+- Discussion-oriented queries now prefer forum/thread results over generic pages.
+- `/web-agent doctor` now reports the local-browser headless backend and managed Chromium fallback.
 
 ### Fixed
-- Nothing yet.
+- Preserved direct/thread fetch gaps in bounded research results so unreadable thread sources get explicit caveats.
 
 ### Breaking
 - None.

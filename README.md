@@ -8,7 +8,7 @@
 
 Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` exposes one public research tool, `web_explore`, and keeps search/fetch/headless work inside that bounded workflow.
 
-The point is keeping the model-facing boundary simple: ask `web_explore` to research a question, and it handles discovery, HTTP reads, targeted browser rendering, source ranking, and caveats internally.
+The point is keeping the model-facing boundary simple: ask `web_explore` to research a question, and it handles direct links, discovery, HTTP reads, targeted browser rendering, source ranking, and caveats internally.
 
 That sounds obvious, but a lot of agent tooling gets fuzzy right there. This package is meant to be stricter about what it actually did and more willing to say when a read was not good enough to trust.
 
@@ -20,9 +20,9 @@ Compatibility notice: current `pi-web-agent` requires Pi 0.74+ because Pi packag
 pi install npm:@demigodmode/pi-web-agent
 ```
 
-After installing, reload or restart Pi. Run `/web-agent` for the action menu, or `/web-agent doctor` to check whether the package loaded cleanly and whether headless rendering can find a browser.
+After installing, reload or restart Pi. Run `/web-agent` for the action menu, or `/web-agent doctor` to check whether the package loaded cleanly and which web backends are configured.
 
-Headless rendering currently requires a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave. Firefox/Safari-only systems can still use search and plain HTTP reads, but browser-rendered fallback pages need a supported Chromium-family browser for now.
+Headless rendering first tries a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave. If none is found, it falls back to Playwright-managed Chromium and still launches headless. Firefox/Safari-only systems can still use search and plain HTTP reads; browser-rendered fallback uses Chromium.
 
 Later on, update installed packages with:
 
@@ -109,7 +109,7 @@ Example:
 }
 ```
 
-Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local browser headless fallback.
+Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local-browser headless fallback with managed Chromium fallback configured.
 
 Backend settings can be changed from:
 

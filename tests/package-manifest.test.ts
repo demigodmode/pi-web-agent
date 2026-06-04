@@ -25,6 +25,11 @@ describe('package manifest', () => {
     expect(packageJson.peerDependencies?.['@sinclair/typebox']).toBeUndefined();
   });
 
+  it('uses Playwright with managed browser support instead of playwright-core', () => {
+    expect(packageJson.dependencies).toHaveProperty('playwright');
+    expect(packageJson.dependencies?.['playwright-core']).toBeUndefined();
+  });
+
   it('declares the migrated pi package scope only', () => {
     expect(packageJson.peerDependencies).toMatchObject({
       '@earendil-works/pi-coding-agent': '*',

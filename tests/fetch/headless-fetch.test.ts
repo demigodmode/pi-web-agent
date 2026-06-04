@@ -2,7 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { headlessFetch } from '../../src/fetch/headless-fetch.js';
 
 describe('headless fetch', () => {
-  it('returns a startup error when no browser can be resolved', async () => {
+  it('falls back to Playwright-managed Chromium when no local browser can be resolved', async () => {
+    const launchBrowser = vi.fn(async () => ({
+      newContext: async () => ({
+        newPage: async () => ({
+          goto: async () => undefined,
+          waitForLoadState: async () => undefined,
+          content: async () => '<html><body><article><p>Managed Chromium rendered enough readable content for extraction.</p></article></body></html>',
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }),
+      close: async () => undefined
+    }));
+
     const result = await headlessFetch('https://example.com', {
       resolveBrowser: vi.fn().mockResolvedValue({
         ok: false,
@@ -10,12 +23,29 @@ describe('headless fetch', () => {
           code: 'BROWSER_NOT_FOUND',
           message: 'No compatible local browser was found for headless fetch.'
         }
+      }),
+      launchBrowser
+    });
+
+    expect(launchBrowser).toHaveBeenCalledWith({ headless: true });
+    expect(result.status).toBe('ok');
+    expect(result.metadata.browser).toBe('chromium');
+  });
+
+  it('returns a startup error when configured browser cannot be resolved', async () => {
+    const result = await headlessFetch('https://example.com', {
+      resolveBrowser: vi.fn().mockResolvedValue({
+        ok: false,
+        error: {
+          code: 'CONFIGURED_BROWSER_NOT_FOUND',
+          message: 'Configured browser path was not found: C:/missing/chrome.exe'
+        }
       })
     });
 
     expect(result).toMatchObject({
       status: 'error',
-      error: { code: 'BROWSER_NOT_FOUND' },
+      error: { code: 'CONFIGURED_BROWSER_NOT_FOUND' },
       metadata: { method: 'headless', cacheHit: false }
     });
   });

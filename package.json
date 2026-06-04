@@ -57,7 +57,7 @@
     "@mozilla/readability": "^0.6.0",
     "cheerio": "^1.1.0",
     "jsdom": "^26.0.0",
-    "playwright-core": "^1.54.0",
+    "playwright": "^1.60.0",
     "typebox": "^1.1.37"
   },
   "devDependencies": {

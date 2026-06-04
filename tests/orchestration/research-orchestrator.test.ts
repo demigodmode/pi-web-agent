@@ -67,6 +67,131 @@ describe('research orchestrator types', () => {
     expect(result.suggestedHeadlessUrl).toBeUndefined();
   });
 
+  it('fetches direct urls before running search queries', async () => {
+    const calls: string[] = [];
+    const worker = {
+      run: vi.fn(async ({ query }) => {
+        calls.push(`search:${query}`);
+        return {
+          searchQueries: [query],
+          evidence: [],
+          gaps: [],
+          lowValueOutcomes: [],
+          exhaustedBudget: false
+        };
+      })
+    };
+    const fetchDirect = vi.fn(async ({ url }) => {
+      calls.push(`direct:${url}`);
+      return {
+        status: 'ok' as const,
+        url,
+        content: { title: 'Linked page', text: 'Linked page has enough useful readable evidence for the result.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      };
+    });
+
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect,
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://example.com/thread?utm_source=x' });
+
+    expect(calls[0]).toBe('direct:https://example.com/thread');
+    expect(result.evidence[0]?.url).toBe('https://example.com/thread');
+  });
+
+  it('uses headless fallback when a direct url has weak http extraction', async () => {
+    const fetchDirect = vi.fn(async ({ url }) => ({
+      status: 'needs_headless' as const,
+      url,
+      metadata: { method: 'http' as const, cacheHit: false },
+      error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
+    }));
+    const headlessFetch = vi.fn(async ({ url }) => ({
+      status: 'ok' as const,
+      url,
+      content: { title: 'Rendered thread', text: 'Rendered direct link content is now readable enough to use.' },
+      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium' as const, navigationMs: 10 }
+    }));
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }))
+      },
+      fetchDirect,
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://example.com/comment' });
+
+    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/comment' });
+    expect(result.evidence[0]?.method).toBe('headless');
+  });
+
+  it('uses headless when a direct thread url returns bot-check text over http', async () => {
+    const fetchDirect = vi.fn(async ({ url }) => ({
+      status: 'ok' as const,
+      url,
+      content: { title: 'Just a moment...', text: 'Checking your browser before accessing the site.' },
+      metadata: { method: 'http' as const, cacheHit: false }
+    }));
+    const headlessFetch = vi.fn(async ({ url }) => ({
+      status: 'blocked' as const,
+      url,
+      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium' as const, navigationMs: 10 },
+      error: { code: 'HEADLESS_EXTRACTION_WEAK', message: 'Rendered page did not produce enough readable content.' }
+    }));
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }))
+      },
+      fetchDirect,
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/' });
+
+    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://www.reddit.com/r/selfhosted/comments/abc/example' });
+    expect(result.workerPass.gaps).toContainEqual({
+      kind: 'fetch-failed',
+      message: 'Thread source could not be read reliably: https://www.reddit.com/r/selfhosted/comments/abc/example'
+    });
+  });
+
+  it('records a clear gap when a direct thread url cannot be read reliably', async () => {
+    const fetchDirect = vi.fn(async ({ url }) => ({
+      status: 'needs_headless' as const,
+      url,
+      metadata: { method: 'http' as const, cacheHit: false },
+      error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
+    }));
+    const headlessFetch = vi.fn(async ({ url }) => ({
+      status: 'blocked' as const,
+      url,
+      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium' as const, navigationMs: 10 },
+      error: { code: 'HEADLESS_EXTRACTION_WEAK', message: 'Rendered page did not produce enough readable content.' }
+    }));
+
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }))
+      },
+      fetchDirect,
+      headlessFetch
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/' });
+
+    expect(result.workerPass.gaps).toContainEqual({
+      kind: 'fetch-failed',
+      message: 'Thread source could not be read reliably: https://www.reddit.com/r/selfhosted/comments/abc/example'
+    });
+  });
+
   it('answers when one bounded pass returns enough official evidence', async () => {
     const orchestrator = createResearchOrchestrator({
       worker: {

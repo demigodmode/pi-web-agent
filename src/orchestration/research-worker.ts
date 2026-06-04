@@ -1,5 +1,6 @@
 import type { WebFetchResponse, WebSearchResponse } from '../types.js';
 import { selectCandidates } from './candidate-selector.js';
+import { classifySourceProfile } from './source-profile.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -9,13 +10,7 @@ import type {
 } from './research-types.js';
 
 function classifySource(url: string): ResearchSourceKind {
-  if (url.includes('/docs/api/') || url.includes('/config/')) return 'official-api';
-  if (url.includes('playwright.dev/docs') || url.includes('vitest.dev/guide/')) return 'official-docs';
-  if (url.includes('github.com/vitest-dev/vitest') && url.includes('/docs/')) return 'official-docs';
-  if (url.includes('learn.microsoft.com')) return 'official-docs';
-  if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
-  if (url.includes('npmjs.com/package/')) return 'package-page';
-  return 'community';
+  return classifySourceProfile(url).sourceKind;
 }
 
 function summarizeText(text: string, maxLength = 180): string {
@@ -120,6 +115,7 @@ export function createResearchWorker({
       }
 
       const candidates = selectCandidates({
+        query,
         results: searchResult.results,
         seenUrls: new Set(evidence.map((item) => item.url)),
         maxCandidates: maxFetches

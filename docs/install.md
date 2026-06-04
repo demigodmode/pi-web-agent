@@ -23,13 +23,13 @@ After install/reload, run:
 /web-agent doctor
 ```
 
-That checks whether the package loaded and whether headless rendering can find a supported local browser.
+That checks whether the package loaded and reports the configured search, fetch, and headless backends.
 
-## Browser requirement for headless rendering
+## Browser rendering
 
-Headless rendering currently uses a local Chromium-family browser. Supported browsers are Chrome, Chromium, Edge, and Brave when they can be detected on Windows, macOS, or Linux.
+Headless rendering first tries a local Chromium-family browser. Supported local browsers are Chrome, Chromium, Edge, and Brave when they can be detected on Windows, macOS, or Linux.
 
-Firefox/Safari-only systems can still use search and plain HTTP reads, but browser-rendered fallback pages need one of the supported Chromium-family browsers for now.
+If none is detected, `web_explore` falls back to Playwright-managed Chromium and still launches with `headless: true`. Firefox/Safari-only systems can still use search and plain HTTP reads; browser-rendered fallback uses Chromium.
 
 ## Work from the repo locally
 

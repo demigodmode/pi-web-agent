@@ -1,6 +1,8 @@
-import type { WebFetchHeadlessResponse } from '../types.js';
+import type { WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
+import { classifySourceProfile } from './source-profile.js';
+import { extractDirectUrls } from './direct-url.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -15,13 +17,7 @@ const DEFAULT_MAX_FETCHES_PER_PASS = 4;
 const DEFAULT_MAX_HEADLESS_ATTEMPTS = 2;
 
 function classifyEvidenceUrl(url: string): ResearchEvidence['sourceKind'] {
-  if (url.includes('/docs/api/') || url.includes('/config/')) return 'official-api';
-  if (url.includes('playwright.dev/docs') || url.includes('vitest.dev/guide/')) return 'official-docs';
-  if (url.includes('github.com/vitest-dev/vitest') && url.includes('/docs/')) return 'official-docs';
-  if (url.includes('learn.microsoft.com')) return 'official-docs';
-  if (url.includes('github.com/') && url.includes('/issues/')) return 'issue-thread';
-  if (url.includes('npmjs.com/package/')) return 'package-page';
-  return 'community';
+  return classifySourceProfile(url).sourceKind;
 }
 
 function summarizeText(text: string, maxLength = 180): string {
@@ -32,6 +28,20 @@ function isBotCheckContent({ title = '', text }: { title?: string; text: string 
   return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
     `${title}\n${text}`
   );
+}
+
+function evidenceFromFetch(result: WebFetchResponse): ResearchEvidence | null {
+  if (result.status !== 'ok' || !result.content?.text.trim()) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
+
+  return {
+    title: result.content.title ?? result.url,
+    url: result.url,
+    sourceKind: classifyEvidenceUrl(result.url),
+    method: result.metadata.method,
+    summary: summarizeText(result.content.text),
+    supports: [summarizeText(result.content.text, 120)]
+  };
 }
 
 function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidence | null {
@@ -48,24 +58,39 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidenc
   };
 }
 
-function fallbackWorkerPass({
+function combinedWorkerPass({
+  lastPass,
   previousQueries,
   allGaps,
   allLowValueOutcomes,
   exhaustedBudget
 }: {
+  lastPass?: ResearchWorkerResult;
   previousQueries: string[];
   allGaps: ResearchGap[];
   allLowValueOutcomes: ResearchLowValueOutcome[];
   exhaustedBudget: boolean;
 }): ResearchWorkerResult {
   return {
-    searchQueries: previousQueries,
-    evidence: [],
+    searchQueries: lastPass?.searchQueries ?? previousQueries,
+    evidence: lastPass?.evidence ?? [],
     gaps: allGaps,
     lowValueOutcomes: allLowValueOutcomes,
+    suggestedHeadlessUrl: lastPass?.suggestedHeadlessUrl,
     exhaustedBudget
   };
+}
+
+function directUnreadableMessage(url: string) {
+  return classifySourceProfile(url).kind === 'forum-thread'
+    ? `Thread source could not be read reliably: ${url}`
+    : `Direct URL could not be read reliably: ${url}`;
+}
+
+function shouldRetryDirectWithHeadless(result: WebFetchResponse, evidence: ResearchEvidence | null) {
+  if (result.status === 'needs_headless') return true;
+  if (result.status !== 'ok' || evidence) return false;
+  return classifySourceProfile(result.url).shouldPreferHeadlessWhenWeak;
 }
 
 function buildMetadata({
@@ -109,6 +134,7 @@ function decisionForAnswer(action: 'answer' | 'answer-with-caveat', query: strin
 
 export function createResearchOrchestrator({
   worker,
+  fetchDirect,
   headlessFetch
 }: {
   worker: {
@@ -118,6 +144,7 @@ export function createResearchOrchestrator({
       maxFetches: number;
     }) => Promise<ResearchWorkerResult>;
   };
+  fetchDirect?: (input: { url: string }) => Promise<WebFetchResponse>;
   headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
 }) {
   return {
@@ -129,6 +156,39 @@ export function createResearchOrchestrator({
       const suggestedHeadlessUrls: string[] = [];
       let headlessAttempts = 0;
       let lastPass: ResearchWorkerResult | undefined;
+
+      if (fetchDirect) {
+        for (const url of extractDirectUrls(query).slice(0, 3)) {
+          const directResult = await fetchDirect({ url });
+          const directEvidence = evidenceFromFetch(directResult);
+          if (directEvidence) {
+            allEvidence.push(directEvidence);
+            continue;
+          }
+
+          if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
+            if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
+              headlessAttempts++;
+              const headlessResult = await headlessFetch({ url: directResult.url });
+              const headlessEvidence = evidenceFromHeadless(headlessResult);
+              if (headlessEvidence) {
+                allEvidence.push(headlessEvidence);
+              } else {
+                allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+              }
+            } else {
+              allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+            }
+          } else if (directResult.status !== 'ok') {
+            allGaps.push({
+              kind: 'fetch-failed',
+              message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
+            });
+          } else {
+            allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+          }
+        }
+      }
 
       for (let passIndex = 0; passIndex < DEFAULT_MAX_PASSES; passIndex++) {
         const queries = planSearchQueries({
@@ -185,7 +245,13 @@ export function createResearchOrchestrator({
                   updatedRanked
                 ),
                 evidence: updatedRanked,
-                workerPass: lastPass,
+                workerPass: combinedWorkerPass({
+                  lastPass,
+                  previousQueries,
+                  allGaps,
+                  allLowValueOutcomes,
+                  exhaustedBudget: updatedDecision.action !== 'answer'
+                }),
                 metadata: buildMetadata({
                   previousQueries,
                   allEvidence,
@@ -205,7 +271,13 @@ export function createResearchOrchestrator({
                 approvedEvidence: ranked
               } satisfies ResearchOrchestratorDecision,
               evidence: ranked,
-              workerPass: lastPass,
+              workerPass: combinedWorkerPass({
+                lastPass,
+                previousQueries,
+                allGaps,
+                allLowValueOutcomes,
+                exhaustedBudget: false
+              }),
               metadata: buildMetadata({
                 previousQueries,
                 allEvidence,
@@ -221,7 +293,13 @@ export function createResearchOrchestrator({
             return {
               decision: decisionForAnswer(decision.action, query, ranked),
               evidence: ranked,
-              workerPass: lastPass,
+              workerPass: combinedWorkerPass({
+                lastPass,
+                previousQueries,
+                allGaps,
+                allLowValueOutcomes,
+                exhaustedBudget: decision.action === 'answer-with-caveat'
+              }),
               metadata: buildMetadata({
                 previousQueries,
                 allEvidence,
@@ -239,14 +317,13 @@ export function createResearchOrchestrator({
       return {
         decision: decisionForAnswer('answer-with-caveat', query, ranked),
         evidence: ranked,
-        workerPass:
-          lastPass ??
-          fallbackWorkerPass({
-            previousQueries,
-            allGaps,
-            allLowValueOutcomes,
-            exhaustedBudget: true
-          }),
+        workerPass: combinedWorkerPass({
+          lastPass,
+          previousQueries,
+          allGaps,
+          allLowValueOutcomes,
+          exhaustedBudget: true
+        }),
         metadata: buildMetadata({
           previousQueries,
           allEvidence,

@@ -12,9 +12,11 @@ That lower-level work still matters. A search result is not the same as a page r
 
 Internally it can:
 
+- read direct HTTP/HTTPS links from the prompt
 - search for candidate sources
 - fetch pages over HTTP
 - escalate selected pages to headless rendering
+- prefer forum/thread sources when the query asks for discussions
 - rank official sources above weaker sources
 - include community sources as practical context
 - stop with a caveat when the evidence is thin
@@ -31,6 +33,8 @@ Right now it gives you:
 - compact-by-default transcript output
 - preview/verbose modes that show internal research provenance
 - a `/web-agent` settings UI for presentation and backend config
+- direct-link and forum/thread-aware research handling
+- local-browser headless rendering with managed Chromium fallback
 - bounded research behavior that is willing to say when evidence was weak
 
 ## Start here

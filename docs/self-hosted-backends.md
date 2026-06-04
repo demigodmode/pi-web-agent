@@ -287,6 +287,7 @@ search backend: searxng ok
 search fallback: duckduckgo
 fetch backend: firecrawl ok
 fetch fallback: http
+headless backend: local-browser (managed Chromium fallback configured)
 ```
 
 Then try a normal research prompt:
@@ -295,7 +296,7 @@ Then try a normal research prompt:
 Find current docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The model should still use `web_explore`; it should not need separate SearXNG or Firecrawl tool calls.
+The model should still use `web_explore`; it should not need separate SearXNG or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
 
 ## Troubleshooting
 
