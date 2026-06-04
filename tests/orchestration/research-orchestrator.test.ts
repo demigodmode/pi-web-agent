@@ -114,7 +114,7 @@ describe('research orchestrator types', () => {
       status: 'ok' as const,
       url,
       content: { title: 'Rendered thread', text: 'Rendered direct link content is now readable enough to use.' },
-      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium', navigationMs: 10 }
+      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium' as const, navigationMs: 10 }
     }));
 
     const orchestrator = createResearchOrchestrator({
@@ -141,7 +141,7 @@ describe('research orchestrator types', () => {
     const headlessFetch = vi.fn(async ({ url }) => ({
       status: 'blocked' as const,
       url,
-      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium', navigationMs: 10 },
+      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium' as const, navigationMs: 10 },
       error: { code: 'HEADLESS_EXTRACTION_WEAK', message: 'Rendered page did not produce enough readable content.' }
     }));
 
