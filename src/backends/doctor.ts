@@ -92,5 +92,9 @@ export async function checkBackendHealth(
     lines.push(`fetch fallback: ${config.fetch.fallback}`);
   }
 
+  if (config.headless.provider === 'local-browser') {
+    lines.push('headless backend: local-browser (managed Chromium fallback)');
+  }
+
   return lines;
 }
