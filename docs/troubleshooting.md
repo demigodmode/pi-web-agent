@@ -34,16 +34,20 @@ That can happen when:
 
 `web_explore` can escalate selected pages to headless rendering internally, but that still does not guarantee a clean result. Some sites render bot checks, cookie walls, or noisy app shells even in a browser.
 
-## `/web-agent doctor` says no browser was found
+For direct links and forum/thread sources, unreadable pages are kept as explicit gaps so the final answer can say when a source could not be read reliably instead of pretending it was reviewed.
 
-Headless rendering currently needs a detectable Chromium-family browser:
+## `/web-agent doctor` mentions managed Chromium fallback
+
+Headless rendering first tries a detectable Chromium-family browser:
 
 - Chrome
 - Chromium
 - Edge
 - Brave
 
-If you only have Firefox or Safari, search and plain HTTP reads can still work, but browser-rendered fallback pages will not. Run `/web-agent doctor` after installing one of the supported browsers to check detection again.
+If none is found, `web_explore` can fall back to Playwright-managed Chromium. It still launches with `headless: true`, so it should not pop open browser windows.
+
+If you configured an explicit browser path and it is missing, doctor/fetch will still report that as a configuration problem instead of silently ignoring it.
 
 ## `/web-agent` did something unexpected
 
