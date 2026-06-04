@@ -87,6 +87,12 @@ function directUnreadableMessage(url: string) {
     : `Direct URL could not be read reliably: ${url}`;
 }
 
+function shouldRetryDirectWithHeadless(result: WebFetchResponse, evidence: ResearchEvidence | null) {
+  if (result.status === 'needs_headless') return true;
+  if (result.status !== 'ok' || evidence) return false;
+  return classifySourceProfile(result.url).shouldPreferHeadlessWhenWeak;
+}
+
 function buildMetadata({
   previousQueries,
   allEvidence,
@@ -157,14 +163,19 @@ export function createResearchOrchestrator({
           const directEvidence = evidenceFromFetch(directResult);
           if (directEvidence) {
             allEvidence.push(directEvidence);
+            continue;
           }
 
-          if (directResult.status === 'needs_headless' && headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
-            headlessAttempts++;
-            const headlessResult = await headlessFetch({ url: directResult.url });
-            const headlessEvidence = evidenceFromHeadless(headlessResult);
-            if (headlessEvidence) {
-              allEvidence.push(headlessEvidence);
+          if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
+            if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
+              headlessAttempts++;
+              const headlessResult = await headlessFetch({ url: directResult.url });
+              const headlessEvidence = evidenceFromHeadless(headlessResult);
+              if (headlessEvidence) {
+                allEvidence.push(headlessEvidence);
+              } else {
+                allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+              }
             } else {
               allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
             }
@@ -173,6 +184,8 @@ export function createResearchOrchestrator({
               kind: 'fetch-failed',
               message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
             });
+          } else {
+            allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
           }
         }
       }

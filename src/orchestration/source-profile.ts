@@ -32,6 +32,44 @@ function parseUrl(rawUrl: string): URL | undefined {
   }
 }
 
+function isOfficialApi(host: string, path: string) {
+  return (
+    (host === 'playwright.dev' && path.startsWith('/docs/api/')) ||
+    (host === 'vitest.dev' && path.startsWith('/config/'))
+  );
+}
+
+function isOfficialDocs(host: string, path: string) {
+  return (
+    (host === 'playwright.dev' && path.startsWith('/docs/')) ||
+    (host === 'vitest.dev' && path.startsWith('/guide/')) ||
+    (host === 'github.com' && path.startsWith('/vitest-dev/vitest/') && path.includes('/docs/')) ||
+    host === 'learn.microsoft.com'
+  );
+}
+
+function isIssueThread(host: string, path: string) {
+  return host === 'github.com' && (path.includes('/issues/') || path.includes('/discussions/'));
+}
+
+function hasForumThreadPath(path: string) {
+  return (
+    path.includes('/forum/') ||
+    path.includes('/forums/') ||
+    path.includes('/t/') ||
+    path.includes('/topic/') ||
+    path.includes('/threads/')
+  );
+}
+
+function isForumThread(host: string, path: string) {
+  return (
+    (host === 'reddit.com' && path.includes('/comments/')) ||
+    (host === 'stackoverflow.com' && path.startsWith('/questions/')) ||
+    (COMMUNITY_FORUM_HOST_RE.test(`${host}.`) && hasForumThreadPath(path))
+  );
+}
+
 export function classifySourceProfile(rawUrl: string): SourceProfile {
   const parsed = parseUrl(rawUrl);
   if (!parsed) return profile('community', 'community', false);
@@ -39,38 +77,19 @@ export function classifySourceProfile(rawUrl: string): SourceProfile {
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
   const path = parsed.pathname.toLowerCase();
 
-  if (host === 'playwright.dev' && path.startsWith('/docs/api/')) {
+  if (isOfficialApi(host, path)) {
     return profile('official-api', 'official-api', false);
   }
 
-  if (host === 'vitest.dev' && path.startsWith('/config/')) {
-    return profile('official-api', 'official-api', false);
-  }
-
-  if (
-    host === 'playwright.dev' && path.startsWith('/docs/') ||
-    host === 'vitest.dev' && path.startsWith('/guide/') ||
-    host === 'github.com' && path.startsWith('/vitest-dev/vitest/') && path.includes('/docs/') ||
-    host === 'learn.microsoft.com'
-  ) {
+  if (isOfficialDocs(host, path)) {
     return profile('official-docs', 'official-docs', false);
   }
 
-  if (host === 'github.com' && (path.includes('/issues/') || path.includes('/discussions/'))) {
+  if (isIssueThread(host, path)) {
     return profile('issue-thread', 'issue-thread', true);
   }
 
-  if (
-    host === 'reddit.com' && path.includes('/comments/') ||
-    host === 'stackoverflow.com' && path.startsWith('/questions/') ||
-    COMMUNITY_FORUM_HOST_RE.test(`${host}.`) && (
-      path.includes('/forum/') ||
-      path.includes('/forums/') ||
-      path.includes('/t/') ||
-      path.includes('/topic/') ||
-      path.includes('/threads/')
-    )
-  ) {
+  if (isForumThread(host, path)) {
     return profile('forum-thread', 'community', true);
   }
 
