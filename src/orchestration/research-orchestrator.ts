@@ -1,7 +1,8 @@
-import type { WebFetchHeadlessResponse } from '../types.js';
+import type { WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
 import { classifySourceProfile } from './source-profile.js';
+import { extractDirectUrls } from './direct-url.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -27,6 +28,20 @@ function isBotCheckContent({ title = '', text }: { title?: string; text: string 
   return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
     `${title}\n${text}`
   );
+}
+
+function evidenceFromFetch(result: WebFetchResponse): ResearchEvidence | null {
+  if (result.status !== 'ok' || !result.content?.text.trim()) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
+
+  return {
+    title: result.content.title ?? result.url,
+    url: result.url,
+    sourceKind: classifyEvidenceUrl(result.url),
+    method: result.metadata.method,
+    summary: summarizeText(result.content.text),
+    supports: [summarizeText(result.content.text, 120)]
+  };
 }
 
 function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidence | null {
@@ -104,6 +119,7 @@ function decisionForAnswer(action: 'answer' | 'answer-with-caveat', query: strin
 
 export function createResearchOrchestrator({
   worker,
+  fetchDirect,
   headlessFetch
 }: {
   worker: {
@@ -113,6 +129,7 @@ export function createResearchOrchestrator({
       maxFetches: number;
     }) => Promise<ResearchWorkerResult>;
   };
+  fetchDirect?: (input: { url: string }) => Promise<WebFetchResponse>;
   headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
 }) {
   return {
@@ -124,6 +141,32 @@ export function createResearchOrchestrator({
       const suggestedHeadlessUrls: string[] = [];
       let headlessAttempts = 0;
       let lastPass: ResearchWorkerResult | undefined;
+
+      if (fetchDirect) {
+        for (const url of extractDirectUrls(query).slice(0, 3)) {
+          const directResult = await fetchDirect({ url });
+          const directEvidence = evidenceFromFetch(directResult);
+          if (directEvidence) {
+            allEvidence.push(directEvidence);
+          }
+
+          if (directResult.status === 'needs_headless' && headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
+            headlessAttempts++;
+            const headlessResult = await headlessFetch({ url: directResult.url });
+            const headlessEvidence = evidenceFromHeadless(headlessResult);
+            if (headlessEvidence) {
+              allEvidence.push(headlessEvidence);
+            } else {
+              allGaps.push({ kind: 'fetch-failed', message: `Direct URL could not be read reliably: ${directResult.url}` });
+            }
+          } else if (directResult.status !== 'ok') {
+            allGaps.push({
+              kind: 'fetch-failed',
+              message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
+            });
+          }
+        }
+      }
 
       for (let passIndex = 0; passIndex < DEFAULT_MAX_PASSES; passIndex++) {
         const queries = planSearchQueries({
