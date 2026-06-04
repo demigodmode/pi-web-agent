@@ -16,11 +16,15 @@ It runs a bounded research workflow instead of making the model manually chain s
 
 Internally, `web_explore` can do a few things:
 
+- read HTTP/HTTPS links from the prompt before search
+- strip common tracking params from direct links
 - plan search queries
 - run web search
 - pick candidate pages
+- prefer forum/thread sources when the query asks for discussions
 - read pages over HTTP
 - escalate selected pages to headless rendering
+- keep explicit gaps for unreadable direct/thread sources
 - rank evidence
 - synthesize findings and caveats
 
@@ -53,7 +57,7 @@ Sometimes a research pass finds nothing useful. In that case the output says:
 No usable evidence found.
 ```
 
-That is expected. Web pages can be thin, blocked, duplicated, or irrelevant. A follow-up `web_explore` call with a more specific query is usually the right next move.
+That is expected. Web pages can be thin, blocked, duplicated, or irrelevant. Forum/thread pages can also render bot checks or noisy app shells. A follow-up `web_explore` call with a more specific query is usually the right next move.
 
 ## A practical rule
 

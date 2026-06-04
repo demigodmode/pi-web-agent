@@ -58,7 +58,7 @@ If you want the full details, see [Presentation and settings](/presentation).
 
 ## Optional self-hosted backends
 
-By default, `web_explore` uses DuckDuckGo HTML search, plain HTTP page reads, and local browser fallback when needed.
+By default, `web_explore` uses DuckDuckGo HTML search, plain HTTP page reads, and local-browser headless rendering with managed Chromium fallback when needed.
 
 If you run your own services, open:
 
