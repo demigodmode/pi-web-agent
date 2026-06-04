@@ -1,4 +1,4 @@
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 import { extractReadableContentSafely } from '../extract/readability.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import type { WebFetchHeadlessResponse } from '../types.js';

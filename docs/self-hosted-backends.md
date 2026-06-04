@@ -287,7 +287,7 @@ search backend: searxng ok
 search fallback: duckduckgo
 fetch backend: firecrawl ok
 fetch fallback: http
-headless backend: local-browser (managed Chromium fallback)
+headless backend: local-browser (managed Chromium fallback configured)
 ```
 
 Then try a normal research prompt:

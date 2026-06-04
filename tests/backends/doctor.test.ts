@@ -14,7 +14,7 @@ describe('backend doctor checks', () => {
     ).resolves.toEqual([
       'search backend: duckduckgo',
       'fetch backend: http',
-      'headless backend: local-browser (managed Chromium fallback)'
+      'headless backend: local-browser (managed Chromium fallback configured)'
     ]);
     expect(fetchImpl).not.toHaveBeenCalled();
   });

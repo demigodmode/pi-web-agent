@@ -93,7 +93,7 @@ export async function checkBackendHealth(
   }
 
   if (config.headless.provider === 'local-browser') {
-    lines.push('headless backend: local-browser (managed Chromium fallback)');
+    lines.push('headless backend: local-browser (managed Chromium fallback configured)');
   }
 
   return lines;

@@ -33,4 +33,9 @@ describe('classifySourceProfile', () => {
       shouldPreferHeadlessWhenWeak: false
     });
   });
+
+  it('does not treat generic config or single-letter paths as special sources', () => {
+    expect(classifySourceProfile('https://example.com/blog/config/options').kind).toBe('community');
+    expect(classifySourceProfile('https://example.com/t/not-a-thread').kind).toBe('community');
+  });
 });

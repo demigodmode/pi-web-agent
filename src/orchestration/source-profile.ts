@@ -14,41 +14,69 @@ export type SourceProfile = {
   shouldPreferHeadlessWhenWeak: boolean;
 };
 
+const COMMUNITY_FORUM_HOST_RE = /(^|\.)(community|forum|forums|discuss|discourse)\./;
+
+function profile(
+  kind: SourceProfileKind,
+  sourceKind: ResearchSourceKind,
+  shouldPreferHeadlessWhenWeak: boolean
+): SourceProfile {
+  return { kind, sourceKind, shouldPreferHeadlessWhenWeak };
+}
+
+function parseUrl(rawUrl: string): URL | undefined {
+  try {
+    return new URL(rawUrl);
+  } catch {
+    return undefined;
+  }
+}
+
 export function classifySourceProfile(rawUrl: string): SourceProfile {
-  const url = rawUrl.toLowerCase();
+  const parsed = parseUrl(rawUrl);
+  if (!parsed) return profile('community', 'community', false);
 
-  if (url.includes('/docs/api/') || url.includes('/config/')) {
-    return { kind: 'official-api', sourceKind: 'official-api', shouldPreferHeadlessWhenWeak: false };
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  const path = parsed.pathname.toLowerCase();
+
+  if (host === 'playwright.dev' && path.startsWith('/docs/api/')) {
+    return profile('official-api', 'official-api', false);
+  }
+
+  if (host === 'vitest.dev' && path.startsWith('/config/')) {
+    return profile('official-api', 'official-api', false);
   }
 
   if (
-    url.includes('playwright.dev/docs') ||
-    url.includes('vitest.dev/guide/') ||
-    url.includes('github.com/vitest-dev/vitest') && url.includes('/docs/') ||
-    url.includes('learn.microsoft.com')
+    host === 'playwright.dev' && path.startsWith('/docs/') ||
+    host === 'vitest.dev' && path.startsWith('/guide/') ||
+    host === 'github.com' && path.startsWith('/vitest-dev/vitest/') && path.includes('/docs/') ||
+    host === 'learn.microsoft.com'
   ) {
-    return { kind: 'official-docs', sourceKind: 'official-docs', shouldPreferHeadlessWhenWeak: false };
+    return profile('official-docs', 'official-docs', false);
   }
 
-  if (url.includes('github.com/') && (url.includes('/issues/') || url.includes('/discussions/'))) {
-    return { kind: 'issue-thread', sourceKind: 'issue-thread', shouldPreferHeadlessWhenWeak: true };
+  if (host === 'github.com' && (path.includes('/issues/') || path.includes('/discussions/'))) {
+    return profile('issue-thread', 'issue-thread', true);
   }
 
   if (
-    url.includes('reddit.com/r/') ||
-    url.includes('stackoverflow.com/questions/') ||
-    url.includes('/forum/') ||
-    url.includes('/forums/') ||
-    url.includes('/t/') ||
-    url.includes('/topic/') ||
-    url.includes('/threads/')
+    host === 'reddit.com' && path.includes('/comments/') ||
+    host === 'stackoverflow.com' && path.startsWith('/questions/') ||
+    COMMUNITY_FORUM_HOST_RE.test(`${host}.`) && (
+      path.includes('/forum/') ||
+      path.includes('/forums/') ||
+      path.includes('/t/') ||
+      path.includes('/topic/') ||
+      path.includes('/threads/')
+    )
   ) {
-    return { kind: 'forum-thread', sourceKind: 'community', shouldPreferHeadlessWhenWeak: true };
+    return profile('forum-thread', 'community', true);
   }
 
-  if (url.includes('npmjs.com/package/')) {
-    return { kind: 'package-page', sourceKind: 'package-page', shouldPreferHeadlessWhenWeak: false };
+  if (host === 'npmjs.com' && path.startsWith('/package/')) {
+    return profile('package-page', 'package-page', false);
   }
 
-  return { kind: 'community', sourceKind: 'community', shouldPreferHeadlessWhenWeak: false };
+  return profile('community', 'community', false);
 }
