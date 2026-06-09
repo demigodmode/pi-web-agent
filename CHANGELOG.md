@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [1.4.0] - 2026-06-09
+### Added
 - Added evidence quality analysis for `web_explore`, including source diversity, unreadable source, bot-check, and possible conflict signals.
 
 ### Changed
