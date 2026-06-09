@@ -14,6 +14,7 @@ const evidence = (sourceKind: ResearchEvidence['sourceKind'], url = `https://exa
 
 const officialDocsEvidence = evidence('official-docs', 'https://vitest.dev/guide/coverage.html');
 const officialApiEvidence = evidence('official-api', 'https://vitest.dev/config/coverage');
+const officialDiscussionEvidence = evidence('official-discussion', 'https://vitest.dev/discussions/coverage');
 
 const quality = (overrides: {
   counts?: Partial<EvidenceQualityReport['counts']>;
@@ -97,7 +98,7 @@ describe('decideNextResearchStep', () => {
   it('continues searching when evidence is low-diversity and budget remains', () => {
     expect(
       decideNextResearchStep({
-        evidence: [officialDocsEvidence, officialApiEvidence],
+        evidence: [officialDocsEvidence, officialDiscussionEvidence],
         suggestedHeadlessUrls: [],
         passIndex: 0,
         maxPasses: 3,
@@ -115,7 +116,7 @@ describe('decideNextResearchStep', () => {
   it('answers with caveat when evidence is low-diversity and budget is exhausted', () => {
     expect(
       decideNextResearchStep({
-        evidence: [officialDocsEvidence, officialApiEvidence],
+        evidence: [officialDocsEvidence, officialDiscussionEvidence],
         suggestedHeadlessUrls: [],
         passIndex: 2,
         maxPasses: 3,

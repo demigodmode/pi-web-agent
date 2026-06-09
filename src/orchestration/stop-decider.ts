@@ -8,22 +8,37 @@ export type ResearchStepDecision =
   | { action: 'search-again' }
   | { action: 'headless'; url: string };
 
-function hasQualityConcern(quality?: EvidenceQualityReport) {
-  return (quality?.caveatReasons.length ?? 0) > 0;
+function activeCaveatReasons(evidence: ResearchEvidence[], quality?: EvidenceQualityReport) {
+  const reasons = quality?.caveatReasons ?? [];
+  if (!hasOfficialDocsAndApi(evidence)) return reasons;
+  return reasons.filter((reason) => reason !== 'low-diversity');
+}
+
+function hasQualityConcern(evidence: ResearchEvidence[], quality?: EvidenceQualityReport) {
+  return activeCaveatReasons(evidence, quality).length > 0;
+}
+
+function hasOfficialDocsAndApi(evidence: ResearchEvidence[]) {
+  return evidence.some((item) => item.sourceKind === 'official-docs') &&
+    evidence.some((item) => item.sourceKind === 'official-api');
 }
 
 function shouldSearchForBetterQuality({
+  evidence,
   quality,
   passIndex,
   maxPasses
 }: {
+  evidence: ResearchEvidence[];
   quality?: EvidenceQualityReport;
   passIndex: number;
   maxPasses: number;
 }) {
   if (!quality) return false;
   if (passIndex + 1 >= maxPasses) return false;
-  return quality.flags.hasLowDiversity || quality.flags.hasOnlyCommunityEvidence;
+  if (quality.flags.hasOnlyCommunityEvidence) return true;
+  if (quality.flags.hasLowDiversity && !hasOfficialDocsAndApi(evidence)) return true;
+  return false;
 }
 
 export function decideNextResearchStep({
@@ -45,12 +60,12 @@ export function decideNextResearchStep({
 }): ResearchStepDecision {
   const strongEnough = strongEvidenceCount(evidence) >= 2 && hasOfficialEvidence(evidence);
 
-  if (strongEnough && shouldSearchForBetterQuality({ quality, passIndex, maxPasses })) {
+  if (strongEnough && shouldSearchForBetterQuality({ evidence, quality, passIndex, maxPasses })) {
     return { action: 'search-again' };
   }
 
   if (strongEnough) {
-    return hasQualityConcern(quality) ? { action: 'answer-with-caveat' } : { action: 'answer' };
+    return hasQualityConcern(evidence, quality) ? { action: 'answer-with-caveat' } : { action: 'answer' };
   }
 
   const headlessUrl = suggestedHeadlessUrls.find((url) => !url.includes('npmjs.com/package/'));

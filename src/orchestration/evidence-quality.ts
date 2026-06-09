@@ -42,8 +42,9 @@ function hasConflictMarkers(evidence: ResearchEvidence[]) {
     .join('\n')
     .toLowerCase();
 
-  const positive = /\brecommended\b|\buse\b/.test(combined);
   const caution = /\bdeprecated\b|not recommended|use at your own risk|should not/.test(combined);
+  const positiveText = combined.replace(/not recommended/g, '');
+  const positive = /\brecommended\b/.test(positiveText);
   return positive && caution;
 }
 
