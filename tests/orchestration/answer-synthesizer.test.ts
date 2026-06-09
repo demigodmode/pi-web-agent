@@ -44,4 +44,28 @@ describe('synthesizeAnswer', () => {
       synthesizeAnswer({ evidence: [evidence('community', 'One source only.')], partial: true }).caveat
     ).toBe('Evidence is partial, so this answer is based on the strongest source found within the bounded research budget.');
   });
+
+  it('explains community-only and low-diversity caveats specifically', () => {
+    const result = synthesizeAnswer({
+      evidence: [evidence('community', 'One source only.')],
+      partial: true,
+      caveatReasons: ['community-only', 'low-diversity']
+    });
+
+    expect(result.caveat).toBe(
+      'Evidence is partial: the strongest readable sources were mostly community/practical context, and the source set was narrow.'
+    );
+  });
+
+  it('explains unreadable thread and possible conflict caveats specifically', () => {
+    const result = synthesizeAnswer({
+      evidence: [evidence('official-docs', 'Official source.')],
+      partial: true,
+      caveatReasons: ['unreadable-thread-source', 'possible-conflict']
+    });
+
+    expect(result.caveat).toBe(
+      'Evidence is partial: one or more thread sources could not be read reliably, and readable sources include cautionary or possibly conflicting guidance.'
+    );
+  });
 });

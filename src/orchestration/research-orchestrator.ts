@@ -11,7 +11,7 @@ import type {
   ResearchWorkerResult
 } from './research-types.js';
 import { decideNextResearchStep } from './stop-decider.js';
-import { analyzeEvidenceQuality } from './evidence-quality.js';
+import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -100,7 +100,8 @@ function buildMetadata({
   allGaps,
   allLowValueOutcomes,
   headlessAttempts,
-  exhaustedBudget
+  exhaustedBudget,
+  caveatReasons = []
 }: {
   previousQueries: string[];
   allEvidence: ResearchEvidence[];
@@ -108,12 +109,14 @@ function buildMetadata({
   allLowValueOutcomes: ResearchLowValueOutcome[];
   headlessAttempts: number;
   exhaustedBudget: boolean;
+  caveatReasons?: EvidenceCaveatReason[];
 }) {
   return {
     searchPasses: previousQueries.length,
     fetchedPages: allEvidence.length + allGaps.length + allLowValueOutcomes.length,
     headlessAttempts,
-    exhaustedBudget
+    exhaustedBudget,
+    caveatReasons
   };
 }
 
@@ -271,7 +274,8 @@ export function createResearchOrchestrator({
                   allGaps,
                   allLowValueOutcomes,
                   headlessAttempts,
-                  exhaustedBudget: updatedDecision.action !== 'answer'
+                  exhaustedBudget: updatedDecision.action !== 'answer',
+                  caveatReasons: updatedQuality.caveatReasons
                 })
               };
             }
@@ -297,7 +301,8 @@ export function createResearchOrchestrator({
                 allGaps,
                 allLowValueOutcomes,
                 headlessAttempts,
-                exhaustedBudget: false
+                exhaustedBudget: false,
+                caveatReasons: quality.caveatReasons
               })
             };
           }
@@ -319,7 +324,8 @@ export function createResearchOrchestrator({
                 allGaps,
                 allLowValueOutcomes,
                 headlessAttempts,
-                exhaustedBudget: decision.action === 'answer-with-caveat'
+                exhaustedBudget: decision.action === 'answer-with-caveat',
+                caveatReasons: quality.caveatReasons
               })
             };
           }
@@ -327,6 +333,11 @@ export function createResearchOrchestrator({
       }
 
       const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+      const quality = analyzeEvidenceQuality({
+        evidence: ranked,
+        gaps: allGaps,
+        lowValueOutcomes: allLowValueOutcomes
+      });
       return {
         decision: decisionForAnswer('answer-with-caveat', query, ranked),
         evidence: ranked,
@@ -343,7 +354,8 @@ export function createResearchOrchestrator({
           allGaps,
           allLowValueOutcomes,
           headlessAttempts,
-          exhaustedBudget: true
+          exhaustedBudget: true,
+          caveatReasons: quality.caveatReasons
         })
       };
     }

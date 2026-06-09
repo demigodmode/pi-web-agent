@@ -81,6 +81,7 @@ export type WebExploreResponse = {
     fetchedPages: number;
     headlessAttempts: number;
     exhaustedBudget: boolean;
+    caveatReasons?: string[];
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;
