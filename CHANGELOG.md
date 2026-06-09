@@ -7,10 +7,11 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added evidence quality analysis for `web_explore`, including source diversity, unreadable source, bot-check, and possible conflict signals.
 
 ### Changed
-- Nothing yet.
+- `web_explore` now uses source quality signals before deciding whether to answer, search again, or answer with a caveat.
+- Partial research caveats are now more specific when evidence is community-only, low-diversity, blocked, or cautionary.
 
 ### Fixed
 - Nothing yet.
