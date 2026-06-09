@@ -144,6 +144,46 @@ describe('research worker', () => {
     expect(result.gaps).toHaveLength(2);
   });
 
+  it('does not turn bot-check pages into evidence', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [
+          {
+            title: 'Forum thread',
+            url: 'https://forum.example.com/thread/123',
+            snippet: 'Discussion thread'
+          }
+        ],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok',
+        url: 'https://forum.example.com/thread/123',
+        content: {
+          title: 'Just a moment...',
+          text: 'Checking your browser before accessing this site. Security verification is required.'
+        },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      })
+    });
+
+    const result = await worker.run({
+      query: 'forum discussion',
+      maxSearchRounds: 1,
+      maxFetches: 1
+    });
+
+    expect(result.evidence).toHaveLength(0);
+    expect(result.lowValueOutcomes).toEqual([
+      {
+        kind: 'bot-check',
+        url: 'https://forum.example.com/thread/123',
+        message: 'Fetched page showed a bot-check or security verification page.'
+      }
+    ]);
+  });
+
   it('classifies npm package pages as low-value when they do not add useful evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({

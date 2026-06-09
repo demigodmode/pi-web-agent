@@ -264,7 +264,8 @@ describe('research orchestrator types', () => {
     const result = await orchestrator.run({ query: 'playwright installed edge executablePath vs channel' });
 
     expect(result.decision.action).toBe('research-again');
-    expect(result.metadata?.exhaustedBudget).toBe(true);
+    expect(result.decision.rationale).toBe('Evidence has quality caveats; answer with caveat.');
+    expect(result.metadata?.exhaustedBudget).toBe(false);
   });
 
   it('requests another pass when evidence is too thin', async () => {
