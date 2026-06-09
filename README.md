@@ -8,9 +8,9 @@
 
 Most agent web tools blur search, fetch, browser rendering, and research into one vague thing. `pi-web-agent` exposes one public research tool, `web_explore`, and keeps search/fetch/headless work inside that bounded workflow.
 
-The point is keeping the model-facing boundary simple: ask `web_explore` to research a question, and it handles direct links, discovery, HTTP reads, targeted browser rendering, source ranking, and caveats internally.
+The point is keeping the model-facing boundary simple: ask `web_explore` to research a question, and it handles direct links, discovery, HTTP reads, targeted browser rendering, source ranking, source-quality checks, and caveats internally.
 
-That sounds obvious, but a lot of agent tooling gets fuzzy right there. This package is meant to be stricter about what it actually did and more willing to say when a read was not good enough to trust.
+That sounds obvious, but a lot of agent tooling gets fuzzy right there. This package is meant to be stricter about what it actually did and more willing to say when a read was not good enough to trust. Bot-check pages, narrow source sets, unreadable threads, and cautionary/conflicting evidence should show up as caveats instead of fake confidence.
 
 ## Install
 

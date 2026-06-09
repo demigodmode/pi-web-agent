@@ -26,7 +26,7 @@ The package exposes one public web research tool:
 
 Use it when you want Pi to find and compare current web sources.
 
-`web_explore` handles the annoying parts internally: search, HTTP reads, targeted headless rendering, source ranking, and caveats when the evidence is not strong enough.
+`web_explore` handles the annoying parts internally: search, HTTP reads, targeted headless rendering, source ranking, source-quality checks, and caveats when the evidence is not strong enough.
 
 ## Try a prompt
 
@@ -90,4 +90,4 @@ If none is found, it falls back to Playwright-managed Chromium and still runs he
 
 ## One thing to keep in mind
 
-If the package says no usable evidence was found, or adds a caveat, that is intentional. It is better to admit the research pass was thin than to turn weak pages or bot-check screens into fake confidence.
+If the package says no usable evidence was found, or adds a caveat, that is intentional. It is better to admit the research pass was thin, narrow, blocked, or cautionary than to turn weak pages or bot-check screens into fake confidence.

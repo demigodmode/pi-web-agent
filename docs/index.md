@@ -19,7 +19,8 @@ Internally it can:
 - prefer forum/thread sources when the query asks for discussions
 - rank official sources above weaker sources
 - include community sources as practical context
-- stop with a caveat when the evidence is thin
+- evaluate source quality, diversity, bot-checks, unreadable threads, and possible conflicts
+- stop with a specific caveat when the evidence is thin or uneven
 
 In `preview` or `verbose` mode, you can still see which internal reader produced each finding, for example `[web_fetch]` or `[web_fetch_headless]`. That gives you transparency without exposing a bunch of low-level public tools.
 
@@ -35,7 +36,7 @@ Right now it gives you:
 - a `/web-agent` settings UI for presentation and backend config
 - direct-link and forum/thread-aware research handling
 - local-browser headless rendering with managed Chromium fallback
-- bounded research behavior that is willing to say when evidence was weak
+- bounded research behavior that is willing to say when evidence was weak, narrow, blocked, or cautionary
 
 ## Start here
 

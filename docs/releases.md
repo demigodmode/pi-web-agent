@@ -14,6 +14,8 @@ This repo uses npm Trusted Publishing from GitHub Actions.
 
 That replaced the older `NPM_TOKEN` secret flow.
 
+If the publish job fails with a transient Sigstore/Rekor provenance error, rerun the failed job before changing code. The package may have built and tested cleanly while the transparency-log request failed outside the repo.
+
 ## Docs publishing
 
 The docs site publishes through GitHub Pages.

@@ -18,11 +18,13 @@ npm run build
 npm test
 ```
 
-## Run the typecheck
+## Run lint/typecheck
 
 ```bash
 npm run lint
 ```
+
+This is the TypeScript no-emit check for the package.
 
 ## Work on the docs
 

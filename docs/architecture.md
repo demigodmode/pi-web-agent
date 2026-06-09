@@ -24,7 +24,7 @@ The lower-level capabilities still exist in code, but they are internal steps no
 - search is for discovery
 - HTTP fetch is for plain page reads
 - headless fetch is for selected browser-rendered reads
-- orchestration decides when enough evidence exists
+- orchestration decides when enough evidence exists and when source-quality concerns need another pass or a caveat
 
 Keeping those responsibilities separate still matters. It lets the package show provenance like `[web_fetch]` or `[web_fetch_headless]` in preview/verbose output without forcing the outer model to manually chain those steps.
 
@@ -35,6 +35,8 @@ A search result should not be treated as a page read.
 A weak HTTP extraction should not be treated as reliable evidence.
 
 A bot-check page should not become a source.
+
+A same-host or community-only source set should not get treated like broad corroboration.
 
 And if more evidence is needed, the model should call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
 
