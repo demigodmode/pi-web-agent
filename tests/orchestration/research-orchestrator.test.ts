@@ -239,16 +239,16 @@ describe('research orchestrator types', () => {
             {
               title: 'Browsers | Playwright',
               url: 'https://playwright.dev/docs/browsers',
-              sourceKind: 'official-docs',
-              method: 'http',
+              sourceKind: 'official-docs' as const,
+              method: 'http' as const,
               summary: 'Use channel for branded browsers like msedge. This is recommended.',
               supports: ['Use channel for branded browsers']
             },
             {
               title: 'BrowserType | Playwright',
               url: 'https://playwright.dev/docs/api/class-browsertype',
-              sourceKind: 'official-api',
-              method: 'http',
+              sourceKind: 'official-api' as const,
+              method: 'http' as const,
               summary: 'executablePath is supported but use at your own risk and is not recommended for normal use.',
               supports: ['executablePath is use at your own risk']
             }
