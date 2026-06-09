@@ -2,6 +2,7 @@ import { createResearchWorkflow } from '../orchestration/index.js';
 import { synthesizeAnswer } from '../orchestration/answer-synthesizer.js';
 import type { ResearchEvidence } from '../orchestration/research-types.js';
 import { buildExplorePresentation } from '../presentation/explore-presentation.js';
+import type { EvidenceCaveatReason } from '../orchestration/evidence-quality.js';
 import type { WebExploreResponse } from '../types.js';
 
 export function createWebExploreTool({
@@ -50,7 +51,8 @@ export function createWebExploreTool({
     }));
     const synthesized = synthesizeAnswer({
       evidence: result.evidence,
-      partial: result.decision.action !== 'answer'
+      partial: result.decision.action !== 'answer',
+      caveatReasons: result.metadata?.caveatReasons as EvidenceCaveatReason[] | undefined
     });
 
     const shaped: WebExploreResponse = {

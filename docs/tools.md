@@ -26,6 +26,7 @@ Internally, `web_explore` can do a few things:
 - escalate selected pages to headless rendering
 - keep explicit gaps for unreadable direct/thread sources
 - rank evidence
+- evaluate source quality and source diversity
 - synthesize findings and caveats
 
 The important bit: those internal steps are not separate public tools for normal model use. If more web evidence is needed, the model should call `web_explore` again with a narrower query.
@@ -58,6 +59,12 @@ No usable evidence found.
 ```
 
 That is expected. Web pages can be thin, blocked, duplicated, or irrelevant. Forum/thread pages can also render bot checks or noisy app shells. A follow-up `web_explore` call with a more specific query is usually the right next move.
+
+Partial answers may explain the specific quality problem, for example:
+
+```text
+Evidence is partial: one or more thread sources could not be read reliably, and the source set was narrow.
+```
 
 ## A practical rule
 

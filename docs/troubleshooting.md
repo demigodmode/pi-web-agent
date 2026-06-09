@@ -14,6 +14,12 @@ That can happen when:
 
 A good next move is another `web_explore` call with a narrower query. For example, include the library name, docs site, issue tracker, or exact API you care about.
 
+## `web_explore` says evidence is partial for a specific reason
+
+That usually means the research loop found usable evidence, but also found a quality problem such as mostly community sources, narrow source diversity, unreadable direct/thread links, bot-check pages, or cautionary/conflicting guidance.
+
+You can usually improve the result by asking a narrower follow-up query that names the docs site, issue tracker, forum, or exact API you care about.
+
 ## The output has `[web_fetch]` or `[web_fetch_headless]` labels
 
 Those labels show internal provenance.

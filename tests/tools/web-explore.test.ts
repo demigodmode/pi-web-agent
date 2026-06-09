@@ -135,6 +135,48 @@ describe('web_explore tool', () => {
     );
   });
 
+  it('uses specific caveat reasons from research metadata', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: {
+          action: 'research-again',
+          rationale: 'Evidence is partial.',
+          followupQuery: 'same query'
+        },
+        evidence: [
+          {
+            title: 'Source A',
+            url: 'https://example.com/a',
+            sourceKind: 'community',
+            method: 'http',
+            summary: 'A practical source.',
+            supports: ['practical source']
+          }
+        ],
+        workerPass: {
+          searchQueries: ['q1'],
+          evidence: [],
+          gaps: [],
+          lowValueOutcomes: [],
+          exhaustedBudget: true
+        },
+        metadata: {
+          searchPasses: 1,
+          fetchedPages: 1,
+          headlessAttempts: 0,
+          exhaustedBudget: true,
+          caveatReasons: ['community-only', 'low-diversity']
+        }
+      })
+    });
+
+    const result = await webExplore({ query: 'example query' });
+
+    expect(result.caveat).toBe(
+      'Evidence is partial: the strongest readable sources were mostly community/practical context, and the source set was narrow.'
+    );
+  });
+
   it('rejects empty exploration queries', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn()

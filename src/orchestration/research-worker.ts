@@ -17,9 +17,16 @@ function summarizeText(text: string, maxLength = 180): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
+function isBotCheckContent({ title = '', text }: { title?: string; text: string }) {
+  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
+    `${title}\n${text}`
+  );
+}
+
 function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string) {
   const content = fetched.content;
   if (fetched.status !== 'ok' || !content) return null;
+  if (isBotCheckContent({ title: content.title, text: content.text })) return null;
 
   const sourceKind = classifySource(fetched.url);
   if (sourceKind === 'package-page') {
@@ -38,6 +45,15 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string) {
 
 function lowValueOutcomeFromFetch(fetched: WebFetchResponse): ResearchLowValueOutcome | null {
   if (fetched.status !== 'ok' || !fetched.content) return null;
+
+  if (isBotCheckContent({ title: fetched.content.title, text: fetched.content.text })) {
+    return {
+      kind: 'bot-check',
+      url: fetched.url,
+      message: 'Fetched page showed a bot-check or security verification page.'
+    };
+  }
+
   if (classifySource(fetched.url) !== 'package-page') return null;
 
   return {
