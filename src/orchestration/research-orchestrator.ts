@@ -11,6 +11,7 @@ import type {
   ResearchWorkerResult
 } from './research-types.js';
 import { decideNextResearchStep } from './stop-decider.js';
+import { analyzeEvidenceQuality } from './evidence-quality.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -213,13 +214,19 @@ export function createResearchOrchestrator({
           if (pass.suggestedHeadlessUrl) suggestedHeadlessUrls.push(pass.suggestedHeadlessUrl);
 
           const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+          const quality = analyzeEvidenceQuality({
+            evidence: ranked,
+            gaps: allGaps,
+            lowValueOutcomes: allLowValueOutcomes
+          });
           const decision = decideNextResearchStep({
             evidence: ranked,
             suggestedHeadlessUrls,
             passIndex,
             maxPasses: DEFAULT_MAX_PASSES,
             headlessAttempts,
-            maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS
+            maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS,
+            quality
           });
 
           if (decision.action === 'headless') {
@@ -229,13 +236,19 @@ export function createResearchOrchestrator({
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);
               const updatedRanked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+              const updatedQuality = analyzeEvidenceQuality({
+                evidence: updatedRanked,
+                gaps: allGaps,
+                lowValueOutcomes: allLowValueOutcomes
+              });
               const updatedDecision = decideNextResearchStep({
                 evidence: updatedRanked,
                 suggestedHeadlessUrls: [],
                 passIndex,
                 maxPasses: DEFAULT_MAX_PASSES,
                 headlessAttempts,
-                maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS
+                maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS,
+                quality: updatedQuality
               });
 
               return {

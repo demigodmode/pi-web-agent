@@ -230,6 +230,43 @@ describe('research orchestrator types', () => {
     expect(result.evidence).toHaveLength(2);
   });
 
+  it('answers with caveat when strong readable evidence includes cautionary conflict markers', async () => {
+    const orchestrator = createResearchOrchestrator({
+      worker: {
+        run: vi.fn(async () => ({
+          searchQueries: ['playwright edge executablePath'],
+          evidence: [
+            {
+              title: 'Browsers | Playwright',
+              url: 'https://playwright.dev/docs/browsers',
+              sourceKind: 'official-docs',
+              method: 'http',
+              summary: 'Use channel for branded browsers like msedge. This is recommended.',
+              supports: ['Use channel for branded browsers']
+            },
+            {
+              title: 'BrowserType | Playwright',
+              url: 'https://playwright.dev/docs/api/class-browsertype',
+              sourceKind: 'official-api',
+              method: 'http',
+              summary: 'executablePath is supported but use at your own risk and is not recommended for normal use.',
+              supports: ['executablePath is use at your own risk']
+            }
+          ],
+          gaps: [],
+          lowValueOutcomes: [],
+          exhaustedBudget: false
+        }))
+      },
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'playwright installed edge executablePath vs channel' });
+
+    expect(result.decision.action).toBe('research-again');
+    expect(result.metadata?.exhaustedBudget).toBe(true);
+  });
+
   it('requests another pass when evidence is too thin', async () => {
     const orchestrator = createResearchOrchestrator({
       worker: {
