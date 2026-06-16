@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Nothing yet.
+
+### Changed
+- Nothing yet.
+
+### Fixed
+- Nothing yet.
+
+### Breaking
+- None.
+
+## [1.5.0] - 2026-06-16
+### Added
 - Added Brave Search as the first hosted search backend for `web_explore`, giving users a high-quality API-backed discovery option without running their own SearXNG instance.
 - Added optional Brave → DuckDuckGo fallback so hosted search can degrade gracefully instead of failing hard when the Brave API is unavailable or misconfigured.
 - Added a dedicated Brave search adapter that feeds the existing `web_explore` research pipeline, so Brave improves source discovery while the package still handles fetching, ranking, evidence quality, synthesis, and caveats.
