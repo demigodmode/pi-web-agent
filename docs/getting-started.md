@@ -66,7 +66,9 @@ If you run your own services, open:
 /web-agent settings
 ```
 
-Choose **Backends** to point search at SearXNG and page reading at Firecrawl. The settings UI can edit providers, base URLs, and fallback behavior.
+Choose **Backends** to point search at SearXNG or Brave, and page reading at Firecrawl. The settings UI can edit providers, base URLs where relevant, and fallback behavior.
+
+If you have a Brave Search API key, set `PI_WEB_AGENT_BRAVE_API_KEY` in the environment, then choose Brave under **Backends**. Brave is hosted, so it does not need a `baseUrl`.
 
 Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check whether configured self-hosted endpoints respond.
 

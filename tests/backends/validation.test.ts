@@ -33,7 +33,7 @@ describe('backend config validation', () => {
         headless: { provider: 'local-browser' }
       })
     ).toEqual([
-      'search fallback duckduckgo is only supported when search provider is searxng',
+      'search fallback duckduckgo is only supported when search provider is searxng or brave',
       'fetch fallback http is only supported when fetch provider is firecrawl'
     ]);
   });

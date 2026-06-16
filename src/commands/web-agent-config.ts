@@ -193,7 +193,7 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng']
+      values: ['duckduckgo', 'searxng', 'brave']
     },
     {
       id: 'backend:search:baseUrl',
@@ -203,9 +203,15 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
     },
     {
       id: 'backend:search:fallback',
-      label: 'SearXNG fallback',
-      currentValue: backends.search.provider === 'searxng' ? backends.search.fallback ?? 'off' : 'off',
-      values: backends.search.provider === 'searxng' ? ['off', 'duckduckgo'] : ['off']
+      label: 'Search fallback',
+      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' ? backends.search.fallback ?? 'off' : 'off',
+      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' ? ['off', 'duckduckgo'] : ['off']
+    },
+    {
+      id: 'backend:secret:brave',
+      label: 'Brave API key',
+      currentValue: 'env var',
+      values: ['env var']
     },
     {
       id: 'backend:fetch:provider',
@@ -367,23 +373,27 @@ export function applySettingsValue(
     currentDraft.tools = nextTools;
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave')) {
     currentBackends.search.provider = newValue;
+    if (newValue !== 'searxng') {
+      delete currentBackends.search.baseUrl;
+      delete currentBackends.search.options;
+    }
     if (newValue === 'duckduckgo') {
       delete currentBackends.search.fallback;
     }
   }
 
   if (id === 'backend:search:fallback') {
-    if (newValue === 'duckduckgo' && currentBackends.search.provider === 'searxng') {
+    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave')) {
       currentBackends.search.fallback = 'duckduckgo';
-    } else if (newValue === 'off' || currentBackends.search.provider !== 'searxng') {
+    } else {
       delete currentBackends.search.fallback;
     }
   }
 
   if (id === 'backend:search:baseUrl') {
-    if (newValue.trim()) {
+    if (currentBackends.search.provider === 'searxng' && newValue.trim()) {
       currentBackends.search.baseUrl = newValue.trim();
     } else {
       delete currentBackends.search.baseUrl;

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBackendSet } from '../../src/backends/factory.js';
+import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 
 describe('backend factory', () => {
   it('creates the existing search/fetch/headless tools by default', () => {
@@ -86,6 +87,52 @@ describe('backend factory', () => {
       status: 'error',
       metadata: { backend: 'searxng' }
     });
+  });
+
+  it('creates brave search with the environment API key', () => {
+    const original = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    process.env.PI_WEB_AGENT_BRAVE_API_KEY = 'brave-key';
+    const createBraveSearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave' } },
+        { createBraveSearch }
+      );
+
+      expect(createBraveSearch).toHaveBeenCalledWith({ apiKey: 'brave-key' });
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+      else process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
+    }
+  });
+
+  it('records brave as the search fallback source', async () => {
+    const primary = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'brave', cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'Brave failed' }
+    });
+    const fallback = vi.fn().mockResolvedValue({
+      status: 'ok',
+      results: [{ title: 'Fallback', url: 'https://example.com', snippet: 'ok' }],
+      metadata: { backend: 'duckduckgo', cacheHit: false }
+    });
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+      {
+        createBraveSearch: vi.fn().mockReturnValue(primary),
+        createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
+      }
+    );
+
+    const result = await backends.search({ query: 'test' });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.fallbackFrom).toBe('brave');
+    expect(result.metadata.fallbackReason).toBe('Brave failed');
   });
 
   it('falls back from Firecrawl weak extraction to HTTP when configured', async () => {

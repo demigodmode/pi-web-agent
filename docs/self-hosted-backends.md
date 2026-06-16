@@ -5,6 +5,8 @@
 - SearXNG for search
 - Firecrawl for page fetch/extraction
 
+It can also use Brave Search as a hosted search backend. Brave is hosted, so it uses an API key instead of a `baseUrl`.
+
 This keeps the public Pi tool the same: the model still calls `web_explore`. The backend config only changes what `web_explore` uses internally.
 
 ## What this page does not cover
@@ -48,14 +50,14 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo and SearXNG
+- switch search between DuckDuckGo, SearXNG, and Brave
 - edit the SearXNG base URL
-- enable SearXNG → DuckDuckGo fallback
+- enable SearXNG/Brave → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
 - edit the Firecrawl base URL
 - enable Firecrawl → HTTP fallback
 
-Firecrawl API keys are intentionally not edited in the settings UI. Prefer `PI_WEB_AGENT_FIRECRAWL_API_KEY` for secrets.
+Brave and Firecrawl API keys are intentionally not edited in the settings UI. Prefer `PI_WEB_AGENT_BRAVE_API_KEY` and `PI_WEB_AGENT_FIRECRAWL_API_KEY` for secrets.
 
 ## Config file locations
 
@@ -121,6 +123,31 @@ Supported SearXNG options can stay in config:
 ```
 
 These map to SearXNG search query params. Unsupported or malformed values show up as config warnings in `/web-agent doctor`.
+
+## Brave Search
+
+To use Brave Search, set:
+
+```text
+PI_WEB_AGENT_BRAVE_API_KEY=...
+```
+
+Then choose **Settings → Backends → Search backend → brave**.
+
+Equivalent config:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "brave",
+      "fallback": "duckduckgo"
+    }
+  }
+}
+```
+
+Brave only improves source discovery. `web_explore` still fetches pages, ranks evidence, handles headless fallback, and writes caveats itself.
 
 ## Firecrawl fetch
 
@@ -205,7 +232,7 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 }
 ```
 
-When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG and Firecrawl failures stay visible instead of silently switching to external/default backends.
+When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, and Firecrawl failures stay visible instead of silently switching to external/default backends.
 
 ## Full self-hosted example
 
@@ -296,7 +323,7 @@ Then try a normal research prompt:
 Find current docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The model should still use `web_explore`; it should not need separate SearXNG or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
+The model should still use `web_explore`; it should not need separate SearXNG, Brave, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
 
 ## Troubleshooting
 
@@ -327,4 +354,4 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG to DuckDuckGo or from Firecrawl to plain HTTP when you choose self-hosted providers. Fallback only happens when `fallback` is configured because some users choose self-hosted backends specifically to avoid external services.
+`pi-web-agent` does not silently fall back from SearXNG or Brave to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.

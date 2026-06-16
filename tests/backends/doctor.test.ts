@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { checkBackendHealth } from '../../src/backends/doctor.js';
+import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 
 describe('backend doctor checks', () => {
   it('does not network-check default local backends', async () => {
@@ -43,6 +44,63 @@ describe('backend doctor checks', () => {
       'http://localhost:8080/search?q=pi-web-agent-doctor&format=json&categories=general&language=en&safesearch=1',
       expect.any(Object)
     );
+  });
+
+  it('warns when brave search is selected without an API key', async () => {
+    const original = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+
+    try {
+      const lines = await checkBackendHealth({
+        ...DEFAULT_BACKEND_CONFIG,
+        search: { provider: 'brave' }
+      });
+
+      expect(lines).toContain('search backend: brave warning (missing PI_WEB_AGENT_BRAVE_API_KEY)');
+    } finally {
+      if (original !== undefined) process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
+    }
+  });
+
+  it('reports brave ok for a healthy mocked response', async () => {
+    const original = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    process.env.PI_WEB_AGENT_BRAVE_API_KEY = 'key';
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ web: { results: [{ title: 'A', url: 'https://example.com' }] } })
+    });
+
+    try {
+      const lines = await checkBackendHealth(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+        { fetchImpl: fetchImpl as unknown as typeof fetch }
+      );
+
+      expect(lines).toContain('search backend: brave ok');
+      expect(lines).toContain('search fallback: duckduckgo');
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+      else process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
+    }
+  });
+
+  it('reports brave warning for non-ok mocked response', async () => {
+    const original = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    process.env.PI_WEB_AGENT_BRAVE_API_KEY = 'key';
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 401, json: vi.fn() });
+
+    try {
+      const lines = await checkBackendHealth(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave' } },
+        { fetchImpl: fetchImpl as unknown as typeof fetch }
+      );
+
+      expect(lines).toContain('search backend: brave warning (HTTP 401)');
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+      else process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
+    }
   });
 
   it('reports Firecrawl health check failures as warnings', async () => {
