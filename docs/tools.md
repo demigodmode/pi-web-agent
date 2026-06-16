@@ -19,7 +19,7 @@ Internally, `web_explore` can do a few things:
 - read HTTP/HTTPS links from the prompt before search
 - strip common tracking params from direct links
 - plan search queries
-- run web search
+- run web search through the configured search backend: DuckDuckGo, SearXNG, or Brave
 - pick candidate pages
 - prefer forum/thread sources when the query asks for discussions
 - read pages over HTTP

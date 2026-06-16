@@ -79,11 +79,13 @@ For a self-hosted setup, run SearXNG and Firecrawl yourself, then open:
 
 Choose **Backends** to set:
 
-- search provider: `searxng`
+- search provider: `searxng` or `brave`
 - SearXNG URL, for example `http://localhost:8080`
 - fetch provider: `firecrawl`
 - Firecrawl URL, for example `http://localhost:3002`
 - optional fallback behavior
+
+Hosted Brave Search does not need a `baseUrl`; set `PI_WEB_AGENT_BRAVE_API_KEY` and choose `brave` in `/web-agent settings`.
 
 If your Firecrawl instance requires a key, prefer an environment variable:
 

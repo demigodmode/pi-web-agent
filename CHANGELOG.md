@@ -7,10 +7,10 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- Added Brave Search as an optional hosted search backend for `web_explore`.
 
 ### Changed
-- Nothing yet.
+- `/web-agent settings` and `/web-agent doctor` now understand Brave search config and `PI_WEB_AGENT_BRAVE_API_KEY`.
 
 ### Fixed
 - Nothing yet.

@@ -42,6 +42,12 @@ That can happen when:
 
 For direct links and forum/thread sources, unreadable pages are kept as explicit gaps so the final answer can say when a source could not be read reliably instead of pretending it was reviewed.
 
+## `/web-agent doctor` says Brave is missing an API key
+
+Set `PI_WEB_AGENT_BRAVE_API_KEY` in the environment where Pi runs, then reload/restart Pi and run `/web-agent doctor` again. The settings UI does not write Brave API keys to config files.
+
+If Brave still reports an HTTP warning, check that the key is valid and that the Pi process can reach Brave Search API.
+
 ## `/web-agent doctor` mentions managed Chromium fallback
 
 Headless rendering first tries a detectable Chromium-family browser:
@@ -81,7 +87,7 @@ If you want the diagnostic report directly, use:
 The settings UI currently has two sections:
 
 - **Presentation** — `defaultMode` and `web_explore`
-- **Backends** — search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and an env-var reminder for Firecrawl API keys
+- **Backends** — search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for Brave/Firecrawl API keys
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
 
