@@ -151,6 +151,31 @@ describe('web-agent config draft helpers', () => {
     expect(applySettingsValue(state, 'backend:fetch:baseUrl', 'http://localhost:3002').backends.fetch.baseUrl).toBe('http://localhost:3002');
   });
 
+  it('applies brave backend draft values without preserving searxng-only fields', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080',
+          fallback: 'duckduckgo' as const,
+          options: { language: 'en' }
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const braveState = applySettingsValue(state, 'backend:search:provider', 'brave');
+    const fallbackState = applySettingsValue(braveState, 'backend:search:fallback', 'duckduckgo');
+
+    expect(braveState.backends.search).toEqual({ provider: 'brave' });
+    expect(fallbackState.backends.search).toEqual({ provider: 'brave', fallback: 'duckduckgo' });
+  });
+
   it('does not set fallback values for providers that do not support them', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },
@@ -526,6 +551,53 @@ describe('web-agent config commands', () => {
     expect(save).toHaveBeenCalledWith('project', { defaultMode: 'preview', tools: {} });
     expect(saveBackends).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('Saved project presentation config'), 'info');
+  });
+
+  it('saves brave as a search backend without writing API keys', async () => {
+    let handler: any;
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
+      }),
+      save,
+      saveBackends,
+      reset: vi.fn()
+    });
+
+    await handler('settings', {
+      ui: {
+        custom: vi
+          .fn()
+          .mockResolvedValueOnce('backends')
+          .mockResolvedValueOnce({
+            action: 'save',
+            scope: 'project',
+            config: DEFAULT_PRESENTATION_CONFIG,
+            backends: {
+              search: { provider: 'brave', fallback: 'duckduckgo' },
+              fetch: { provider: 'http' },
+              headless: { provider: 'local-browser' }
+            }
+          }),
+        notify: vi.fn()
+      }
+    });
+
+    expect(save).not.toHaveBeenCalled();
+    expect(saveBackends).toHaveBeenCalledWith('project', {
+      search: { provider: 'brave', fallback: 'duckduckgo' }
+    });
   });
 
   it('saves only backend overrides from the backend settings section', async () => {
