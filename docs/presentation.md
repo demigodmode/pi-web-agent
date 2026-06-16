@@ -93,7 +93,7 @@ These also work:
 `/web-agent` opens the action menu. Choose **Settings** to pick between:
 
 - **Presentation** — default output mode and the `web_explore` override
-- **Backends** — search/fetch providers, base URLs, fallback behavior, and the Firecrawl API-key note
+- **Backends** — search/fetch providers, base URLs where relevant, fallback behavior, and env-var reminders for Brave/Firecrawl API keys
 
 From either settings screen you can:
 

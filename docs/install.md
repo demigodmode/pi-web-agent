@@ -71,7 +71,7 @@ The default backend setup is:
 }
 ```
 
-For a self-hosted setup, run SearXNG and Firecrawl yourself, then open:
+For a self-hosted or hosted-backend setup, open:
 
 ```text
 /web-agent settings
@@ -79,13 +79,13 @@ For a self-hosted setup, run SearXNG and Firecrawl yourself, then open:
 
 Choose **Backends** to set:
 
-- search provider: `searxng` or `brave`
+- search provider: `duckduckgo`, `searxng`, or `brave`
 - SearXNG URL, for example `http://localhost:8080`
-- fetch provider: `firecrawl`
+- fetch provider: `http` or `firecrawl`
 - Firecrawl URL, for example `http://localhost:3002`
 - optional fallback behavior
 
-Hosted Brave Search does not need a `baseUrl`; set `PI_WEB_AGENT_BRAVE_API_KEY` and choose `brave` in `/web-agent settings`.
+Hosted Brave Search does not need a `baseUrl`; set `PI_WEB_AGENT_BRAVE_API_KEY` and choose `brave` in `/web-agent settings`. Brave is only the discovery backend. `web_explore` still reads pages, ranks sources, and writes caveats itself.
 
 If your Firecrawl instance requires a key, prefer an environment variable:
 
@@ -95,9 +95,9 @@ PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 
 The settings UI does not write API keys. For local-only configs you can still add `"apiKey": "..."` to the `fetch` config manually.
 
-Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values and checks configured SearXNG/Firecrawl endpoints with a short timeout.
+Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values, warns when Brave is selected without `PI_WEB_AGENT_BRAVE_API_KEY`, checks Brave when a key is present, and checks configured SearXNG/Firecrawl endpoints with a short timeout.
 
-Self-hosted backend config also supports explicit fallback and a small set of provider options. See [Self-hosted backends](/self-hosted-backends) for the full shape.
+Backend config also supports explicit fallback and a small set of provider options. See [Backends](/self-hosted-backends) for the full shape, including hosted Brave Search.
 
 This package integrates with existing self-hosted services. SearXNG/Firecrawl installation, Docker Compose files, reverse proxies, TLS, and auth setup belong to those projects' docs.
 

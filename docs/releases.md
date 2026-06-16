@@ -5,8 +5,8 @@
 1. update `CHANGELOG.md` under `## Unreleased`
 2. run `npm run release:dry-run`
 3. run `npm run release`
-4. push the branch and tag
-5. let GitHub Actions publish the tagged release to npm
+4. push `main` and the new tag, for example `git push origin main v1.5.0`
+5. let GitHub Actions publish the tagged release to npm and rebuild the docs site
 
 ## Trusted publishing
 

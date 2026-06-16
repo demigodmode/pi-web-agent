@@ -119,7 +119,7 @@ Backend settings can be changed from:
 
 Choose **Backends** to edit search/fetch providers, fallback behavior, and SearXNG or Firecrawl base URLs interactively. Brave Search uses `PI_WEB_AGENT_BRAVE_API_KEY`. Firecrawl API keys should also stay in environment variables rather than being written into config files.
 
-If you already run SearXNG or Firecrawl, see the self-hosted backend guide:
+For the full backend config shape, including SearXNG, Brave, Firecrawl, and fallback behavior, see:
 
 - https://demigodmode.github.io/pi-web-agent/self-hosted-backends
 

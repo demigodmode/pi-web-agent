@@ -36,6 +36,7 @@ Right now it gives you:
 - a `/web-agent` settings UI for presentation and backend config
 - direct-link and forum/thread-aware research handling
 - local-browser headless rendering with managed Chromium fallback
+- optional Brave Search hosted discovery without changing the public `web_explore` tool
 - bounded research behavior that is willing to say when evidence was weak, narrow, blocked, or cautionary
 
 ## Start here

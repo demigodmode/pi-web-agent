@@ -1,11 +1,17 @@
-# Self-hosted backends
+# Backends
 
-`pi-web-agent` can use existing self-hosted services for search and page reading:
+`pi-web-agent` can use alternate search and fetch backends without changing the public `web_explore` tool.
+
+Self-hosted options:
 
 - SearXNG for search
 - Firecrawl for page fetch/extraction
 
-It can also use Brave Search as a hosted search backend. Brave is hosted, so it uses an API key instead of a `baseUrl`.
+Hosted option:
+
+- Brave Search for API-backed source discovery
+
+Brave is hosted, so it uses an API key instead of a `baseUrl`.
 
 This keeps the public Pi tool the same: the model still calls `web_explore`. The backend config only changes what `web_explore` uses internally.
 

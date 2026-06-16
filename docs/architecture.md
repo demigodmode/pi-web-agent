@@ -8,7 +8,7 @@ That is partly for code health, but mostly because this package gets worse fast 
 
 - `src/extension.ts` wires the package into Pi and registers the public `web_explore` tool
 - `src/tools/` contains tool adapters and internal tool-shaped helpers
-- `src/search/` holds search backend logic
+- `src/search/` holds search backend logic for DuckDuckGo, SearXNG, and Brave
 - `src/fetch/` handles HTTP and headless fetch logic
 - `src/extract/` handles readable-content extraction
 - `src/orchestration/` handles the bounded research flow
@@ -21,7 +21,7 @@ The public model-facing web research surface is `web_explore`.
 
 The lower-level capabilities still exist in code, but they are internal steps now:
 
-- search is for discovery
+- search is for discovery, whether it comes from DuckDuckGo, SearXNG, or Brave
 - HTTP fetch is for plain page reads
 - headless fetch is for selected browser-rendered reads
 - orchestration decides when enough evidence exists and when source-quality concerns need another pass or a caveat
