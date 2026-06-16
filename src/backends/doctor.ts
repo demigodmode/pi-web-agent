@@ -10,6 +10,13 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function braveDoctorUrl() {
+  const url = new URL('https://api.search.brave.com/res/v1/web/search');
+  url.searchParams.set('q', 'pi-web-agent-doctor');
+  url.searchParams.set('count', '1');
+  return url.toString();
+}
+
 function searxngDoctorUrl(baseUrl: string, options: SearxngOptions = {}) {
   const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', 'pi-web-agent-doctor');
@@ -42,6 +49,34 @@ export async function checkBackendHealth(
 
   if (config.search.provider === 'duckduckgo') {
     lines.push('search backend: duckduckgo');
+  } else if (config.search.provider === 'brave') {
+    const apiKey = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    if (!apiKey?.trim()) {
+      lines.push('search backend: brave warning (missing PI_WEB_AGENT_BRAVE_API_KEY)');
+    } else {
+      const timeout = withTimeout(timeoutMs);
+      try {
+        const response = await fetchImpl(braveDoctorUrl(), {
+          headers: {
+            Accept: 'application/json',
+            'X-Subscription-Token': apiKey
+          },
+          signal: timeout.signal
+        });
+        if (!response.ok) {
+          lines.push(`search backend: brave warning (HTTP ${response.status})`);
+        } else {
+          const json = (await response.json()) as { web?: { results?: unknown } };
+          lines.push(Array.isArray(json.web?.results)
+            ? 'search backend: brave ok'
+            : 'search backend: brave warning (unexpected response)');
+        }
+      } catch (error) {
+        lines.push(`search backend: brave warning (${message(error)})`);
+      } finally {
+        timeout.done();
+      }
+    }
   } else if (!config.search.baseUrl) {
     lines.push('search backend: searxng warning (missing baseUrl)');
   } else {
