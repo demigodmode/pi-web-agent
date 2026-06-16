@@ -10,7 +10,7 @@ export type FirecrawlOptions = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng';
+  provider: 'duckduckgo' | 'searxng' | 'brave';
   baseUrl?: string;
   fallback?: 'duckduckgo';
   options?: SearxngOptions;
@@ -84,17 +84,23 @@ export function extractBackendConfigOverride(
   const backends = file?.backends;
   const override: BackendConfigOverride = {};
 
-  if (backends?.search?.provider === 'duckduckgo' || backends?.search?.provider === 'searxng') {
+  if (
+    backends?.search?.provider === 'duckduckgo' ||
+    backends?.search?.provider === 'searxng' ||
+    backends?.search?.provider === 'brave'
+  ) {
     override.search = { provider: backends.search.provider };
-    if (typeof backends.search.baseUrl === 'string') {
+    if (backends.search.provider === 'searxng' && typeof backends.search.baseUrl === 'string') {
       override.search.baseUrl = backends.search.baseUrl;
     }
     if (backends.search.fallback === 'duckduckgo') {
       override.search.fallback = 'duckduckgo';
     }
-    const options = extractSearxngOptions(backends.search.options);
-    if (options) {
-      override.search.options = options;
+    if (backends.search.provider === 'searxng') {
+      const options = extractSearxngOptions(backends.search.options);
+      if (options) {
+        override.search.options = options;
+      }
     }
   }
 
@@ -133,8 +139,8 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     issues.push('fetch provider firecrawl requires backends.fetch.baseUrl');
   }
 
-  if (config.search.fallback === 'duckduckgo' && config.search.provider !== 'searxng') {
-    issues.push('search fallback duckduckgo is only supported when search provider is searxng');
+  if (config.search.fallback === 'duckduckgo' && config.search.provider !== 'searxng' && config.search.provider !== 'brave') {
+    issues.push('search fallback duckduckgo is only supported when search provider is searxng or brave');
   }
 
   if (config.fetch.fallback === 'http' && config.fetch.provider !== 'firecrawl') {

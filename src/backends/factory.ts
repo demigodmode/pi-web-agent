@@ -1,4 +1,5 @@
 import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
+import { createBraveSearchTool } from '../search/brave.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
@@ -17,6 +18,7 @@ export type BackendSet = {
 export type BackendFactoryDeps = {
   createDuckDuckGoSearch?: typeof createWebSearchTool;
   createSearxngSearch?: typeof createSearxngSearchTool;
+  createBraveSearch?: typeof createBraveSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
@@ -56,7 +58,8 @@ function invalidFirecrawlFetch() {
 
 function withSearchFallback(
   primary: BackendSet['search'],
-  fallback: BackendSet['search']
+  fallback: BackendSet['search'],
+  fallbackFrom: 'searxng' | 'brave'
 ): BackendSet['search'] {
   return async (input) => {
     const first = await primary(input);
@@ -67,8 +70,8 @@ function withSearchFallback(
       ...second,
       metadata: {
         ...second.metadata,
-        fallbackFrom: 'searxng',
-        fallbackReason: first.error?.message ?? 'SearXNG search failed.'
+        fallbackFrom,
+        fallbackReason: first.error?.message ?? `${fallbackFrom} search failed.`
       }
     };
     return { ...result, presentation: buildSearchPresentation(result) };
@@ -102,6 +105,7 @@ export function createBackendSet(
 ): BackendSet {
   const createDuckDuckGoSearch = deps.createDuckDuckGoSearch ?? createWebSearchTool;
   const createSearxngSearch = deps.createSearxngSearch ?? createSearxngSearchTool;
+  const createBraveSearch = deps.createBraveSearch ?? createBraveSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
@@ -110,10 +114,16 @@ export function createBackendSet(
     ? config.search.baseUrl
       ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options })
       : invalidSearxngSearch()
-    : createDuckDuckGoSearch();
+    : config.search.provider === 'brave'
+      ? createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY })
+      : createDuckDuckGoSearch();
 
   if (config.search.provider === 'searxng' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGoSearch());
+    search = withSearchFallback(search, createDuckDuckGoSearch(), 'searxng');
+  }
+
+  if (config.search.provider === 'brave' && config.search.fallback === 'duckduckgo') {
+    search = withSearchFallback(search, createDuckDuckGoSearch(), 'brave');
   }
 
   const httpFetch = createHttpFetch();

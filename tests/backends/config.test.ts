@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_BACKEND_CONFIG, mergeBackendConfigLayers } from '../../src/backends/config.js';
+import {
+  DEFAULT_BACKEND_CONFIG,
+  extractBackendConfigOverride,
+  mergeBackendConfigLayers,
+  validateBackendConfig
+} from '../../src/backends/config.js';
 
 describe('backend config', () => {
   it('defaults to existing providers', () => {
@@ -88,6 +93,28 @@ describe('backend config', () => {
       },
       headless: { provider: 'local-browser' }
     });
+  });
+
+  it('accepts brave search provider with duckduckgo fallback', () => {
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: { provider: 'brave', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' }
+      }
+    });
+
+    expect(override.search).toEqual({ provider: 'brave', fallback: 'duckduckgo' });
+  });
+
+  it('allows duckduckgo fallback for brave but not duckduckgo itself', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'brave', fallback: 'duckduckgo' }
+    })).toEqual([]);
+
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng or brave');
   });
 
   it('drops provider-specific fallback and options when provider changes', () => {
