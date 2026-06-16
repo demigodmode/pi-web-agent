@@ -7,10 +7,14 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Added Brave Search as an optional hosted search backend for `web_explore`.
+- Added Brave Search as the first hosted search backend for `web_explore`, giving users a high-quality API-backed discovery option without running their own SearXNG instance.
+- Added optional Brave → DuckDuckGo fallback so hosted search can degrade gracefully instead of failing hard when the Brave API is unavailable or misconfigured.
+- Added a dedicated Brave search adapter that feeds the existing `web_explore` research pipeline, so Brave improves source discovery while the package still handles fetching, ranking, evidence quality, synthesis, and caveats.
 
 ### Changed
-- `/web-agent settings` and `/web-agent doctor` now understand Brave search config and `PI_WEB_AGENT_BRAVE_API_KEY`.
+- `/web-agent settings` now treats Brave as a first-class search backend while keeping API keys out of config files; users configure `PI_WEB_AGENT_BRAVE_API_KEY` in their environment instead.
+- `/web-agent doctor` now reports Brave setup status, warns when `PI_WEB_AGENT_BRAVE_API_KEY` is missing, and validates configured Brave access when a key is present.
+- Backend config validation and fallback metadata now understand Brave, including clear `fallbackFrom: 'brave'` reporting when DuckDuckGo fallback is used.
 
 ### Fixed
 - Nothing yet.
