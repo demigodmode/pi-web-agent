@@ -147,7 +147,7 @@ describe('web-agent config draft helpers', () => {
     expect(applySettingsValue(searchProviderState, 'backend:search:fallback', 'duckduckgo').backends.search.fallback).toBe('duckduckgo');
     expect(fetchProviderState.backends.fetch.provider).toBe('firecrawl');
     expect(applySettingsValue(fetchProviderState, 'backend:fetch:fallback', 'http').backends.fetch.fallback).toBe('http');
-    expect(applySettingsValue(state, 'backend:search:baseUrl', 'http://localhost:8080').backends.search.baseUrl).toBe('http://localhost:8080');
+    expect(applySettingsValue(searchProviderState, 'backend:search:baseUrl', 'http://localhost:8080').backends.search.baseUrl).toBe('http://localhost:8080');
     expect(applySettingsValue(state, 'backend:fetch:baseUrl', 'http://localhost:3002').backends.fetch.baseUrl).toBe('http://localhost:3002');
   });
 
@@ -174,6 +174,21 @@ describe('web-agent config draft helpers', () => {
 
     expect(braveState.backends.search).toEqual({ provider: 'brave' });
     expect(fallbackState.backends.search).toEqual({ provider: 'brave', fallback: 'duckduckgo' });
+  });
+
+  it('ignores searxng url edits unless searxng is selected', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const braveState = applySettingsValue(state, 'backend:search:provider', 'brave');
+    const editedState = applySettingsValue(braveState, 'backend:search:baseUrl', 'http://localhost:8080');
+
+    expect(editedState.backends.search).toEqual({ provider: 'brave' });
   });
 
   it('does not set fallback values for providers that do not support them', () => {

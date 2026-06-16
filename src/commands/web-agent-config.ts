@@ -393,7 +393,7 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:baseUrl') {
-    if (newValue.trim()) {
+    if (currentBackends.search.provider === 'searxng' && newValue.trim()) {
       currentBackends.search.baseUrl = newValue.trim();
     } else {
       delete currentBackends.search.baseUrl;
