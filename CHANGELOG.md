@@ -13,7 +13,7 @@ The format is intentionally simple and release-oriented.
 - Nothing yet.
 
 ### Fixed
-- Nothing yet.
+- Updated vulnerable dependency paths reported by `npm audit`, including Vitest, Pi dev tooling, `undici`, `ws`, `protobufjs`, `postcss`, and the Vite docs toolchain override.
 
 ### Breaking
 - None.
