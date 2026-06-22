@@ -27,7 +27,7 @@ Headless rendering first tries a detectable Chromium-family browser: Chrome, Chr
 Later on, update installed packages with:
 
 ```bash
-pi update
+pi update --extensions
 ```
 
 ## Docs
