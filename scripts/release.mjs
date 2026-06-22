@@ -30,7 +30,7 @@ export function parseUnreleasedSections(changelog) {
     if (!currentSection || !line.startsWith('-')) continue;
 
     const entry = line.replace(/^-\s*/, '').trim();
-    if (!entry || entry === 'None.' || entry === 'Nothing yet.') continue;
+    if (!entry || entry === 'None.') continue;
     result[currentSection].push(entry);
   }
 
@@ -65,7 +65,7 @@ function rewriteChangelog(changelog, nextVersion) {
   const today = new Date().toISOString().slice(0, 10);
   return changelog.replace(
     /## Unreleased\s*([\s\S]*?)(?=\n## \[|$)/,
-    `## Unreleased\n\n### Added\n- Nothing yet.\n\n### Changed\n- Nothing yet.\n\n### Fixed\n- Nothing yet.\n\n### Breaking\n- None.\n\n## [${nextVersion}] - ${today}\n$1`
+    `## Unreleased\n\n### Added\n- None.\n\n### Changed\n- None.\n\n### Fixed\n- None.\n\n### Breaking\n- None.\n\n## [${nextVersion}] - ${today}\n$1`
   );
 }
 

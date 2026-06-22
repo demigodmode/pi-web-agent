@@ -7,13 +7,13 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Nothing yet.
+- None.
 
 ### Changed
-- Nothing yet.
+- None.
 
 ### Fixed
-- Nothing yet.
+- Updated vulnerable dependency paths reported by `npm audit`, including Vitest, Pi dev tooling, `undici`, `ws`, `protobufjs`, `postcss`, and the Vite docs toolchain override.
 
 ### Breaking
 - None.
@@ -30,7 +30,7 @@ The format is intentionally simple and release-oriented.
 - Backend config validation and fallback metadata now understand Brave, including clear `fallbackFrom: 'brave'` reporting when DuckDuckGo fallback is used.
 
 ### Fixed
-- Nothing yet.
+- None.
 
 ### Breaking
 - None.
@@ -44,7 +44,7 @@ The format is intentionally simple and release-oriented.
 - Partial research caveats are now more specific when evidence is community-only, low-diversity, blocked, or cautionary.
 
 ### Fixed
-- Nothing yet.
+- None.
 
 ### Breaking
 - None.
@@ -71,10 +71,10 @@ The format is intentionally simple and release-oriented.
 - Added interactive URL prompts for SearXNG and Firecrawl backend setup.
 
 ### Changed
-- Nothing yet.
+- None.
 
 ### Fixed
-- Nothing yet.
+- None.
 
 ### Breaking
 - None.
@@ -89,7 +89,7 @@ The format is intentionally simple and release-oriented.
 - `/web-agent show` and `/web-agent doctor` now report configured backend fallback/options.
 
 ### Fixed
-- Nothing yet.
+- None.
 
 ### Breaking
 - None.
@@ -102,7 +102,7 @@ The format is intentionally simple and release-oriented.
 - Migrated Pi package imports to `@earendil-works/*` after the upstream Pi scope move.
 
 ### Fixed
-- Nothing yet.
+- None.
 
 ### Breaking
 - This release requires Pi 0.74+. Users on older Pi versions should stay on `@demigodmode/pi-web-agent@0.6.x` until they update Pi.
@@ -126,10 +126,10 @@ The format is intentionally simple and release-oriented.
 
 ## [0.5.1] - 2026-05-04
 ### Added
-- Nothing yet.
+- None.
 
 ### Changed
-- Nothing yet.
+- None.
 
 ### Fixed
 - Fixed the Windows browser-resolution test so it is deterministic on Linux CI.
@@ -174,7 +174,7 @@ The format is intentionally simple and release-oriented.
 
 ## [0.3.1] - 2026-04-22
 ### Added
-- Nothing yet.
+- None.
 
 ### Changed
 - Stopped self-upgrading npm inside the publish workflow before install and publish steps.
@@ -222,10 +222,10 @@ The format is intentionally simple and release-oriented.
 
 ## [0.2.1] - 2026-04-20
 ### Added
-- Nothing yet.
+- None.
 
 ### Changed
-- Nothing yet.
+- None.
 
 ### Fixed
 - Added the missing npm `--provenance` flag to the publish workflow so Trusted Publishing can exchange the GitHub OIDC token correctly.
