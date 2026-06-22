@@ -13,6 +13,19 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.5.1] - 2026-06-22
+### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
 - Updated vulnerable dependency paths reported by `npm audit`, including Vitest, Pi dev tooling, `undici`, `ws`, `protobufjs`, `postcss`, and the Vite docs toolchain override.
 
 ### Breaking
