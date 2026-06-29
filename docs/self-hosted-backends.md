@@ -63,7 +63,7 @@ Choose **Backends**. From there you can:
 - edit the Firecrawl base URL
 - enable Firecrawl → HTTP fallback
 
-Brave and Firecrawl API keys are intentionally not edited in the settings UI. Prefer `PI_WEB_AGENT_BRAVE_API_KEY` and `PI_WEB_AGENT_FIRECRAWL_API_KEY` for secrets.
+Brave, You.com, and Firecrawl API keys are intentionally not edited in the settings UI. Prefer `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY` for secrets.
 
 ## Config file locations
 
@@ -154,6 +154,31 @@ Equivalent config:
 ```
 
 Brave only improves source discovery. `web_explore` still fetches pages, ranks evidence, handles headless fallback, and writes caveats itself.
+
+## You.com Search
+
+To use You.com Search, set:
+
+```text
+YDC_API_KEY=...
+```
+
+Then choose **Settings → Backends → Search backend → youcom**.
+
+Equivalent config:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "youcom",
+      "fallback": "duckduckgo"
+    }
+  }
+}
+```
+
+You.com only improves source discovery. `web_explore` still fetches pages, ranks evidence, handles headless fallback, and writes caveats itself.
 
 ## Firecrawl fetch
 

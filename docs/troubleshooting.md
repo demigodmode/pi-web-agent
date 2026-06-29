@@ -48,6 +48,12 @@ Set `PI_WEB_AGENT_BRAVE_API_KEY` in the environment where Pi runs, then reload/r
 
 If Brave still reports an HTTP warning, check that the key is valid and that the Pi process can reach Brave Search API.
 
+## `/web-agent doctor` says You.com is missing an API key
+
+Set `YDC_API_KEY` in the environment where Pi runs, then reload/restart Pi and run `/web-agent doctor` again. The settings UI does not write You.com API keys to config files.
+
+If You.com still reports an HTTP warning, check that the key is valid and that the Pi process can reach the You.com Search API.
+
 ## `/web-agent doctor` mentions managed Chromium fallback
 
 Headless rendering first tries a detectable Chromium-family browser:

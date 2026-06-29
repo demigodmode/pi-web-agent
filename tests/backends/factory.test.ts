@@ -135,6 +135,52 @@ describe('backend factory', () => {
     expect(result.metadata.fallbackReason).toBe('Brave failed');
   });
 
+  it('creates youcom search with the environment API key', () => {
+    const original = process.env.YDC_API_KEY;
+    process.env.YDC_API_KEY = 'ydc-key';
+    const createYouComSearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom' } },
+        { createYouComSearch }
+      );
+
+      expect(createYouComSearch).toHaveBeenCalledWith({ apiKey: 'ydc-key' });
+    } finally {
+      if (original === undefined) delete process.env.YDC_API_KEY;
+      else process.env.YDC_API_KEY = original;
+    }
+  });
+
+  it('records youcom as the search fallback source', async () => {
+    const primary = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'youcom', cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'You.com failed' }
+    });
+    const fallback = vi.fn().mockResolvedValue({
+      status: 'ok',
+      results: [{ title: 'Fallback', url: 'https://example.com', snippet: 'ok' }],
+      metadata: { backend: 'duckduckgo', cacheHit: false }
+    });
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom', fallback: 'duckduckgo' } },
+      {
+        createYouComSearch: vi.fn().mockReturnValue(primary),
+        createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
+      }
+    );
+
+    const result = await backends.search({ query: 'test' });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.fallbackFrom).toBe('youcom');
+    expect(result.metadata.fallbackReason).toBe('You.com failed');
+  });
+
   it('falls back from Firecrawl weak extraction to HTTP when configured', async () => {
     const firecrawl = async () => ({
       status: 'needs_headless' as const,

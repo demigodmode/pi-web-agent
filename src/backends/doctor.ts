@@ -17,6 +17,10 @@ function braveDoctorUrl() {
   return url.toString();
 }
 
+function youcomDoctorBody() {
+  return JSON.stringify({ query: 'pi-web-agent-doctor', max_results: 1 });
+}
+
 function searxngDoctorUrl(baseUrl: string, options: SearxngOptions = {}) {
   const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', 'pi-web-agent-doctor');
@@ -73,6 +77,37 @@ export async function checkBackendHealth(
         }
       } catch (error) {
         lines.push(`search backend: brave warning (${message(error)})`);
+      } finally {
+        timeout.done();
+      }
+    }
+  } else if (config.search.provider === 'youcom') {
+    const apiKey = process.env.YDC_API_KEY;
+    if (!apiKey?.trim()) {
+      lines.push('search backend: youcom warning (missing YDC_API_KEY)');
+    } else {
+      const timeout = withTimeout(timeoutMs);
+      try {
+        const response = await fetchImpl('https://api.you.com/v1/agents/search', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey
+          },
+          body: youcomDoctorBody(),
+          signal: timeout.signal
+        });
+        if (!response.ok) {
+          lines.push(`search backend: youcom warning (HTTP ${response.status})`);
+        } else {
+          const json = (await response.json()) as { results?: unknown };
+          lines.push(Array.isArray(json.results)
+            ? 'search backend: youcom ok'
+            : 'search backend: youcom warning (unexpected response)');
+        }
+      } catch (error) {
+        lines.push(`search backend: youcom warning (${message(error)})`);
       } finally {
         timeout.done();
       }

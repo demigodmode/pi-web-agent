@@ -114,7 +114,24 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng or brave');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, or youcom');
+  });
+
+  it('accepts youcom search provider with duckduckgo fallback', () => {
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: { provider: 'youcom', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' }
+      }
+    });
+
+    expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
+  });
+
+  it('allows duckduckgo fallback for youcom', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'youcom', fallback: 'duckduckgo' }
+    })).toEqual([]);
   });
 
   it('drops provider-specific fallback and options when provider changes', () => {
