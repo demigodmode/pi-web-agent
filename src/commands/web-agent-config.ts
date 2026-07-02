@@ -193,7 +193,7 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom']
     },
     {
       id: 'backend:search:baseUrl',
@@ -204,12 +204,18 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
     {
       id: 'backend:search:fallback',
       label: 'Search fallback',
-      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' ? backends.search.fallback ?? 'off' : 'off',
-      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' ? ['off', 'duckduckgo'] : ['off']
+      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' ? backends.search.fallback ?? 'off' : 'off',
+      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' ? ['off', 'duckduckgo'] : ['off']
     },
     {
       id: 'backend:secret:brave',
       label: 'Brave API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:youcom',
+      label: 'You.com API key',
       currentValue: 'env var',
       values: ['env var']
     },
@@ -373,7 +379,7 @@ export function applySettingsValue(
     currentDraft.tools = nextTools;
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom')) {
     currentBackends.search.provider = newValue;
     if (newValue !== 'searxng') {
       delete currentBackends.search.baseUrl;
@@ -385,7 +391,7 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:fallback') {
-    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave')) {
+    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave' || currentBackends.search.provider === 'youcom')) {
       currentBackends.search.fallback = 'duckduckgo';
     } else {
       delete currentBackends.search.fallback;

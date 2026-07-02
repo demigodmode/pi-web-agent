@@ -191,6 +191,31 @@ describe('web-agent config draft helpers', () => {
     expect(editedState.backends.search).toEqual({ provider: 'brave' });
   });
 
+  it('applies youcom backend draft values without preserving searxng-only fields', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080',
+          fallback: 'duckduckgo' as const,
+          options: { language: 'en' }
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const youcomState = applySettingsValue(state, 'backend:search:provider', 'youcom');
+    const fallbackState = applySettingsValue(youcomState, 'backend:search:fallback', 'duckduckgo');
+
+    expect(youcomState.backends.search).toEqual({ provider: 'youcom' });
+    expect(fallbackState.backends.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
+  });
+
   it('does not set fallback values for providers that do not support them', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },

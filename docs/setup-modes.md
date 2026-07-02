@@ -14,9 +14,9 @@ If you want to tune how tool output shows up in the transcript, see [Presentatio
 
 ## Hosted backend setups
 
-Brave Search is available as the first hosted search backend.
+Brave Search and You.com are available as hosted search backends.
 
-If you have a Brave Search API key, set `PI_WEB_AGENT_BRAVE_API_KEY`, then choose Brave from **Settings → Backends**. Brave handles source discovery only; `web_explore` still fetches pages, ranks evidence, handles caveats, and synthesizes the answer itself.
+If you have a Brave Search API key, set `PI_WEB_AGENT_BRAVE_API_KEY`, then choose Brave from **Settings → Backends**. If you have a You.com API key, set `YDC_API_KEY`, then choose You.com from **Settings → Backends**. Each handles source discovery only; `web_explore` still fetches pages, ranks evidence, handles caveats, and synthesizes the answer itself.
 
 Other hosted research providers may be added later, but do not assume every provider-backed path is already wired in.
 

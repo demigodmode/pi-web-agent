@@ -66,9 +66,9 @@ If you want hosted Brave Search, SearXNG, or Firecrawl, open:
 /web-agent settings
 ```
 
-Choose **Backends** to point search at Brave or SearXNG, and page reading at Firecrawl. The settings UI can edit providers, base URLs where relevant, and fallback behavior.
+Choose **Backends** to point search at Brave, You.com, or SearXNG, and page reading at Firecrawl. The settings UI can edit providers, base URLs where relevant, and fallback behavior.
 
-If you have a Brave Search API key, set `PI_WEB_AGENT_BRAVE_API_KEY` in the environment, then choose Brave under **Backends**. Brave is hosted, so it does not need a `baseUrl`, and it only handles source discovery; `web_explore` still fetches pages, ranks evidence, and writes caveats itself.
+If you have a Brave Search API key, set `PI_WEB_AGENT_BRAVE_API_KEY` in the environment, then choose Brave under **Backends**. If you have a You.com API key, set `YDC_API_KEY` in the environment, then choose You.com under **Backends**. Both are hosted, so neither needs a `baseUrl`, and each only handles source discovery; `web_explore` still fetches pages, ranks evidence, and writes caveats itself.
 
 Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check configured backend health.
 
