@@ -111,6 +111,8 @@ Example:
 
 Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local-browser headless fallback with managed Chromium fallback configured. If you have a Brave Search or You.com API key, either can be selected as a hosted search backend while `web_explore` still handles page reading, ranking, and caveats itself.
 
+Search backends: DuckDuckGo (default), SearXNG (self-hosted), Brave Search (hosted), You.com (hosted).
+
 Backend settings can be changed from:
 
 ```text

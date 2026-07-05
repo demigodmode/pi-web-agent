@@ -21,7 +21,12 @@
     "pi",
     "extension",
     "web-search",
-    "web-fetch"
+    "web-fetch",
+    "duckduckgo",
+    "searxng",
+    "brave-search",
+    "you-com",
+    "firecrawl"
   ],
   "repository": {
     "type": "git",
