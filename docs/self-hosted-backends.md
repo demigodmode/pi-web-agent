@@ -7,11 +7,12 @@ Self-hosted options:
 - SearXNG for search
 - Firecrawl for page fetch/extraction
 
-Hosted option:
+Hosted options:
 
 - Brave Search for API-backed source discovery
+- You.com Search for API-backed source discovery
 
-Brave is hosted, so it uses an API key instead of a `baseUrl`.
+Both are hosted, so they use an API key instead of a `baseUrl`.
 
 This keeps the public Pi tool the same: the model still calls `web_explore`. The backend config only changes what `web_explore` uses internally.
 
@@ -56,9 +57,9 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, and Brave
+- switch search between DuckDuckGo, SearXNG, Brave, and You.com
 - edit the SearXNG base URL
-- enable SearXNG/Brave → DuckDuckGo fallback
+- enable SearXNG/Brave/You.com → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
 - edit the Firecrawl base URL
 - enable Firecrawl → HTTP fallback
@@ -263,7 +264,7 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 }
 ```
 
-When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, and Firecrawl failures stay visible instead of silently switching to external/default backends.
+When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, and Firecrawl failures stay visible instead of silently switching to external/default backends.
 
 ## Full self-hosted example
 
@@ -354,7 +355,7 @@ Then try a normal research prompt:
 Find current docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The model should still use `web_explore`; it should not need separate SearXNG, Brave, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
+The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
 
 ## Troubleshooting
 
@@ -385,4 +386,4 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG or Brave to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
+`pi-web-agent` does not silently fall back from SearXNG, Brave, or You.com to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.

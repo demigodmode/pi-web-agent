@@ -21,7 +21,7 @@ The public model-facing web research surface is `web_explore`.
 
 The lower-level capabilities still exist in code, but they are internal steps now:
 
-- search is for discovery, whether it comes from DuckDuckGo, SearXNG, or Brave
+- search is for discovery, whether it comes from DuckDuckGo, SearXNG, Brave, or You.com
 - HTTP fetch is for plain page reads
 - headless fetch is for selected browser-rendered reads
 - orchestration decides when enough evidence exists and when source-quality concerns need another pass or a caveat
