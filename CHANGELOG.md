@@ -13,6 +13,19 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.6.1] - 2026-07-05
+### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
 - Setting a SearXNG URL from **Settings → Backends** now actually saves, and switches the search provider to `searxng` if it wasn't already selected. Previously the URL was silently discarded unless SearXNG was already the active provider. Reported by @Josephur in #33.
 - Same fix applied on the fetch side: setting a Firecrawl URL now switches the fetch provider to `firecrawl` too, instead of leaving it stuck on `http` until you flip it manually.
 - Editing the SearXNG/Firecrawl base URL no longer opens a separate nested input prompt on top of the settings list (which could leave the session unresponsive to further input). It's now an inline field in the same list, and pressing Esc there only cancels the field instead of closing the whole settings screen and discarding unrelated pending changes.
