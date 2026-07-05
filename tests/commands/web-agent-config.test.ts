@@ -3,6 +3,7 @@ import {
   applySettingsValue,
   collapseBackendConfigToOverride,
   collapsePresentationConfigToOverride,
+  createBackendUrlEditor,
   createSettingsDraftState,
   handleSettingsShortcut,
   registerWebAgentConfigCommands,
@@ -176,7 +177,7 @@ describe('web-agent config draft helpers', () => {
     expect(fallbackState.backends.search).toEqual({ provider: 'brave', fallback: 'duckduckgo' });
   });
 
-  it('ignores searxng url edits unless searxng is selected', () => {
+  it('selects searxng when a SearXNG URL is entered', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },
       project: { path: '/project/config.json', exists: false },
@@ -188,8 +189,121 @@ describe('web-agent config draft helpers', () => {
     const braveState = applySettingsValue(state, 'backend:search:provider', 'brave');
     const editedState = applySettingsValue(braveState, 'backend:search:baseUrl', 'http://localhost:8080');
 
-    expect(editedState.backends.search).toEqual({ provider: 'brave' });
+    expect(editedState.backends.search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
   });
+
+  it('promotes duckduckgo (the default) to searxng when a URL is entered', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const editedState = applySettingsValue(state, 'backend:search:baseUrl', 'http://localhost:8080');
+
+    expect(editedState.backends.search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
+  });
+
+  it('clearing the SearXNG URL does not change the selected provider', () => {
+    const loaded = {
+      global: {
+        path: '/global/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'http://localhost:8080' }
+        }
+      },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'http://localhost:8080' },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const editedState = applySettingsValue(state, 'backend:search:baseUrl', '');
+
+    expect(editedState.backends.search).toEqual({ provider: 'searxng' });
+  });
+
+  it('creates an inline URL editor component instead of a modal prompt', () => {
+    const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+    const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080');
+
+    let selected: string | undefined;
+    let doneCalled = false;
+    const component = editor('not set', (value) => {
+      doneCalled = true;
+      selected = value;
+    });
+
+    expect(component.render).toBeInstanceOf(Function);
+    expect(component.handleInput).toBeInstanceOf(Function);
+
+    component.handleInput?.('\r');
+
+    expect(doneCalled).toBe(true);
+    expect(selected).toBe('http://localhost:8080');
+  });
+
+  it('rejects an invalid URL from the inline editor without closing it', () => {
+    const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+    const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080');
+
+    let done = false;
+    const component = editor('http://localhost:8080', () => {
+      done = true;
+    });
+
+    component.handleInput?.('\x1b[F');
+    for (let i = 0; i < 'http://localhost:8080'.length; i++) {
+      component.handleInput?.('\x7f');
+    }
+    for (const ch of 'not-a-url') {
+      component.handleInput?.(ch);
+    }
+    component.handleInput?.('\r');
+
+    expect(done).toBe(false);
+  });
+
+  it('clears the URL from the inline editor when submitted empty', () => {
+    const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+    const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080');
+
+    let selected: string | undefined = 'unset-sentinel';
+    const component = editor('http://localhost:8080', (value) => {
+      selected = value;
+    });
+
+    component.handleInput?.('\x1b[F');
+    for (let i = 0; i < 'http://localhost:8080'.length; i++) {
+      component.handleInput?.('\x7f');
+    }
+    component.handleInput?.('\r');
+
+    expect(selected).toBe('');
+  });
+
+  it('cancels the inline editor on escape without a value', () => {
+    const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+    const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080');
+
+    let selected: string | undefined = 'unset-sentinel';
+    const component = editor('http://localhost:8080', (value) => {
+      selected = value;
+    });
+
+    component.handleInput?.('\x1b');
+
+    expect(selected).toBeUndefined();
+  });
+
 
   it('applies youcom backend draft values without preserving searxng-only fields', () => {
     const loaded = {

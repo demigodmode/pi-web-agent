@@ -11,7 +11,16 @@ import {
   getSettingsListTheme,
   type ExtensionAPI
 } from '@earendil-works/pi-coding-agent';
-import { Container, SelectList, SettingsList, Text, type SelectItem, type SettingItem } from '@earendil-works/pi-tui';
+import {
+  Container,
+  Input,
+  SelectList,
+  SettingsList,
+  Text,
+  type Component,
+  type SelectItem,
+  type SettingItem
+} from '@earendil-works/pi-tui';
 import {
   DEFAULT_PRESENTATION_CONFIG,
   mergePresentationConfigLayers,
@@ -181,7 +190,55 @@ function buildPresentationSettingsItems(scope: PresentationScope, config: Presen
   ];
 }
 
-function buildBackendSettingsItems(scope: PresentationScope, backends: BackendConfig): SettingItem[] {
+export function createBackendUrlEditor(theme: any, label: string, placeholderUrl: string) {
+  return (currentValue: string, done: (selectedValue?: string) => void): Component => {
+    const initialValue = currentValue && currentValue !== 'not set' ? currentValue : placeholderUrl;
+    const container = new Container();
+    const hint = new Text(theme.fg('muted', `${label} · enter to save · empty clears · esc cancels`), 1, 0);
+    const input = new Input();
+    input.setValue(initialValue);
+    input.focused = true;
+
+    let errorText: Text | undefined;
+
+    const showError = (message: string) => {
+      if (errorText) {
+        container.removeChild(errorText);
+      }
+      errorText = new Text(theme.fg('warning', message), 1, 0);
+      container.addChild(errorText);
+      container.invalidate();
+    };
+
+    input.onSubmit = (value: string) => {
+      if (!value.trim()) {
+        done('');
+        return;
+      }
+
+      const validated = validateBackendUrl(value);
+      if (!validated.ok) {
+        showError(validated.message);
+        return;
+      }
+
+      done(validated.value);
+    };
+
+    input.onEscape = () => done(undefined);
+
+    container.addChild(hint);
+    container.addChild(input);
+
+    return {
+      render: (width: number) => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput: (data: string) => input.handleInput(data)
+    };
+  };
+}
+
+function buildBackendSettingsItems(scope: PresentationScope, backends: BackendConfig, theme: any): SettingItem[] {
   return [
     {
       id: 'scope',
@@ -199,7 +256,7 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
       id: 'backend:search:baseUrl',
       label: 'SearXNG URL',
       currentValue: backends.search.baseUrl ?? 'not set',
-      values: ['edit']
+      submenu: createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080')
     },
     {
       id: 'backend:search:fallback',
@@ -229,7 +286,7 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
       id: 'backend:fetch:baseUrl',
       label: 'Firecrawl URL',
       currentValue: backends.fetch.baseUrl ?? 'not set',
-      values: ['edit']
+      submenu: createBackendUrlEditor(theme, 'Firecrawl base URL', 'http://localhost:3002')
     },
     {
       id: 'backend:fetch:fallback',
@@ -399,7 +456,8 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:baseUrl') {
-    if (currentBackends.search.provider === 'searxng' && newValue.trim()) {
+    if (newValue.trim()) {
+      currentBackends.search.provider = 'searxng';
       currentBackends.search.baseUrl = newValue.trim();
     } else {
       delete currentBackends.search.baseUrl;
@@ -681,7 +739,7 @@ async function openBackendSettingsUi(
   loaded: Awaited<LoadedPresentationConfig>,
   initialScope: PresentationScope
 ): Promise<SettingsUiResult | undefined> {
-  return ctx.ui.custom((tui: any, theme: any, _kb: unknown, done: (value: SettingsUiResult) => void) => {
+  return ctx.ui.custom((_tui: unknown, theme: any, _kb: unknown, done: (value: SettingsUiResult) => void) => {
     let state = createSettingsDraftState(loaded, initialScope);
     let settingsList: SettingsList;
 
@@ -695,46 +753,16 @@ async function openBackendSettingsUi(
       )
     );
 
-    const editUrl = async (id: string) => {
-      const isSearchUrl = id === 'backend:search:baseUrl';
-      const label = isSearchUrl ? 'SearXNG base URL' : 'Firecrawl base URL';
-      const currentValue = isSearchUrl ? state.backends.search.baseUrl : state.backends.fetch.baseUrl;
-      const entered = await ctx.ui.input(label, currentValue ?? (isSearchUrl ? 'http://localhost:8080' : 'http://localhost:3002'));
-      if (entered === undefined) return;
-
-      if (!entered.trim()) {
-        state = applySettingsValue(state, id, '');
-        rebuildSettingsList();
-        tui.requestRender?.();
-        return;
-      }
-
-      const validated = validateBackendUrl(entered);
-      if (!validated.ok) {
-        ctx.ui.notify(validated.message, 'warning');
-        return;
-      }
-
-      state = applySettingsValue(state, id, validated.value);
-      rebuildSettingsList();
-      tui.requestRender?.();
-    };
-
     const rebuildSettingsList = () => {
       if (settingsList) {
         container.removeChild(settingsList);
       }
 
       settingsList = new SettingsList(
-        buildBackendSettingsItems(state.scope, state.backends),
+        buildBackendSettingsItems(state.scope, state.backends, theme),
         12,
         getSettingsListTheme(),
         (id, newValue) => {
-          if (id === 'backend:search:baseUrl' || id === 'backend:fetch:baseUrl') {
-            void editUrl(id);
-            return;
-          }
-
           state = applySettingsValue(state, id, newValue);
           rebuildSettingsList();
           container.invalidate();
