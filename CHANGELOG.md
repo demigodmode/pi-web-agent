@@ -7,7 +7,9 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- You.com is now available as a hosted search backend for `web_explore`, selectable alongside DuckDuckGo, SearXNG, and Brave. Set `YDC_API_KEY` in the environment and choose `youcom` from **Settings → Backends**. You.com handles source discovery only; `web_explore` still fetches pages, ranks evidence, handles caveats, and synthesizes the answer itself.
+- `/web-agent settings` now treats You.com as a first-class search backend (with optional DuckDuckGo fallback) while keeping API keys out of config files via `YDC_API_KEY`.
+- `/web-agent doctor` now reports You.com setup status, warns when `YDC_API_KEY` is missing, and validates configured You.com access when a key is present.
 
 ### Changed
 - None.

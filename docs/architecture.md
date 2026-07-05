@@ -8,7 +8,7 @@ That is partly for code health, but mostly because this package gets worse fast 
 
 - `src/extension.ts` wires the package into Pi and registers the public `web_explore` tool
 - `src/tools/` contains tool adapters and internal tool-shaped helpers
-- `src/search/` holds search backend logic for DuckDuckGo, SearXNG, and Brave
+- `src/search/` holds search backend logic for DuckDuckGo, SearXNG, Brave, and You.com
 - `src/fetch/` handles HTTP and headless fetch logic
 - `src/extract/` handles readable-content extraction
 - `src/orchestration/` handles the bounded research flow

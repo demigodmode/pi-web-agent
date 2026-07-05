@@ -109,7 +109,7 @@ Example:
 }
 ```
 
-Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local-browser headless fallback with managed Chromium fallback configured. If you have a Brave Search API key, Brave can be selected as a hosted search backend while `web_explore` still handles page reading, ranking, and caveats itself.
+Backend config is also supported. Defaults remain DuckDuckGo search, plain HTTP fetch, and local-browser headless fallback with managed Chromium fallback configured. If you have a Brave Search or You.com API key, either can be selected as a hosted search backend while `web_explore` still handles page reading, ranking, and caveats itself.
 
 Backend settings can be changed from:
 
@@ -117,9 +117,9 @@ Backend settings can be changed from:
 /web-agent settings
 ```
 
-Choose **Backends** to edit search/fetch providers, fallback behavior, and SearXNG or Firecrawl base URLs interactively. Brave Search uses `PI_WEB_AGENT_BRAVE_API_KEY`. Firecrawl API keys should also stay in environment variables rather than being written into config files.
+Choose **Backends** to edit search/fetch providers, fallback behavior, and SearXNG or Firecrawl base URLs interactively. Brave Search uses `PI_WEB_AGENT_BRAVE_API_KEY` and You.com uses `YDC_API_KEY`. Firecrawl API keys should also stay in environment variables rather than being written into config files.
 
-For the full backend config shape, including SearXNG, Brave, Firecrawl, and fallback behavior, see:
+For the full backend config shape, including SearXNG, Brave, You.com, Firecrawl, and fallback behavior, see:
 
 - https://demigodmode.github.io/pi-web-agent/self-hosted-backends
 

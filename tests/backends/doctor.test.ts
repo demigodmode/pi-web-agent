@@ -103,6 +103,70 @@ describe('backend doctor checks', () => {
     }
   });
 
+  it('warns when youcom search is selected without an API key', async () => {
+    const original = process.env.YDC_API_KEY;
+    delete process.env.YDC_API_KEY;
+
+    try {
+      const lines = await checkBackendHealth({
+        ...DEFAULT_BACKEND_CONFIG,
+        search: { provider: 'youcom' }
+      });
+
+      expect(lines).toContain('search backend: youcom warning (missing YDC_API_KEY)');
+    } finally {
+      if (original !== undefined) process.env.YDC_API_KEY = original;
+    }
+  });
+
+  it('reports youcom ok for a healthy mocked response', async () => {
+    const original = process.env.YDC_API_KEY;
+    process.env.YDC_API_KEY = 'key';
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ results: [{ title: 'A', url: 'https://example.com' }] })
+    });
+
+    try {
+      const lines = await checkBackendHealth(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom', fallback: 'duckduckgo' } },
+        { fetchImpl: fetchImpl as unknown as typeof fetch }
+      );
+
+      expect(lines).toContain('search backend: youcom ok');
+      expect(lines).toContain('search fallback: duckduckgo');
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://api.you.com/v1/agents/search',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'X-API-Key': 'key' })
+        })
+      );
+    } finally {
+      if (original === undefined) delete process.env.YDC_API_KEY;
+      else process.env.YDC_API_KEY = original;
+    }
+  });
+
+  it('reports youcom warning for non-ok mocked response', async () => {
+    const original = process.env.YDC_API_KEY;
+    process.env.YDC_API_KEY = 'key';
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 401, json: vi.fn() });
+
+    try {
+      const lines = await checkBackendHealth(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom' } },
+        { fetchImpl: fetchImpl as unknown as typeof fetch }
+      );
+
+      expect(lines).toContain('search backend: youcom warning (HTTP 401)');
+    } finally {
+      if (original === undefined) delete process.env.YDC_API_KEY;
+      else process.env.YDC_API_KEY = original;
+    }
+  });
+
   it('reports Firecrawl health check failures as warnings', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
 

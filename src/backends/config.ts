@@ -10,7 +10,7 @@ export type FirecrawlOptions = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng' | 'brave';
+  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom';
   baseUrl?: string;
   fallback?: 'duckduckgo';
   options?: SearxngOptions;
@@ -87,7 +87,8 @@ export function extractBackendConfigOverride(
   if (
     backends?.search?.provider === 'duckduckgo' ||
     backends?.search?.provider === 'searxng' ||
-    backends?.search?.provider === 'brave'
+    backends?.search?.provider === 'brave' ||
+    backends?.search?.provider === 'youcom'
   ) {
     override.search = { provider: backends.search.provider };
     if (backends.search.provider === 'searxng' && typeof backends.search.baseUrl === 'string') {
@@ -139,8 +140,8 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     issues.push('fetch provider firecrawl requires backends.fetch.baseUrl');
   }
 
-  if (config.search.fallback === 'duckduckgo' && config.search.provider !== 'searxng' && config.search.provider !== 'brave') {
-    issues.push('search fallback duckduckgo is only supported when search provider is searxng or brave');
+  if (config.search.fallback === 'duckduckgo' && config.search.provider !== 'searxng' && config.search.provider !== 'brave' && config.search.provider !== 'youcom') {
+    issues.push('search fallback duckduckgo is only supported when search provider is searxng, brave, or youcom');
   }
 
   if (config.fetch.fallback === 'http' && config.fetch.provider !== 'firecrawl') {
