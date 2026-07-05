@@ -231,6 +231,45 @@ describe('web-agent config draft helpers', () => {
     expect(editedState.backends.search).toEqual({ provider: 'searxng' });
   });
 
+  it('promotes http (the default) to firecrawl when a Firecrawl URL is entered', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const editedState = applySettingsValue(state, 'backend:fetch:baseUrl', 'http://localhost:3002');
+
+    expect(editedState.backends.fetch).toEqual({ provider: 'firecrawl', baseUrl: 'http://localhost:3002' });
+  });
+
+  it('clearing the Firecrawl URL does not change the selected fetch provider', () => {
+    const loaded = {
+      global: {
+        path: '/global/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          fetch: { provider: 'firecrawl' as const, baseUrl: 'http://localhost:3002' }
+        }
+      },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'duckduckgo' as const },
+        fetch: { provider: 'firecrawl' as const, baseUrl: 'http://localhost:3002' },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const editedState = applySettingsValue(state, 'backend:fetch:baseUrl', '');
+
+    expect(editedState.backends.fetch).toEqual({ provider: 'firecrawl' });
+  });
+
   it('creates an inline URL editor component instead of a modal prompt', () => {
     const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
     const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080');
@@ -302,6 +341,38 @@ describe('web-agent config draft helpers', () => {
     component.handleInput?.('\x1b');
 
     expect(selected).toBeUndefined();
+  });
+
+  it('places the cursor at the end of the pre-filled value so typing does not insert mid-string', () => {
+    const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+    const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080');
+
+    let selected: string | undefined;
+    const component = editor('http://localhost:8080', (value) => {
+      selected = value;
+    });
+
+    // A user who opens the field and immediately types (without pressing End
+    // first) should append, not insert at the start of the pre-filled value.
+    component.handleInput?.('/');
+    component.handleInput?.('x');
+    component.handleInput?.('\r');
+
+    expect(selected).toBe('http://localhost:8080/x');
+  });
+
+  it('reports open/close state via onOpenChange so the host can defer global shortcuts', () => {
+    const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+    const openStates: boolean[] = [];
+    const editor = createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080', (open) => {
+      openStates.push(open);
+    });
+
+    const component = editor('not set', () => {});
+    expect(openStates).toEqual([true]);
+
+    component.handleInput?.('\x1b');
+    expect(openStates).toEqual([true, false]);
   });
 
 

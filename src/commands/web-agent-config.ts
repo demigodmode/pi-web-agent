@@ -190,29 +190,37 @@ function buildPresentationSettingsItems(scope: PresentationScope, config: Presen
   ];
 }
 
-export function createBackendUrlEditor(theme: any, label: string, placeholderUrl: string) {
+export function createBackendUrlEditor(
+  theme: any,
+  label: string,
+  placeholderUrl: string,
+  onOpenChange?: (open: boolean) => void
+) {
   return (currentValue: string, done: (selectedValue?: string) => void): Component => {
+    onOpenChange?.(true);
+
     const initialValue = currentValue && currentValue !== 'not set' ? currentValue : placeholderUrl;
     const container = new Container();
     const hint = new Text(theme.fg('muted', `${label} · enter to save · empty clears · esc cancels`), 1, 0);
     const input = new Input();
     input.setValue(initialValue);
+    input.handleInput('\x1b[F'); // move cursor to end; setValue leaves it at 0
     input.focused = true;
+    const errorText = new Text('', 1, 0);
 
-    let errorText: Text | undefined;
+    const finish = (selectedValue?: string) => {
+      onOpenChange?.(false);
+      done(selectedValue);
+    };
 
     const showError = (message: string) => {
-      if (errorText) {
-        container.removeChild(errorText);
-      }
-      errorText = new Text(theme.fg('warning', message), 1, 0);
-      container.addChild(errorText);
+      errorText.setText(theme.fg('warning', message));
       container.invalidate();
     };
 
     input.onSubmit = (value: string) => {
       if (!value.trim()) {
-        done('');
+        finish('');
         return;
       }
 
@@ -222,13 +230,14 @@ export function createBackendUrlEditor(theme: any, label: string, placeholderUrl
         return;
       }
 
-      done(validated.value);
+      finish(validated.value);
     };
 
-    input.onEscape = () => done(undefined);
+    input.onEscape = () => finish(undefined);
 
     container.addChild(hint);
     container.addChild(input);
+    container.addChild(errorText);
 
     return {
       render: (width: number) => container.render(width),
@@ -238,7 +247,12 @@ export function createBackendUrlEditor(theme: any, label: string, placeholderUrl
   };
 }
 
-function buildBackendSettingsItems(scope: PresentationScope, backends: BackendConfig, theme: any): SettingItem[] {
+function buildBackendSettingsItems(
+  scope: PresentationScope,
+  backends: BackendConfig,
+  theme: any,
+  onUrlEditorOpenChange?: (open: boolean) => void
+): SettingItem[] {
   return [
     {
       id: 'scope',
@@ -256,7 +270,7 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
       id: 'backend:search:baseUrl',
       label: 'SearXNG URL',
       currentValue: backends.search.baseUrl ?? 'not set',
-      submenu: createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080')
+      submenu: createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080', onUrlEditorOpenChange)
     },
     {
       id: 'backend:search:fallback',
@@ -286,7 +300,7 @@ function buildBackendSettingsItems(scope: PresentationScope, backends: BackendCo
       id: 'backend:fetch:baseUrl',
       label: 'Firecrawl URL',
       currentValue: backends.fetch.baseUrl ?? 'not set',
-      submenu: createBackendUrlEditor(theme, 'Firecrawl base URL', 'http://localhost:3002')
+      submenu: createBackendUrlEditor(theme, 'Firecrawl base URL', 'http://localhost:3002', onUrlEditorOpenChange)
     },
     {
       id: 'backend:fetch:fallback',
@@ -481,6 +495,7 @@ export function applySettingsValue(
 
   if (id === 'backend:fetch:baseUrl') {
     if (newValue.trim()) {
+      currentBackends.fetch.provider = 'firecrawl';
       currentBackends.fetch.baseUrl = newValue.trim();
     } else {
       delete currentBackends.fetch.baseUrl;
@@ -742,6 +757,7 @@ async function openBackendSettingsUi(
   return ctx.ui.custom((_tui: unknown, theme: any, _kb: unknown, done: (value: SettingsUiResult) => void) => {
     let state = createSettingsDraftState(loaded, initialScope);
     let settingsList: SettingsList;
+    let urlEditorOpen = false;
 
     const container = new Container();
     container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent · backends')), 1, 1));
@@ -759,7 +775,9 @@ async function openBackendSettingsUi(
       }
 
       settingsList = new SettingsList(
-        buildBackendSettingsItems(state.scope, state.backends, theme),
+        buildBackendSettingsItems(state.scope, state.backends, theme, (open) => {
+          urlEditorOpen = open;
+        }),
         12,
         getSettingsListTheme(),
         (id, newValue) => {
@@ -780,6 +798,14 @@ async function openBackendSettingsUi(
       render: (width: number) => container.render(width),
       invalidate: () => container.invalidate(),
       handleInput: (data: string) => {
+        // While the inline URL editor is open, let it (and its own Escape/Enter
+        // handling) consume input first — otherwise these shortcuts close the
+        // whole settings UI out from under an in-progress edit.
+        if (urlEditorOpen) {
+          settingsList.handleInput?.(data);
+          return;
+        }
+
         const shortcut = handleSettingsShortcut(JSON.stringify(data).slice(1, -1));
 
         if (shortcut?.action === 'cancel') {
