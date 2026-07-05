@@ -148,8 +148,14 @@ describe('web-agent config draft helpers', () => {
     expect(applySettingsValue(searchProviderState, 'backend:search:fallback', 'duckduckgo').backends.search.fallback).toBe('duckduckgo');
     expect(fetchProviderState.backends.fetch.provider).toBe('firecrawl');
     expect(applySettingsValue(fetchProviderState, 'backend:fetch:fallback', 'http').backends.fetch.fallback).toBe('http');
-    expect(applySettingsValue(searchProviderState, 'backend:search:baseUrl', 'http://localhost:8080').backends.search.baseUrl).toBe('http://localhost:8080');
-    expect(applySettingsValue(state, 'backend:fetch:baseUrl', 'http://localhost:3002').backends.fetch.baseUrl).toBe('http://localhost:3002');
+
+    const searchUrlState = applySettingsValue(searchProviderState, 'backend:search:baseUrl', 'http://localhost:8080');
+    expect(searchUrlState.backends.search.provider).toBe('searxng');
+    expect(searchUrlState.backends.search.baseUrl).toBe('http://localhost:8080');
+
+    const fetchUrlState = applySettingsValue(state, 'backend:fetch:baseUrl', 'http://localhost:3002');
+    expect(fetchUrlState.backends.fetch.provider).toBe('firecrawl');
+    expect(fetchUrlState.backends.fetch.baseUrl).toBe('http://localhost:3002');
   });
 
   it('applies brave backend draft values without preserving searxng-only fields', () => {
@@ -190,6 +196,27 @@ describe('web-agent config draft helpers', () => {
     const editedState = applySettingsValue(braveState, 'backend:search:baseUrl', 'http://localhost:8080');
 
     expect(editedState.backends.search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
+  });
+
+  it('re-promotes back to searxng with a fresh URL after switching away and back', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const withUrl = applySettingsValue(state, 'backend:search:baseUrl', 'http://localhost:8080');
+    expect(withUrl.backends.search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
+
+    // Switching provider away from searxng drops the searxng-only baseUrl.
+    const switchedAway = applySettingsValue(withUrl, 'backend:search:provider', 'brave');
+    expect(switchedAway.backends.search).toEqual({ provider: 'brave' });
+
+    // Entering a new URL switches back to searxng with the new value, not the stale one.
+    const switchedBack = applySettingsValue(switchedAway, 'backend:search:baseUrl', 'http://localhost:9090');
+    expect(switchedBack.backends.search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:9090' });
   });
 
   it('promotes duckduckgo (the default) to searxng when a URL is entered', () => {
