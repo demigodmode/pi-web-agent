@@ -13,6 +13,19 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.6.2] - 2026-07-10
+### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
 - Extension load failure on install (`Cannot find module 'punycode/'` / `Set operation called on non-Set object`) caused by pi's extension loader mishandling a couple of patterns in jsdom's dependency tree (tr46, cssstyle). Added a postinstall step that patches the affected files. Fixes #34
 
 ### Breaking
