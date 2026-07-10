@@ -49,6 +49,11 @@ describe('package manifest', () => {
         import: './dist/extension.js'
       }
     });
-    expect(packageJson.files).toEqual(['dist', 'README.md', 'CHANGELOG.md']);
+    expect(packageJson.files).toEqual([
+      'dist',
+      'scripts/patch-jiti-compat.mjs',
+      'README.md',
+      'CHANGELOG.md'
+    ]);
   });
 });

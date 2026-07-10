@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "scripts/patch-jiti-compat.mjs",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -41,6 +42,7 @@
     "access": "public"
   },
   "scripts": {
+    "postinstall": "node scripts/patch-jiti-compat.mjs",
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "build:dev": "tsc -p tsconfig.json",
     "test": "vitest run --coverage",
