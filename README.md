@@ -119,7 +119,7 @@ Backend settings can be changed from:
 /web-agent settings
 ```
 
-Choose **Backends** to edit search/fetch providers, fallback behavior, and SearXNG or Firecrawl base URLs interactively. Brave Search uses `PI_WEB_AGENT_BRAVE_API_KEY` and You.com uses `YDC_API_KEY`. Firecrawl API keys should also stay in environment variables rather than being written into config files.
+Choose **Backends** to edit search/fetch providers, fallback behavior, and SearXNG or Firecrawl base URLs interactively. Brave Search uses `PI_WEB_AGENT_BRAVE_API_KEY`, You.com uses `YDC_API_KEY`, Exa uses `EXA_API_KEY`, and Tavily uses `TAVILY_API_KEY`. Firecrawl API keys should also stay in environment variables rather than being written into config files.
 
 For the full backend config shape, including SearXNG, Brave, You.com, Firecrawl, and fallback behavior, see:
 

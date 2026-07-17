@@ -7,10 +7,12 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Exa is now available as a hosted search backend for `web_explore`, aimed at research-quality source discovery. Set `EXA_API_KEY` in the environment and choose `exa` from **Settings → Backends**. Closes #2.
+- Tavily is now available as a hosted search backend for `web_explore` alongside Exa, DuckDuckGo, SearXNG, Brave, and You.com. Set `TAVILY_API_KEY` and choose `tavily` from **Settings → Backends**. Closes #2.
+- Both new backends support optional fallback to DuckDuckGo, and `/web-agent doctor` reports their setup status and validates configured access when a key is present.
 
 ### Changed
-- None.
+- Bumped @earendil-works/pi-coding-agent and pi-tui devDependencies to 0.80.10.
 
 ### Fixed
 - None.

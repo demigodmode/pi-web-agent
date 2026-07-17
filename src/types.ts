@@ -22,9 +22,9 @@ export type ToolError = {
 };
 
 export type SearchMetadata = {
-  backend: 'duckduckgo' | 'searxng' | 'brave' | 'youcom';
+  backend: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily';
   cacheHit: boolean;
-  fallbackFrom?: 'searxng' | 'brave' | 'youcom';
+  fallbackFrom?: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily';
   fallbackReason?: string;
 };
 

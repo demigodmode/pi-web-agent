@@ -1,6 +1,8 @@
 import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
 import { createBraveSearchTool } from '../search/brave.js';
 import { createYouComSearchTool } from '../search/youcom.js';
+import { createExaSearchTool } from '../search/exa.js';
+import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
@@ -21,6 +23,8 @@ export type BackendFactoryDeps = {
   createSearxngSearch?: typeof createSearxngSearchTool;
   createBraveSearch?: typeof createBraveSearchTool;
   createYouComSearch?: typeof createYouComSearchTool;
+  createExaSearch?: typeof createExaSearchTool;
+  createTavilySearch?: typeof createTavilySearchTool;
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
@@ -61,7 +65,7 @@ function invalidFirecrawlFetch() {
 function withSearchFallback(
   primary: BackendSet['search'],
   fallback: BackendSet['search'],
-  fallbackFrom: 'searxng' | 'brave' | 'youcom'
+  fallbackFrom: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily'
 ): BackendSet['search'] {
   return async (input) => {
     const first = await primary(input);
@@ -109,6 +113,8 @@ export function createBackendSet(
   const createSearxngSearch = deps.createSearxngSearch ?? createSearxngSearchTool;
   const createBraveSearch = deps.createBraveSearch ?? createBraveSearchTool;
   const createYouComSearch = deps.createYouComSearch ?? createYouComSearchTool;
+  const createExaSearch = deps.createExaSearch ?? createExaSearchTool;
+  const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
@@ -121,7 +127,11 @@ export function createBackendSet(
       ? createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY })
       : config.search.provider === 'youcom'
         ? createYouComSearch({ apiKey: process.env.YDC_API_KEY })
-        : createDuckDuckGoSearch();
+        : config.search.provider === 'exa'
+          ? createExaSearch({ apiKey: process.env.EXA_API_KEY })
+          : config.search.provider === 'tavily'
+            ? createTavilySearch({ apiKey: process.env.TAVILY_API_KEY })
+            : createDuckDuckGoSearch();
 
   if (config.search.provider === 'searxng' && config.search.fallback === 'duckduckgo') {
     search = withSearchFallback(search, createDuckDuckGoSearch(), 'searxng');
@@ -133,6 +143,14 @@ export function createBackendSet(
 
   if (config.search.provider === 'youcom' && config.search.fallback === 'duckduckgo') {
     search = withSearchFallback(search, createDuckDuckGoSearch(), 'youcom');
+  }
+
+  if (config.search.provider === 'exa' && config.search.fallback === 'duckduckgo') {
+    search = withSearchFallback(search, createDuckDuckGoSearch(), 'exa');
+  }
+
+  if (config.search.provider === 'tavily' && config.search.fallback === 'duckduckgo') {
+    search = withSearchFallback(search, createDuckDuckGoSearch(), 'tavily');
   }
 
   const httpFetch = createHttpFetch();

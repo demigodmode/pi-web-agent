@@ -209,4 +209,96 @@ describe('backend factory', () => {
       metadata: { method: 'http', fallbackFrom: 'firecrawl', fallbackReason: 'weak' }
     });
   });
+
+  it('creates exa search with the environment API key', () => {
+    const original = process.env.EXA_API_KEY;
+    process.env.EXA_API_KEY = 'exa-key';
+    const createExaSearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'exa' } },
+        { createExaSearch }
+      );
+
+      expect(createExaSearch).toHaveBeenCalledWith({ apiKey: 'exa-key' });
+    } finally {
+      if (original === undefined) delete process.env.EXA_API_KEY;
+      else process.env.EXA_API_KEY = original;
+    }
+  });
+
+  it('records exa as the search fallback source', async () => {
+    const primary = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'exa', cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'Exa failed' }
+    });
+    const fallback = vi.fn().mockResolvedValue({
+      status: 'ok',
+      results: [{ title: 'Fallback', url: 'https://example.com', snippet: 'ok' }],
+      metadata: { backend: 'duckduckgo', cacheHit: false }
+    });
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'exa', fallback: 'duckduckgo' } },
+      {
+        createExaSearch: vi.fn().mockReturnValue(primary),
+        createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
+      }
+    );
+
+    const result = await backends.search({ query: 'test' });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.fallbackFrom).toBe('exa');
+    expect(result.metadata.fallbackReason).toBe('Exa failed');
+  });
+
+  it('creates tavily search with the environment API key', () => {
+    const original = process.env.TAVILY_API_KEY;
+    process.env.TAVILY_API_KEY = 'tavily-key';
+    const createTavilySearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'tavily' } },
+        { createTavilySearch }
+      );
+
+      expect(createTavilySearch).toHaveBeenCalledWith({ apiKey: 'tavily-key' });
+    } finally {
+      if (original === undefined) delete process.env.TAVILY_API_KEY;
+      else process.env.TAVILY_API_KEY = original;
+    }
+  });
+
+  it('records tavily as the search fallback source', async () => {
+    const primary = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'tavily', cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'Tavily failed' }
+    });
+    const fallback = vi.fn().mockResolvedValue({
+      status: 'ok',
+      results: [{ title: 'Fallback', url: 'https://example.com', snippet: 'ok' }],
+      metadata: { backend: 'duckduckgo', cacheHit: false }
+    });
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'tavily', fallback: 'duckduckgo' } },
+      {
+        createTavilySearch: vi.fn().mockReturnValue(primary),
+        createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
+      }
+    );
+
+    const result = await backends.search({ query: 'test' });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.fallbackFrom).toBe('tavily');
+    expect(result.metadata.fallbackReason).toBe('Tavily failed');
+  });
 });

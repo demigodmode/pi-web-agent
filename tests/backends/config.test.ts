@@ -114,7 +114,7 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, or youcom');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, or tavily');
   });
 
   it('accepts youcom search provider with duckduckgo fallback', () => {
@@ -159,5 +159,39 @@ describe('backend config', () => {
       fetch: { provider: 'http' },
       headless: { provider: 'local-browser' }
     });
+  });
+
+  it('accepts exa search provider with duckduckgo fallback', () => {
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: { provider: 'exa', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' }
+      }
+    });
+
+    expect(override.search).toEqual({ provider: 'exa', fallback: 'duckduckgo' });
+  });
+
+  it('allows duckduckgo fallback for exa', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'exa', fallback: 'duckduckgo' }
+    })).toEqual([]);
+  });
+
+  it('accepts tavily search provider with duckduckgo fallback', () => {
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: { provider: 'tavily', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' }
+      }
+    });
+
+    expect(override.search).toEqual({ provider: 'tavily', fallback: 'duckduckgo' });
+  });
+
+  it('allows duckduckgo fallback for tavily', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'tavily', fallback: 'duckduckgo' }
+    })).toEqual([]);
   });
 });

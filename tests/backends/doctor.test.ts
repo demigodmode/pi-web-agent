@@ -167,6 +167,98 @@ describe('backend doctor checks', () => {
     }
   });
 
+  it('warns when exa search is selected without an API key', async () => {
+    const original = process.env.EXA_API_KEY;
+    delete process.env.EXA_API_KEY;
+
+    try {
+      const lines = await checkBackendHealth({
+        ...DEFAULT_BACKEND_CONFIG,
+        search: { provider: 'exa' }
+      });
+
+      expect(lines).toContain('search backend: exa warning (missing EXA_API_KEY)');
+    } finally {
+      if (original !== undefined) process.env.EXA_API_KEY = original;
+    }
+  });
+
+  it('reports exa ok for a healthy mocked response', async () => {
+    const original = process.env.EXA_API_KEY;
+    process.env.EXA_API_KEY = 'key';
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ results: [{ title: 'A', url: 'https://example.com' }] })
+    });
+
+    try {
+      const lines = await checkBackendHealth(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'exa', fallback: 'duckduckgo' } },
+        { fetchImpl: fetchImpl as unknown as typeof fetch }
+      );
+
+      expect(lines).toContain('search backend: exa ok');
+      expect(lines).toContain('search fallback: duckduckgo');
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://api.exa.ai/search',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'x-api-key': 'key' })
+        })
+      );
+    } finally {
+      if (original === undefined) delete process.env.EXA_API_KEY;
+      else process.env.EXA_API_KEY = original;
+    }
+  });
+
+  it('warns when tavily search is selected without an API key', async () => {
+    const original = process.env.TAVILY_API_KEY;
+    delete process.env.TAVILY_API_KEY;
+
+    try {
+      const lines = await checkBackendHealth({
+        ...DEFAULT_BACKEND_CONFIG,
+        search: { provider: 'tavily' }
+      });
+
+      expect(lines).toContain('search backend: tavily warning (missing TAVILY_API_KEY)');
+    } finally {
+      if (original !== undefined) process.env.TAVILY_API_KEY = original;
+    }
+  });
+
+  it('reports tavily ok for a healthy mocked response', async () => {
+    const original = process.env.TAVILY_API_KEY;
+    process.env.TAVILY_API_KEY = 'key';
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ results: [{ title: 'A', url: 'https://example.com' }] })
+    });
+
+    try {
+      const lines = await checkBackendHealth(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'tavily', fallback: 'duckduckgo' } },
+        { fetchImpl: fetchImpl as unknown as typeof fetch }
+      );
+
+      expect(lines).toContain('search backend: tavily ok');
+      expect(lines).toContain('search fallback: duckduckgo');
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://api.tavily.com/search',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: expect.stringMatching(/^Bearer /) })
+        })
+      );
+    } finally {
+      if (original === undefined) delete process.env.TAVILY_API_KEY;
+      else process.env.TAVILY_API_KEY = original;
+    }
+  });
+
   it('reports Firecrawl health check failures as warnings', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
 

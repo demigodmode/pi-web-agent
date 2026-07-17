@@ -264,7 +264,7 @@ function buildBackendSettingsItems(
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave', 'youcom']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily']
     },
     {
       id: 'backend:search:baseUrl',
@@ -275,8 +275,8 @@ function buildBackendSettingsItems(
     {
       id: 'backend:search:fallback',
       label: 'Search fallback',
-      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' ? backends.search.fallback ?? 'off' : 'off',
-      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' ? ['off', 'duckduckgo'] : ['off']
+      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' || backends.search.provider === 'exa' || backends.search.provider === 'tavily' ? backends.search.fallback ?? 'off' : 'off',
+      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' || backends.search.provider === 'exa' || backends.search.provider === 'tavily' ? ['off', 'duckduckgo'] : ['off']
     },
     {
       id: 'backend:secret:brave',
@@ -287,6 +287,18 @@ function buildBackendSettingsItems(
     {
       id: 'backend:secret:youcom',
       label: 'You.com API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:exa',
+      label: 'Exa API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:tavily',
+      label: 'Tavily API key',
       currentValue: 'env var',
       values: ['env var']
     },
@@ -450,7 +462,7 @@ export function applySettingsValue(
     currentDraft.tools = nextTools;
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily')) {
     currentBackends.search.provider = newValue;
     if (newValue !== 'searxng') {
       delete currentBackends.search.baseUrl;
@@ -462,7 +474,7 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:fallback') {
-    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave' || currentBackends.search.provider === 'youcom')) {
+    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave' || currentBackends.search.provider === 'youcom' || currentBackends.search.provider === 'exa' || currentBackends.search.provider === 'tavily')) {
       currentBackends.search.fallback = 'duckduckgo';
     } else {
       delete currentBackends.search.fallback;
