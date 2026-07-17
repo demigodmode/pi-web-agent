@@ -3,9 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import {
-  AuthStorage,
   createAgentSession,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager
 } from '@earendil-works/pi-coding-agent';
 import { createWebSearchTool } from '../src/tools/web-search.js';
@@ -331,15 +330,14 @@ function evaluateSearchFailureCase(
   } as const;
 }
 
-async function runPrompt(promptCase: PromptCase, cwd: string, authStorage: AuthStorage, modelRegistry: ModelRegistry) {
+async function runPrompt(promptCase: PromptCase, cwd: string, modelRuntime: ModelRuntime) {
   const startedAt = Date.now();
   const toolCalls: ToolCallRecord[] = [];
   let finalAnswer = '';
 
   const { session } = await createAgentSession({
     cwd,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     sessionManager: SessionManager.inMemory()
   });
 
@@ -434,13 +432,12 @@ async function runSearchFailureCase(testCase: SearchFailureCase) {
 async function main() {
   const cwd = process.cwd();
   const startedAt = isoNow();
-  const authStorage = AuthStorage.create();
-  const modelRegistry = ModelRegistry.create(authStorage);
+  const modelRuntime = await ModelRuntime.create();
 
   const prompts: PromptEvaluation[] = [];
   for (const promptCase of PROMPTS) {
     console.log(`Running ${promptCase.id}: ${promptCase.title}`);
-    prompts.push(await runPrompt(promptCase, cwd, authStorage, modelRegistry));
+    prompts.push(await runPrompt(promptCase, cwd, modelRuntime));
   }
 
   const searchFailureCases: SearchFailureEvaluation[] = [];
