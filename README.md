@@ -26,7 +26,7 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 
 Compared to other web tooling for agents:
 
-- **Hands-off.** No curator, no browser windows to approve, no step that pops you out of your session. Ask `web_explore` once and the answer comes back with caveats. Nothing to babysit.
+- **Hands-off.** No curator, no browser windows to approve, no step that pops you out of your session. Ask `web_explore` once and the answer comes back cleanly. Nothing to babysit.
 - **Keyless by default.** Search, page reads, and the GitHub/PDF/YouTube readers all work with no API keys. Add hosted providers only when you want them.
 - **Bounded and honest.** Compact output by default, and it says when a read was not good enough instead of returning fake confidence.
 
