@@ -4,9 +4,23 @@
 
 # pi-web-agent
 
-[![CI](https://github.com/demigodmode/pi-web-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/demigodmode/pi-web-agent/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@demigodmode/pi-web-agent)](https://www.npmjs.com/package/@demigodmode/pi-web-agent)
-[![Docs](https://img.shields.io/badge/docs-github%20pages-blue)](https://demigodmode.github.io/pi-web-agent/)
+<p align="center">
+  <a href="https://github.com/demigodmode/pi-web-agent/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/demigodmode/pi-web-agent/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/@demigodmode/pi-web-agent"><img src="https://img.shields.io/npm/v/@demigodmode/pi-web-agent?style=flat-square&logo=npm&logoColor=white&color=CB3837" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@demigodmode/pi-web-agent"><img src="https://img.shields.io/npm/dm/@demigodmode/pi-web-agent?style=flat-square&color=0A7BBB&label=downloads" alt="npm downloads"></a>
+  <a href="https://demigodmode.github.io/pi-web-agent/"><img src="https://img.shields.io/badge/docs-github%20pages-2088FF?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
+  <a href="https://github.com/demigodmode/pi-web-agent/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@demigodmode/pi-web-agent?style=flat-square&color=6F42C1" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/search%20backends-475569?style=flat-square" alt="Search backends">
+  <img src="https://img.shields.io/badge/DuckDuckGo-475569?style=flat-square&logo=duckduckgo&logoColor=white" alt="DuckDuckGo">
+  <img src="https://img.shields.io/badge/SearXNG-475569?style=flat-square&logo=searxng&logoColor=white" alt="SearXNG">
+  <img src="https://img.shields.io/badge/Brave-475569?style=flat-square&logo=brave&logoColor=white" alt="Brave Search">
+  <img src="https://img.shields.io/badge/You.com-475569?style=flat-square" alt="You.com">
+  <img src="https://img.shields.io/badge/Exa-475569?style=flat-square" alt="Exa">
+  <img src="https://img.shields.io/badge/Tavily-475569?style=flat-square" alt="Tavily">
+</p>
 
 One public tool, `web_explore`, that does bounded web research for Pi: search, fetch, targeted browser rendering, ranking, and honest caveats, all behind a single call.
 
