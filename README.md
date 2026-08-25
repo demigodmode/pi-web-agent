@@ -8,9 +8,9 @@
   <a href="https://github.com/demigodmode/pi-web-agent/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/demigodmode/pi-web-agent/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
   <a href="https://www.npmjs.com/package/@demigodmode/pi-web-agent"><img src="https://img.shields.io/npm/v/@demigodmode/pi-web-agent?style=flat-square&logo=npm&logoColor=white&color=CB3837" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/@demigodmode/pi-web-agent"><img src="https://img.shields.io/npm/dm/@demigodmode/pi-web-agent?style=flat-square&color=0A7BBB&label=downloads" alt="npm downloads"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-475569?style=flat-square" alt="Platform: macOS, Linux, Windows">
   <a href="https://demigodmode.github.io/pi-web-agent/"><img src="https://img.shields.io/badge/docs-github%20pages-2088FF?style=flat-square&logo=readthedocs&logoColor=white" alt="Docs"></a>
   <a href="https://github.com/demigodmode/pi-web-agent/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@demigodmode/pi-web-agent?style=flat-square&color=6F42C1" alt="License"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-475569?style=flat-square" alt="Platform: macOS, Linux, Windows">
 </p>
 
 <p align="center">
