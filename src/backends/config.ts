@@ -16,6 +16,12 @@ export type FirecrawlOptions = {
   onlyMainContent?: boolean;
 };
 
+export type ProxyConfig = {
+  url: string;
+  username?: string;
+  password?: string;
+};
+
 export type SearchBackendConfig = {
   provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily';
   baseUrl?: string;
@@ -37,12 +43,14 @@ export type BackendConfig = {
   search: SearchBackendConfig;
   fetch: FetchBackendConfig;
   headless: HeadlessBackendConfig;
+  proxy?: ProxyConfig;
 };
 
 export type BackendConfigOverride = {
   search?: Partial<SearchBackendConfig>;
   fetch?: Partial<FetchBackendConfig>;
   headless?: Partial<HeadlessBackendConfig>;
+  proxy?: ProxyConfig;
 };
 
 export type BackendConfigFile = {
@@ -50,6 +58,7 @@ export type BackendConfigFile = {
     search?: { provider?: unknown; baseUrl?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
     headless?: { provider?: unknown };
+    proxy?: { url?: unknown; username?: unknown; password?: unknown };
   };
 };
 
@@ -63,6 +72,25 @@ function extractStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const strings = value.filter((item): item is string => typeof item === 'string');
   return strings.length === value.length ? strings : undefined;
+}
+
+export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as { url?: unknown; username?: unknown; password?: unknown };
+  if (typeof raw.url !== 'string' || !raw.url.trim()) return undefined;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.url.trim());
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+
+  const config: ProxyConfig = { url: parsed.toString().replace(/\/$/, '') };
+  if (typeof raw.username === 'string' && raw.username.trim()) config.username = raw.username;
+  if (typeof raw.password === 'string') config.password = raw.password;
+  return config;
 }
 
 function extractSearxngOptions(value: unknown): SearxngOptions | undefined {
@@ -172,6 +200,11 @@ export function extractBackendConfigOverride(
     override.headless = { provider: 'local-browser' };
   }
 
+  const proxy = extractProxyConfig(backends?.proxy);
+  if (proxy) {
+    override.proxy = proxy;
+  }
+
   return override;
 }
 
@@ -180,6 +213,18 @@ export function validateBackendConfig(config: BackendConfig): string[] {
 
   if (config.search.provider === 'searxng' && !config.search.baseUrl) {
     issues.push('search provider searxng requires backends.search.baseUrl');
+  }
+
+  if (config.proxy) {
+    let parsed: URL | undefined;
+    try {
+      parsed = new URL(config.proxy.url);
+    } catch {
+      parsed = undefined;
+    }
+    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+      issues.push('backends.proxy.url must be an http or https URL');
+    }
   }
 
   if (config.fetch.provider === 'firecrawl' && !config.fetch.baseUrl) {
@@ -255,7 +300,8 @@ export function mergeBackendConfigLayers(
     (merged, layer) => ({
       search: mergeSearchConfig(merged.search, layer?.search),
       fetch: mergeFetchConfig(merged.fetch, layer?.fetch),
-      headless: { ...merged.headless, ...layer?.headless }
+      headless: { ...merged.headless, ...layer?.headless },
+      proxy: layer?.proxy ? { ...merged.proxy, ...layer.proxy } : merged.proxy
     }),
     DEFAULT_BACKEND_CONFIG
   );

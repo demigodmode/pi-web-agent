@@ -312,3 +312,51 @@ describe('usableSearchProviders', () => {
     expect(providers).toEqual(['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily']);
   });
 });
+
+describe('proxy config', () => {
+  it('extracts proxy config from the config file', () => {
+    const override = extractBackendConfigOverride({
+      backends: {
+        proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+      }
+    });
+
+    expect(override.proxy).toEqual({ url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' });
+  });
+
+  it('drops proxy entries with missing or non-http(s) urls', () => {
+    expect(extractBackendConfigOverride({ backends: { proxy: {} } }).proxy).toBeUndefined();
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'not a url' } } }).proxy).toBeUndefined();
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'ftp://nope.example' } } }).proxy).toBeUndefined();
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 42 } } }).proxy).toBeUndefined();
+  });
+
+  it('ignores empty usernames but keeps passwords', () => {
+    const override = extractBackendConfigOverride({
+      backends: { proxy: { url: 'http://127.0.0.1:7890', username: '   ', password: '' } }
+    });
+
+    expect(override.proxy).toEqual({ url: 'http://127.0.0.1:7890', password: '' });
+  });
+
+  it('merges proxy fields across config layers', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        { proxy: { url: 'http://127.0.0.1:7890', username: 'user' } },
+        { proxy: { url: 'http://127.0.0.1:7891', password: 'secret' } }
+      ).proxy
+    ).toEqual({ url: 'http://127.0.0.1:7891', username: 'user', password: 'secret' });
+  });
+
+  it('flags a malformed proxy url in a hand-built config', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'not a url' }
+      })
+    ).toContain('backends.proxy.url must be an http or https URL');
+  });
+});

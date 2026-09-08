@@ -108,7 +108,7 @@ describe('backend factory', () => {
         { createBraveSearch }
       );
 
-      expect(createBraveSearch).toHaveBeenCalledWith({ apiKey: 'brave-key' });
+      expect(createBraveSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'brave-key' }));
     } finally {
       if (original === undefined) delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
       else process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
@@ -154,7 +154,7 @@ describe('backend factory', () => {
         { createYouComSearch }
       );
 
-      expect(createYouComSearch).toHaveBeenCalledWith({ apiKey: 'ydc-key' });
+      expect(createYouComSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'ydc-key' }));
     } finally {
       if (original === undefined) delete process.env.YDC_API_KEY;
       else process.env.YDC_API_KEY = original;
@@ -229,7 +229,7 @@ describe('backend factory', () => {
         { createExaSearch }
       );
 
-      expect(createExaSearch).toHaveBeenCalledWith({ apiKey: 'exa-key' });
+      expect(createExaSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'exa-key' }));
     } finally {
       if (original === undefined) delete process.env.EXA_API_KEY;
       else process.env.EXA_API_KEY = original;
@@ -275,7 +275,7 @@ describe('backend factory', () => {
         { createTavilySearch }
       );
 
-      expect(createTavilySearch).toHaveBeenCalledWith({ apiKey: 'tavily-key' });
+      expect(createTavilySearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'tavily-key' }));
     } finally {
       if (original === undefined) delete process.env.TAVILY_API_KEY;
       else process.env.TAVILY_API_KEY = original;
@@ -331,7 +331,7 @@ describe('backend factory', () => {
 
     const result = await backends.search({ query: 'anything' });
 
-    expect(createTavilySearch).toHaveBeenCalledWith({ keyless: true });
+    expect(createTavilySearch).toHaveBeenCalledWith(expect.objectContaining({ keyless: true }));
     expect(result.status).toBe('ok');
     expect(result.metadata.fallbackFrom).toBe('duckduckgo');
   });
@@ -418,7 +418,7 @@ describe('backend factory', () => {
 
     const res = await backends.search({ query: 'q' });
 
-    expect(createTavilySearch).toHaveBeenCalledWith({ keyless: true });
+    expect(createTavilySearch).toHaveBeenCalledWith(expect.objectContaining({ keyless: true }));
     expect(res.status).toBe('ok');
     expect(res.metadata.fallbackFrom).toBe('duckduckgo');
   });
@@ -530,5 +530,60 @@ describe('backend factory', () => {
     expect(result.metadata.fanout?.mode).toBe('on');
     expect(duckMock).toHaveBeenCalled();
     expect(searxngMock).toHaveBeenCalled();
+  });
+});
+
+describe('backend factory proxy support', () => {
+  it('routes search and fetch traffic through the configured proxy fetch', async () => {
+    const proxiedUrls: string[] = [];
+    const proxyFetchMock = vi.fn((input: string | URL | Request) => {
+      proxiedUrls.push(String(input));
+      return Promise.resolve(
+        new Response(
+          '<html><head><title>Proxied</title></head><body><article>' +
+            '<h1>Proxied page</h1>' +
+            '<p>This proxied page carries enough readable content for the http fetcher to extract it cleanly.</p>' +
+            '</article></body></html>',
+          { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }
+        )
+      );
+    });
+    const createProxyFetch = vi.fn(() => proxyFetchMock as typeof fetch);
+
+    let capturedSearchHtml: ((query: string) => Promise<string>) | undefined;
+
+    const backends = createBackendSet(
+      {
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+      },
+      {
+        createProxyFetch,
+        createDuckDuckGoSearch: (options) => {
+          capturedSearchHtml = options?.searchHtml;
+          return vi.fn();
+        }
+      }
+    );
+
+    expect(createProxyFetch).toHaveBeenCalledWith({ url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' });
+
+    const page = await backends.fetchPage({ url: 'https://example.com/page' });
+    expect(page.status).toBe('ok');
+    expect(proxiedUrls).toContain('https://example.com/page');
+
+    expect(capturedSearchHtml).toEqual(expect.any(Function));
+    await capturedSearchHtml!('docs');
+    expect(proxiedUrls).toContain('https://html.duckduckgo.com/html/?q=docs');
+  });
+
+  it('does not build a proxy fetch when no proxy is configured', () => {
+    const createProxyFetch = vi.fn();
+
+    createBackendSet(DEFAULT_BACKEND_CONFIG, { createProxyFetch });
+
+    expect(createProxyFetch).not.toHaveBeenCalled();
   });
 });

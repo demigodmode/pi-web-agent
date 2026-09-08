@@ -116,6 +116,11 @@ function serializeBackendConfigOverride(config: BackendConfigOverride): BackendC
     backends.headless = { ...config.headless };
   }
 
+  if (config.proxy && Object.keys(config.proxy).length > 0) {
+    const { password: _password, ...proxy } = config.proxy;
+    backends.proxy = { ...proxy };
+  }
+
   return { backends };
 }
 

@@ -232,7 +232,8 @@ describe('presentation config store', () => {
 
     await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
       search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
-      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http', apiKey: 'do-not-write' }
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http', apiKey: 'do-not-write' },
+      proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'do-not-write' }
     });
 
     const parsed = JSON.parse(readFileSync(projectPath, 'utf8'));
@@ -243,7 +244,8 @@ describe('presentation config store', () => {
     });
     expect(parsed.backends).toEqual({
       search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
-      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' },
+      proxy: { url: 'http://127.0.0.1:7890', username: 'user' }
     });
   });
 

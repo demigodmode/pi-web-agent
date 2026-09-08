@@ -71,6 +71,7 @@ Choose **Backends**. From there you can:
 - switch fetch between plain HTTP and Firecrawl
 - edit the Firecrawl base URL
 - enable Firecrawl → HTTP fallback
+- set the outbound proxy URL
 
 Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
 
@@ -360,6 +361,32 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 ```
 
 When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, and Firecrawl failures stay visible instead of silently switching to external/default backends.
+
+## Proxy
+
+Route all outbound `web_explore` traffic through an HTTP proxy:
+
+```json
+{
+  "backends": {
+    "proxy": {
+      "url": "http://127.0.0.1:7890",
+      "username": "user",
+      "password": "pass"
+    }
+  }
+}
+```
+
+- `url` is required and must be an `http://` or `https://` proxy URL.
+- `username` and `password` are optional. When present, credentials are sent to the proxy as a `Proxy-Authorization` header (never to the target site).
+- Credentials can instead come from the environment variables `PI_WEB_AGENT_PROXY_USERNAME` and `PI_WEB_AGENT_PROXY_PASSWORD`. Config values win when both are set.
+
+When a proxy is configured it applies to every outbound request: search backends, plain HTTP fetches, Firecrawl, the GitHub and YouTube readers, PDF downloads, and `/web-agent doctor` health checks. HTTPS targets are tunneled with `CONNECT`, so the proxy sees the target hostname but not the request contents. The headless browser is also launched with the proxy configured.
+
+The proxy URL is editable from **Settings → Backends**. The settings UI does not edit proxy credentials; like other secrets, keep credentials in environment variables rather than committed config files.
+
+A proxy that is unreachable makes requests fail with a clear proxy error instead of silently bypassing the proxy.
 
 ## Full self-hosted example
 
