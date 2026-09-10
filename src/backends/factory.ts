@@ -252,7 +252,7 @@ export function createBackendSet(
   }
 
   const fetchPageWithReaders = createSpecialContentResolver({
-    readers: [createGithubReader({ fetchImpl }), createPdfReader({ fetchImpl }), createYoutubeReader()],
+    readers: [createGithubReader({ fetchImpl }), createPdfReader({ fetchImpl }), createYoutubeReader({ fetchImpl })],
     fallback: fetchPage
   });
 

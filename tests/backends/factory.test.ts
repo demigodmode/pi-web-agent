@@ -586,4 +586,57 @@ describe('backend factory proxy support', () => {
 
     expect(createProxyFetch).not.toHaveBeenCalled();
   });
+
+  it('routes YouTube reader traffic through the configured proxy fetch', async () => {
+    const proxiedUrls: string[] = [];
+    const INNERTUBE = 'https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false';
+    const proxyFetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      proxiedUrls.push(url);
+      if (url === INNERTUBE) {
+        return new Response(
+          JSON.stringify({
+            playabilityStatus: { status: 'OK' },
+            videoDetails: { title: 'My Talk', shortDescription: 'desc' },
+            captions: {
+              playerCaptionsTracklistRenderer: {
+                captionTracks: [
+                  { baseUrl: 'https://www.youtube.com/api/timedtext?v=abc123&lang=en', vssId: '.en', languageCode: 'en' }
+                ]
+              }
+            }
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      // Caption track (json3).
+      return new Response(
+        JSON.stringify({
+          events: [{ tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: 'hello ' }, { utf8: 'world' }] }]
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    });
+    const createProxyFetch = vi.fn(() => proxyFetchMock as typeof fetch);
+
+    const backends = createBackendSet(
+      {
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+      },
+      { createProxyFetch }
+    );
+
+    const page = await backends.fetchPage({ url: 'https://youtu.be/abc123' });
+    expect(page.status).toBe('ok');
+    expect(page.metadata.method).toBe('youtube');
+    expect(page.content?.title).toBe('My Talk');
+    expect(page.content?.text).toContain('hello world');
+
+    // Both the InnerTube player call and the caption track call went through the proxy.
+    expect(proxiedUrls).toContain(INNERTUBE);
+    expect(proxiedUrls.some((u) => u.startsWith('https://www.youtube.com/api/timedtext'))).toBe(true);
+  });
 });
