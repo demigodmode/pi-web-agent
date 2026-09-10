@@ -680,9 +680,15 @@ export function collapseBackendConfigToOverride(
     override.headless = { ...config.headless };
   }
 
-  if (!sameJson(config.proxy, inheritedConfig.proxy) && config.proxy) {
-    const { password: _password, ...proxy } = config.proxy;
-    override.proxy = { ...proxy };
+  if (!sameJson(config.proxy, inheritedConfig.proxy)) {
+    if (config.proxy) {
+      const { password: _password, ...proxy } = config.proxy;
+      override.proxy = { ...proxy };
+    } else if (inheritedConfig.proxy) {
+      // The proxy was cleared at this scope; record an explicit disable so it
+      // overrides a proxy set in a lower (e.g. global) layer.
+      override.proxy = { url: '' };
+    }
   }
 
   return override;

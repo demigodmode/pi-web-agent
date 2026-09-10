@@ -77,6 +77,13 @@ function extractStringArray(value: unknown): string[] | undefined {
 export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const raw = value as { url?: unknown; username?: unknown; password?: unknown };
+
+  // An explicitly present but blank url is the "disable proxy" marker: it lets a
+  // higher-priority layer (e.g. a project) clear a proxy set in a lower layer.
+  if (typeof raw.url === 'string' && raw.url.trim() === '') {
+    return { url: '' };
+  }
+
   if (typeof raw.url !== 'string' || !raw.url.trim()) return undefined;
 
   let parsed: URL;
@@ -301,7 +308,11 @@ export function mergeBackendConfigLayers(
       search: mergeSearchConfig(merged.search, layer?.search),
       fetch: mergeFetchConfig(merged.fetch, layer?.fetch),
       headless: { ...merged.headless, ...layer?.headless },
-      proxy: layer?.proxy ? { ...merged.proxy, ...layer.proxy } : merged.proxy
+      proxy: layer?.proxy
+        ? layer.proxy.url === ''
+          ? undefined // explicit disable overrides any proxy from lower layers
+          : { ...merged.proxy, ...layer.proxy }
+        : merged.proxy
     }),
     DEFAULT_BACKEND_CONFIG
   );

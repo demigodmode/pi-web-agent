@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BACKEND_CONFIG,
   extractBackendConfigOverride,
+  extractProxyConfig,
   mergeBackendConfigLayers,
   validateBackendConfig,
   usableSearchProviders
@@ -347,6 +348,31 @@ describe('proxy config', () => {
         { proxy: { url: 'http://127.0.0.1:7891', password: 'secret' } }
       ).proxy
     ).toEqual({ url: 'http://127.0.0.1:7891', username: 'user', password: 'secret' });
+  });
+
+  it('reads an explicit blank url as a disable-proxy marker', () => {
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: '' } } }).proxy).toEqual({ url: '' });
+    expect(extractProxyConfig({ url: '' })).toEqual({ url: '' });
+  });
+
+  it('lets an explicit disable in a higher layer clear a lower-layer proxy', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        { proxy: { url: 'http://127.0.0.1:7890', username: 'user' } },
+        { proxy: { url: '' } }
+      ).proxy
+    ).toBeUndefined();
+  });
+
+  it('lets a later real proxy re-enable after an explicit disable', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        { proxy: { url: '' } },
+        { proxy: { url: 'http://127.0.0.1:7891' } }
+      ).proxy
+    ).toEqual({ url: 'http://127.0.0.1:7891' });
   });
 
   it('flags a malformed proxy url in a hand-built config', () => {
