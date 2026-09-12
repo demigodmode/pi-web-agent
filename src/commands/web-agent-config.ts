@@ -1,5 +1,6 @@
 import {
   DEFAULT_BACKEND_CONFIG,
+  isValidProxyUrl,
   mergeBackendConfigLayers,
   stripProxyCredentials,
   validateBackendConfig,
@@ -949,7 +950,12 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
   };
   const checkTypebox = deps.checkTypebox ?? defaultCheckTypebox;
   const checkBackends = deps.checkBackends ?? ((config: BackendConfig) =>
-    checkBackendHealth(config, { fetchImpl: config.proxy ? createProxyFetch(config.proxy) : fetch })
+    checkBackendHealth(config, {
+      // An invalid proxy url is reported by validateBackendConfig below; never
+      // build a proxy agent from it (no connectivity check is attempted).
+      fetchImpl:
+        config.proxy && isValidProxyUrl(config.proxy.url) ? createProxyFetch(config.proxy) : fetch
+    })
   );
   const getChangelog = deps.getChangelog ?? (() => getLatestChangelogEntry());
 

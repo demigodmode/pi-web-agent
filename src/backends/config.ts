@@ -94,6 +94,21 @@ export function stripProxyCredentials(url: string): string {
   return parsed.toString().replace(/\/$/, '');
 }
 
+/**
+ * Whether a proxy url passes validation: a blank url is the "disable proxy"
+ * marker and passes; anything else must parse as an http(s) URL. This is a
+ * pure syntax check — no connectivity check is performed.
+ */
+export function isValidProxyUrl(url: string): boolean {
+  if (url.trim() === '') return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const raw = value as { url?: unknown; username?: unknown; password?: unknown };
@@ -106,15 +121,22 @@ export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
 
   if (typeof raw.url !== 'string' || !raw.url.trim()) return undefined;
 
-  let parsed: URL;
+  const url = raw.url.trim();
+  let parsed: URL | undefined;
   try {
-    parsed = new URL(raw.url.trim());
+    parsed = new URL(url);
   } catch {
-    return undefined;
+    parsed = undefined;
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
-
-  const config: ProxyConfig = { url: parsed.toString().replace(/\/$/, '') };
+  // A valid url is normalized. A malformed url is kept as-is (rather than
+  // dropped) so validation can flag it and the backend factory can fail loudly
+  // instead of silently sending traffic direct to the websites.
+  const config: ProxyConfig = {
+    url:
+      parsed && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        ? parsed.toString().replace(/\/$/, '')
+        : url
+  };
   if (typeof raw.username === 'string' && raw.username.trim()) config.username = raw.username;
   if (typeof raw.password === 'string') config.password = raw.password;
   return config;
@@ -242,16 +264,16 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     issues.push('search provider searxng requires backends.search.baseUrl');
   }
 
-  if (config.proxy) {
+  if (config.proxy && config.proxy.url.trim() !== '') {
     let parsed: URL | undefined;
     try {
       parsed = new URL(config.proxy.url);
     } catch {
       parsed = undefined;
     }
-    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+    if (!isValidProxyUrl(config.proxy.url)) {
       issues.push('backends.proxy.url must be an http or https URL');
-    } else if (parsed.username || parsed.password) {
+    } else if (parsed && (parsed.username || parsed.password)) {
       // Credentials belong in backends.proxy.username/password or the env vars
       // below, never in the URL itself.
       issues.push(

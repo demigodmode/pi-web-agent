@@ -639,4 +639,66 @@ describe('backend factory proxy support', () => {
     expect(proxiedUrls).toContain(INNERTUBE);
     expect(proxiedUrls.some((u) => u.startsWith('https://www.youtube.com/api/timedtext'))).toBe(true);
   });
+
+  it('blocks all web requests with a config error when the proxy url is invalid', async () => {
+    const createProxyFetch = vi.fn();
+    const directFetch = vi.fn(async () => new Response('direct', { status: 200 }));
+    vi.stubGlobal('fetch', directFetch);
+
+    const backends = createBackendSet(
+      {
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'htttp://proxy:8080' }
+      },
+      { createProxyFetch }
+    );
+
+    const search = await backends.search({ query: 'docs' });
+    expect(search.status).toBe('error');
+    expect(search.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(search.error?.message).toContain('htttp://proxy:8080');
+
+    const page = await backends.fetchPage({ url: 'https://example.com/page' });
+    expect(page.status).toBe('error');
+    expect(page.error?.code).toBe('BACKEND_CONFIG_INVALID');
+
+    const headless = await backends.headlessFetch({ url: 'https://example.com/page' });
+    expect(headless.status).toBe('error');
+    expect(headless.error?.code).toBe('BACKEND_CONFIG_INVALID');
+
+    // Neither a proxy agent nor a direct fetch was ever built or used.
+    expect(createProxyFetch).not.toHaveBeenCalled();
+    expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it('treats a blank proxy url as no proxy (disable marker)', async () => {
+    const createProxyFetch = vi.fn(() => vi.fn() as typeof fetch);
+    const directFetch = vi.fn(async () =>
+      new Response(
+        '<html><head><title>Direct</title></head><body><article>' +
+          '<h1>Direct page</h1>' +
+          '<p>This direct page carries enough readable content for the http fetcher to extract it cleanly.</p>' +
+          '</article></body></html>',
+        { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }
+      )
+    );
+    vi.stubGlobal('fetch', directFetch);
+
+    const backends = createBackendSet(
+      {
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: '' }
+      },
+      { createProxyFetch }
+    );
+
+    expect(createProxyFetch).not.toHaveBeenCalled();
+    const page = await backends.fetchPage({ url: 'https://example.com/page' });
+    expect(page.status).toBe('ok');
+    expect(directFetch).toHaveBeenCalled();
+  });
 });

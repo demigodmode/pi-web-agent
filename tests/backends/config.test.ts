@@ -326,11 +326,32 @@ describe('proxy config', () => {
     expect(override.proxy).toEqual({ url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' });
   });
 
-  it('drops proxy entries with missing or non-http(s) urls', () => {
+  it('drops proxy entries with a missing url', () => {
     expect(extractBackendConfigOverride({ backends: { proxy: {} } }).proxy).toBeUndefined();
-    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'not a url' } } }).proxy).toBeUndefined();
-    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'ftp://nope.example' } } }).proxy).toBeUndefined();
     expect(extractBackendConfigOverride({ backends: { proxy: { url: 42 } } }).proxy).toBeUndefined();
+  });
+
+  it('keeps a malformed proxy url so validation can flag it', () => {
+    // Dropping these would silently disable the proxy and send traffic direct.
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'not a url' } } }).proxy).toEqual({
+      url: 'not a url'
+    });
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'ftp://nope.example' } } }).proxy).toEqual({
+      url: 'ftp://nope.example'
+    });
+    expect(
+      extractBackendConfigOverride({
+        backends: { proxy: { url: 'htttp://proxy:8080', username: 'user' } }
+      }).proxy
+    ).toEqual({ url: 'htttp://proxy:8080', username: 'user' });
+  });
+
+  it('flags a malformed proxy url extracted from a config file', () => {
+    const override = extractBackendConfigOverride({ backends: { proxy: { url: 'htttp://proxy:8080' } } });
+    const issues = validateBackendConfig(
+      mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, override)
+    );
+    expect(issues).toContain('backends.proxy.url must be an http or https URL');
   });
 
   it('ignores empty usernames but keeps passwords', () => {

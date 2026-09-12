@@ -15,7 +15,7 @@ import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
 import type { SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
-import { DEFAULT_BACKEND_CONFIG, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
+import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
 import { createGithubReader } from '../readers/github-reader.js';
 import { createPdfReader } from '../readers/pdf-reader.js';
@@ -133,14 +133,55 @@ export function createBackendSet(
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
   const makeProxyFetch = deps.createProxyFetch ?? createProxyFetch;
 
+  // A blank url is the "disable proxy" marker: treat it as no proxy at all.
+  const proxy = config.proxy && config.proxy.url.trim() !== '' ? config.proxy : undefined;
+
+  // A configured proxy whose url fails validation must not be silently ignored
+  // — that would send traffic direct to the websites. Every request errors out
+  // instead. No connectivity check is needed: the url itself is the problem.
+  if (proxy && !isValidProxyUrl(proxy.url)) {
+    const message =
+      `backends.proxy.url (${proxy.url}) is not a valid http or https URL. ` +
+      'Web requests are blocked until it is fixed; set backends.proxy.url to "" to disable the proxy.';
+    return {
+      search: async () => {
+        const result: WebSearchResponse = {
+          status: 'error',
+          results: [],
+          metadata: { backend: config.search.provider, cacheHit: false },
+          error: { code: 'BACKEND_CONFIG_INVALID', message }
+        };
+        return { ...result, presentation: buildSearchPresentation(result) };
+      },
+      fetchPage: async ({ url }) => {
+        const result: WebFetchResponse = {
+          status: 'error',
+          url,
+          metadata: { method: 'http', cacheHit: false },
+          error: { code: 'BACKEND_CONFIG_INVALID', message }
+        };
+        return { ...result, presentation: buildFetchPresentation(result) };
+      },
+      headlessFetch: async ({ url }) => {
+        const result: WebFetchHeadlessResponse = {
+          status: 'error',
+          url,
+          metadata: { method: 'headless', cacheHit: false },
+          error: { code: 'BACKEND_CONFIG_INVALID', message }
+        };
+        return { ...result, presentation: buildFetchPresentation(result) };
+      }
+    };
+  }
+
   // When a proxy is configured, every outbound HTTP request (search, fetch,
   // readers, and doctor-style checks) goes through it; headless browser
   // traffic gets the same proxy via Playwright launch options.
-  const fetchImpl: typeof fetch = config.proxy ? makeProxyFetch(config.proxy) : fetch;
-  const proxyCredentials = config.proxy ? resolveProxyCredentials(config.proxy) : undefined;
-  const proxyBrowserOptions = config.proxy
+  const fetchImpl: typeof fetch = proxy ? makeProxyFetch(proxy) : fetch;
+  const proxyCredentials = proxy ? resolveProxyCredentials(proxy) : undefined;
+  const proxyBrowserOptions = proxy
     ? {
-        server: stripProxyCredentials(config.proxy.url),
+        server: stripProxyCredentials(proxy.url),
         ...(proxyCredentials?.username !== undefined ? { username: proxyCredentials.username } : {}),
         ...(proxyCredentials?.password !== undefined ? { password: proxyCredentials.password } : {})
       }
