@@ -1,5 +1,5 @@
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
-import type { ProxyConfig } from '../backends/config.js';
+import { stripProxyCredentials, type ProxyConfig } from '../backends/config.js';
 
 export type ProxyCredentials = {
   username?: string;
@@ -36,7 +36,9 @@ export function resolveProxyCredentials(
 export function createProxyFetch(proxy: ProxyConfig, options: ProxyFetchOptions = {}): typeof fetch {
   const credentials = resolveProxyCredentials(proxy);
   const agent = new ProxyAgent({
-    uri: proxy.url,
+    // Never trust credentials embedded in the URL; they come from config fields
+    // or the PI_WEB_AGENT_PROXY_* env vars via resolveProxyCredentials.
+    uri: stripProxyCredentials(proxy.url),
     // undici's `token` option is used verbatim as the Proxy-Authorization header
     // value for both CONNECT tunnels and forwarded HTTP requests.
     ...(credentials.username !== undefined

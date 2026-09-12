@@ -4,6 +4,7 @@ import {
   extractBackendConfigOverride,
   extractProxyConfig,
   mergeBackendConfigLayers,
+  stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders
 } from '../../src/backends/config.js';
@@ -384,5 +385,49 @@ describe('proxy config', () => {
         proxy: { url: 'not a url' }
       })
     ).toContain('backends.proxy.url must be an http or https URL');
+  });
+
+  it('rejects credentials embedded in the proxy url', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://user:secret@127.0.0.1:7890' }
+      })
+    ).toContain(
+      'backends.proxy.url must not include credentials (user:pass@); set PI_WEB_AGENT_PROXY_USERNAME and PI_WEB_AGENT_PROXY_PASSWORD (or backends.proxy.username / backends.proxy.password) instead'
+    );
+  });
+
+  it('flags a proxy url that embeds only a username', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://user@127.0.0.1:7890' }
+      })
+    ).toContain(
+      'backends.proxy.url must not include credentials (user:pass@); set PI_WEB_AGENT_PROXY_USERNAME and PI_WEB_AGENT_PROXY_PASSWORD (or backends.proxy.username / backends.proxy.password) instead'
+    );
+  });
+
+  it('accepts a proxy url with no embedded credentials', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+      })
+    ).toEqual([]);
+  });
+
+  it('strips credentials from a proxy url', () => {
+    expect(stripProxyCredentials('http://user:secret@127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
+    expect(stripProxyCredentials('https://user@proxy.example:8443')).toBe('https://proxy.example:8443');
+    expect(stripProxyCredentials('http://127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
+    expect(stripProxyCredentials('not a url')).toBe('not a url');
   });
 });

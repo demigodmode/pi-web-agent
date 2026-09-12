@@ -378,9 +378,9 @@ Route all outbound `web_explore` traffic through an HTTP proxy:
 }
 ```
 
-- `url` is required and must be an `http://` or `https://` proxy URL.
+- `url` is required and must be an `http://` or `https://` proxy URL. It must not embed credentials (`http://user:pass@host:port`); pi-web-agent strips any `user:pass@` from the URL and never sends it. Put credentials in `username`/`password` or the environment variables below instead.
 - `username` and `password` are optional. When present, credentials are sent to the proxy as a `Proxy-Authorization` header (never to the target site).
-- Credentials can instead come from the environment variables `PI_WEB_AGENT_PROXY_USERNAME` and `PI_WEB_AGENT_PROXY_PASSWORD`. Config values win when both are set.
+- Credentials can instead come from the environment variables `PI_WEB_AGENT_PROXY_USERNAME` and `PI_WEB_AGENT_PROXY_PASSWORD`. Config values win when both are set. If you set credentials in the URL, `/web-agent doctor` and config validation tell you to move them to these variables.
 
 When a proxy is configured it applies to every outbound request: search backends, plain HTTP fetches, Firecrawl, the GitHub and YouTube readers, PDF downloads, and `/web-agent doctor` health checks. HTTPS targets are tunneled with `CONNECT`, so the proxy sees the target hostname but not the request contents. The headless browser is also launched with the proxy configured.
 

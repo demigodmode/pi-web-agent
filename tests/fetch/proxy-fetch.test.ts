@@ -136,6 +136,23 @@ describe('proxy fetch', () => {
     expect(proxy.requests[0].proxyAuthorization).toBe(`Basic ${Buffer.from('user:secret').toString('base64')}`);
   });
 
+  it('ignores credentials embedded in the proxy url', async () => {
+    const target = await startHttpServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+    const proxy = await startProxyServer();
+    cleanups.push(target.close, proxy.close);
+
+    // Credentials in the URL must be stripped, never sent to the proxy.
+    const fetchViaProxy = createProxyFetch({ url: `http://urluser:urlpass@127.0.0.1:${proxy.port}` });
+    const response = await fetchViaProxy(`http://127.0.0.1:${target.port}/noauth`);
+
+    expect(response.status).toBe(200);
+    expect(proxy.requests).toHaveLength(1);
+    expect(proxy.requests[0].proxyAuthorization).toBeUndefined();
+  });
+
   it('resolves credentials from the config first, then environment variables', () => {
     const env = {
       PI_WEB_AGENT_PROXY_USERNAME: 'env-user',

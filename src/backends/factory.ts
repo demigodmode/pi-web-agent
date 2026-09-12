@@ -15,7 +15,7 @@ import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
 import type { SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
-import { DEFAULT_BACKEND_CONFIG, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
+import { DEFAULT_BACKEND_CONFIG, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
 import { createGithubReader } from '../readers/github-reader.js';
 import { createPdfReader } from '../readers/pdf-reader.js';
@@ -140,7 +140,7 @@ export function createBackendSet(
   const proxyCredentials = config.proxy ? resolveProxyCredentials(config.proxy) : undefined;
   const proxyBrowserOptions = config.proxy
     ? {
-        server: config.proxy.url,
+        server: stripProxyCredentials(config.proxy.url),
         ...(proxyCredentials?.username !== undefined ? { username: proxyCredentials.username } : {}),
         ...(proxyCredentials?.password !== undefined ? { password: proxyCredentials.password } : {})
       }

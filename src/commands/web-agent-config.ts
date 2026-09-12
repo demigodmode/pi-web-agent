@@ -1,6 +1,7 @@
 import {
   DEFAULT_BACKEND_CONFIG,
   mergeBackendConfigLayers,
+  stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders,
   type BackendConfig,
@@ -166,7 +167,7 @@ function formatBackendSummary(config: BackendConfig = DEFAULT_BACKEND_CONFIG) {
     searchSuffix ? `${searchBase} ${searchSuffix}` : searchBase,
     fetchSuffix ? `${fetchBase} ${fetchSuffix}` : fetchBase,
     `headless: ${config.headless.provider}`,
-    config.proxy ? `proxy: ${config.proxy.url}` : undefined
+    config.proxy ? `proxy: ${stripProxyCredentials(config.proxy.url)}` : undefined
   ]
     .filter(Boolean)
     .join('\n');
@@ -360,7 +361,7 @@ function buildBackendSettingsItems(
     {
       id: 'backend:proxy:url',
       label: 'Proxy URL',
-      currentValue: backends.proxy?.url ?? 'not set',
+      currentValue: backends.proxy ? stripProxyCredentials(backends.proxy.url) : 'not set',
       submenu: createBackendUrlEditor(theme, 'HTTP proxy URL', 'http://127.0.0.1:7890', onUrlEditorOpenChange)
     }
   ];

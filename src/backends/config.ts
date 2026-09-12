@@ -74,6 +74,26 @@ function extractStringArray(value: unknown): string[] | undefined {
   return strings.length === value.length ? strings : undefined;
 }
 
+/**
+ * Remove any credentials (user:pass@) embedded in a proxy URL. pi-web-agent
+ * never reads or sends credentials from the URL; proxy auth comes from
+ * backends.proxy.username/password or PI_WEB_AGENT_PROXY_USERNAME /
+ * PI_WEB_AGENT_PROXY_PASSWORD. Stripping them here keeps them out of logs,
+ * doctor output, the settings UI, and the proxy connection itself.
+ */
+export function stripProxyCredentials(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (!parsed.username && !parsed.password) return url; // already credential-free
+  parsed.username = '';
+  parsed.password = '';
+  return parsed.toString().replace(/\/$/, '');
+}
+
 export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const raw = value as { url?: unknown; username?: unknown; password?: unknown };
@@ -231,6 +251,12 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     }
     if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
       issues.push('backends.proxy.url must be an http or https URL');
+    } else if (parsed.username || parsed.password) {
+      // Credentials belong in backends.proxy.username/password or the env vars
+      // below, never in the URL itself.
+      issues.push(
+        'backends.proxy.url must not include credentials (user:pass@); set PI_WEB_AGENT_PROXY_USERNAME and PI_WEB_AGENT_PROXY_PASSWORD (or backends.proxy.username / backends.proxy.password) instead'
+      );
     }
   }
 
