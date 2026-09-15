@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BACKEND_CONFIG,
   extractBackendConfigOverride,
+  extractProxyConfig,
   mergeBackendConfigLayers,
+  stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders
 } from '../../src/backends/config.js';
@@ -310,5 +312,143 @@ describe('usableSearchProviders', () => {
       }
     );
     expect(providers).toEqual(['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily']);
+  });
+});
+
+describe('proxy config', () => {
+  it('extracts proxy config from the config file', () => {
+    const override = extractBackendConfigOverride({
+      backends: {
+        proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+      }
+    });
+
+    expect(override.proxy).toEqual({ url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' });
+  });
+
+  it('drops proxy entries with a missing url', () => {
+    expect(extractBackendConfigOverride({ backends: { proxy: {} } }).proxy).toBeUndefined();
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 42 } } }).proxy).toBeUndefined();
+  });
+
+  it('keeps a malformed proxy url so validation can flag it', () => {
+    // Dropping these would silently disable the proxy and send traffic direct.
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'not a url' } } }).proxy).toEqual({
+      url: 'not a url'
+    });
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: 'ftp://nope.example' } } }).proxy).toEqual({
+      url: 'ftp://nope.example'
+    });
+    expect(
+      extractBackendConfigOverride({
+        backends: { proxy: { url: 'htttp://proxy:8080', username: 'user' } }
+      }).proxy
+    ).toEqual({ url: 'htttp://proxy:8080', username: 'user' });
+  });
+
+  it('flags a malformed proxy url extracted from a config file', () => {
+    const override = extractBackendConfigOverride({ backends: { proxy: { url: 'htttp://proxy:8080' } } });
+    const issues = validateBackendConfig(
+      mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, override)
+    );
+    expect(issues).toContain('backends.proxy.url must be an http or https URL');
+  });
+
+  it('ignores empty usernames but keeps passwords', () => {
+    const override = extractBackendConfigOverride({
+      backends: { proxy: { url: 'http://127.0.0.1:7890', username: '   ', password: '' } }
+    });
+
+    expect(override.proxy).toEqual({ url: 'http://127.0.0.1:7890', password: '' });
+  });
+
+  it('merges proxy fields across config layers', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        { proxy: { url: 'http://127.0.0.1:7890', username: 'user' } },
+        { proxy: { url: 'http://127.0.0.1:7891', password: 'secret' } }
+      ).proxy
+    ).toEqual({ url: 'http://127.0.0.1:7891', username: 'user', password: 'secret' });
+  });
+
+  it('reads an explicit blank url as a disable-proxy marker', () => {
+    expect(extractBackendConfigOverride({ backends: { proxy: { url: '' } } }).proxy).toEqual({ url: '' });
+    expect(extractProxyConfig({ url: '' })).toEqual({ url: '' });
+  });
+
+  it('lets an explicit disable in a higher layer clear a lower-layer proxy', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        { proxy: { url: 'http://127.0.0.1:7890', username: 'user' } },
+        { proxy: { url: '' } }
+      ).proxy
+    ).toBeUndefined();
+  });
+
+  it('lets a later real proxy re-enable after an explicit disable', () => {
+    expect(
+      mergeBackendConfigLayers(
+        DEFAULT_BACKEND_CONFIG,
+        { proxy: { url: '' } },
+        { proxy: { url: 'http://127.0.0.1:7891' } }
+      ).proxy
+    ).toEqual({ url: 'http://127.0.0.1:7891' });
+  });
+
+  it('flags a malformed proxy url in a hand-built config', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'not a url' }
+      })
+    ).toContain('backends.proxy.url must be an http or https URL');
+  });
+
+  it('rejects credentials embedded in the proxy url', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://user:secret@127.0.0.1:7890' }
+      })
+    ).toContain(
+      'backends.proxy.url must not include credentials (user:pass@); set PI_WEB_AGENT_PROXY_USERNAME and PI_WEB_AGENT_PROXY_PASSWORD (or backends.proxy.username / backends.proxy.password) instead'
+    );
+  });
+
+  it('flags a proxy url that embeds only a username', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://user@127.0.0.1:7890' }
+      })
+    ).toContain(
+      'backends.proxy.url must not include credentials (user:pass@); set PI_WEB_AGENT_PROXY_USERNAME and PI_WEB_AGENT_PROXY_PASSWORD (or backends.proxy.username / backends.proxy.password) instead'
+    );
+  });
+
+  it('accepts a proxy url with no embedded credentials', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+      })
+    ).toEqual([]);
+  });
+
+  it('strips credentials from a proxy url', () => {
+    expect(stripProxyCredentials('http://user:secret@127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
+    expect(stripProxyCredentials('https://user@proxy.example:8443')).toBe('https://proxy.example:8443');
+    expect(stripProxyCredentials('http://127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
+    expect(stripProxyCredentials('not a url')).toBe('not a url');
   });
 });

@@ -16,6 +16,12 @@ export type FirecrawlOptions = {
   onlyMainContent?: boolean;
 };
 
+export type ProxyConfig = {
+  url: string;
+  username?: string;
+  password?: string;
+};
+
 export type SearchBackendConfig = {
   provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily';
   baseUrl?: string;
@@ -37,12 +43,14 @@ export type BackendConfig = {
   search: SearchBackendConfig;
   fetch: FetchBackendConfig;
   headless: HeadlessBackendConfig;
+  proxy?: ProxyConfig;
 };
 
 export type BackendConfigOverride = {
   search?: Partial<SearchBackendConfig>;
   fetch?: Partial<FetchBackendConfig>;
   headless?: Partial<HeadlessBackendConfig>;
+  proxy?: ProxyConfig;
 };
 
 export type BackendConfigFile = {
@@ -50,6 +58,7 @@ export type BackendConfigFile = {
     search?: { provider?: unknown; baseUrl?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
     headless?: { provider?: unknown };
+    proxy?: { url?: unknown; username?: unknown; password?: unknown };
   };
 };
 
@@ -63,6 +72,74 @@ function extractStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const strings = value.filter((item): item is string => typeof item === 'string');
   return strings.length === value.length ? strings : undefined;
+}
+
+/**
+ * Remove any credentials (user:pass@) embedded in a proxy URL. pi-web-agent
+ * never reads or sends credentials from the URL; proxy auth comes from
+ * backends.proxy.username/password or PI_WEB_AGENT_PROXY_USERNAME /
+ * PI_WEB_AGENT_PROXY_PASSWORD. Stripping them here keeps them out of logs,
+ * doctor output, the settings UI, and the proxy connection itself.
+ */
+export function stripProxyCredentials(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (!parsed.username && !parsed.password) return url; // already credential-free
+  parsed.username = '';
+  parsed.password = '';
+  return parsed.toString().replace(/\/$/, '');
+}
+
+/**
+ * Whether a proxy url passes validation: a blank url is the "disable proxy"
+ * marker and passes; anything else must parse as an http(s) URL. This is a
+ * pure syntax check — no connectivity check is performed.
+ */
+export function isValidProxyUrl(url: string): boolean {
+  if (url.trim() === '') return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as { url?: unknown; username?: unknown; password?: unknown };
+
+  // An explicitly present but blank url is the "disable proxy" marker: it lets a
+  // higher-priority layer (e.g. a project) clear a proxy set in a lower layer.
+  if (typeof raw.url === 'string' && raw.url.trim() === '') {
+    return { url: '' };
+  }
+
+  if (typeof raw.url !== 'string' || !raw.url.trim()) return undefined;
+
+  const url = raw.url.trim();
+  let parsed: URL | undefined;
+  try {
+    parsed = new URL(url);
+  } catch {
+    parsed = undefined;
+  }
+  // A valid url is normalized. A malformed url is kept as-is (rather than
+  // dropped) so validation can flag it and the backend factory can fail loudly
+  // instead of silently sending traffic direct to the websites.
+  const config: ProxyConfig = {
+    url:
+      parsed && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        ? parsed.toString().replace(/\/$/, '')
+        : url
+  };
+  if (typeof raw.username === 'string' && raw.username.trim()) config.username = raw.username;
+  if (typeof raw.password === 'string') config.password = raw.password;
+  return config;
 }
 
 function extractSearxngOptions(value: unknown): SearxngOptions | undefined {
@@ -172,6 +249,11 @@ export function extractBackendConfigOverride(
     override.headless = { provider: 'local-browser' };
   }
 
+  const proxy = extractProxyConfig(backends?.proxy);
+  if (proxy) {
+    override.proxy = proxy;
+  }
+
   return override;
 }
 
@@ -180,6 +262,24 @@ export function validateBackendConfig(config: BackendConfig): string[] {
 
   if (config.search.provider === 'searxng' && !config.search.baseUrl) {
     issues.push('search provider searxng requires backends.search.baseUrl');
+  }
+
+  if (config.proxy && config.proxy.url.trim() !== '') {
+    let parsed: URL | undefined;
+    try {
+      parsed = new URL(config.proxy.url);
+    } catch {
+      parsed = undefined;
+    }
+    if (!isValidProxyUrl(config.proxy.url)) {
+      issues.push('backends.proxy.url must be an http or https URL');
+    } else if (parsed && (parsed.username || parsed.password)) {
+      // Credentials belong in backends.proxy.username/password or the env vars
+      // below, never in the URL itself.
+      issues.push(
+        'backends.proxy.url must not include credentials (user:pass@); set PI_WEB_AGENT_PROXY_USERNAME and PI_WEB_AGENT_PROXY_PASSWORD (or backends.proxy.username / backends.proxy.password) instead'
+      );
+    }
   }
 
   if (config.fetch.provider === 'firecrawl' && !config.fetch.baseUrl) {
@@ -255,7 +355,12 @@ export function mergeBackendConfigLayers(
     (merged, layer) => ({
       search: mergeSearchConfig(merged.search, layer?.search),
       fetch: mergeFetchConfig(merged.fetch, layer?.fetch),
-      headless: { ...merged.headless, ...layer?.headless }
+      headless: { ...merged.headless, ...layer?.headless },
+      proxy: layer?.proxy
+        ? layer.proxy.url === ''
+          ? undefined // explicit disable overrides any proxy from lower layers
+          : { ...merged.proxy, ...layer.proxy }
+        : merged.proxy
     }),
     DEFAULT_BACKEND_CONFIG
   );

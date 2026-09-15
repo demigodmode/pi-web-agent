@@ -192,4 +192,38 @@ describe('headless fetch', () => {
     expect(result.content.text.match(/Show more/g)?.length ?? 0).toBeLessThan(4);
     expect(result.content.text.match(/Privacy Terms/g)?.length ?? 0).toBeLessThan(3);
   });
+
+  it('passes the proxy to the browser launch options', async () => {
+    const launchBrowser = vi.fn(async () => ({
+      newContext: async () => ({
+        newPage: async () => ({
+          goto: async () => undefined,
+          waitForLoadState: async () => undefined,
+          content: async () =>
+            '<html><body><article><p>Rendered content that is long enough for extraction to consider it reliable enough.</p></article></body></html>',
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }),
+      close: async () => undefined
+    }));
+
+    const result = await headlessFetch('https://example.com', {
+      resolveBrowser: vi.fn().mockResolvedValue({
+        ok: false,
+        error: {
+          code: 'BROWSER_NOT_FOUND',
+          message: 'No compatible local browser was found for headless fetch.'
+        }
+      }),
+      launchBrowser,
+      proxy: { server: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+    });
+
+    expect(result.status).toBe('ok');
+    expect(launchBrowser).toHaveBeenCalledWith({
+      headless: true,
+      proxy: { server: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
+    });
+  });
 });

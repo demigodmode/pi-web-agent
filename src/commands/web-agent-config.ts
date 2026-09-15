@@ -1,6 +1,8 @@
 import {
   DEFAULT_BACKEND_CONFIG,
+  isValidProxyUrl,
   mergeBackendConfigLayers,
+  stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders,
   type BackendConfig,
@@ -36,6 +38,7 @@ import {
   type LoadedPresentationConfig
 } from '../presentation/config-store.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
+import { createProxyFetch } from '../fetch/proxy-fetch.js';
 import { getLatestChangelogEntry } from '../changelog-notice.js';
 import type {
   PresentationConfig,
@@ -98,7 +101,8 @@ function cloneBackendConfig(config: BackendConfig): BackendConfig {
       ...config.fetch,
       options: config.fetch.options ? { ...config.fetch.options } : undefined
     },
-    headless: { ...config.headless }
+    headless: { ...config.headless },
+    proxy: config.proxy ? { ...config.proxy } : undefined
   };
 }
 
@@ -163,8 +167,11 @@ function formatBackendSummary(config: BackendConfig = DEFAULT_BACKEND_CONFIG) {
   return [
     searchSuffix ? `${searchBase} ${searchSuffix}` : searchBase,
     fetchSuffix ? `${fetchBase} ${fetchSuffix}` : fetchBase,
-    `headless: ${config.headless.provider}`
-  ].join('\n');
+    `headless: ${config.headless.provider}`,
+    config.proxy ? `proxy: ${stripProxyCredentials(config.proxy.url)}` : undefined
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function formatConfigSummary(config: PresentationConfig) {
@@ -351,6 +358,12 @@ function buildBackendSettingsItems(
       label: 'Firecrawl API key',
       currentValue: 'env var',
       values: ['env var']
+    },
+    {
+      id: 'backend:proxy:url',
+      label: 'Proxy URL',
+      currentValue: backends.proxy ? stripProxyCredentials(backends.proxy.url) : 'not set',
+      submenu: createBackendUrlEditor(theme, 'HTTP proxy URL', 'http://127.0.0.1:7890', onUrlEditorOpenChange)
     }
   ];
 }
@@ -577,6 +590,14 @@ export function applySettingsValue(
     }
   }
 
+  if (id === 'backend:proxy:url') {
+    if (newValue.trim()) {
+      currentBackends.proxy = { ...currentBackends.proxy, url: newValue.trim() };
+    } else {
+      delete currentBackends.proxy;
+    }
+  }
+
   nextDrafts[nextScope] = currentDraft;
   nextBackendDrafts[nextScope] = currentBackends;
 
@@ -659,6 +680,17 @@ export function collapseBackendConfigToOverride(
 
   if (!sameJson(config.headless, inheritedConfig.headless)) {
     override.headless = { ...config.headless };
+  }
+
+  if (!sameJson(config.proxy, inheritedConfig.proxy)) {
+    if (config.proxy) {
+      const { password: _password, ...proxy } = config.proxy;
+      override.proxy = { ...proxy };
+    } else if (inheritedConfig.proxy) {
+      // The proxy was cleared at this scope; record an explicit disable so it
+      // overrides a proxy set in a lower (e.g. global) layer.
+      override.proxy = { url: '' };
+    }
   }
 
   return override;
@@ -917,7 +949,14 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
     arch: process.arch
   };
   const checkTypebox = deps.checkTypebox ?? defaultCheckTypebox;
-  const checkBackends = deps.checkBackends ?? ((config: BackendConfig) => checkBackendHealth(config));
+  const checkBackends = deps.checkBackends ?? ((config: BackendConfig) =>
+    checkBackendHealth(config, {
+      // An invalid proxy url is reported by validateBackendConfig below; never
+      // build a proxy agent from it (no connectivity check is attempted).
+      fetchImpl:
+        config.proxy && isValidProxyUrl(config.proxy.url) ? createProxyFetch(config.proxy) : fetch
+    })
+  );
   const getChangelog = deps.getChangelog ?? (() => getLatestChangelogEntry());
 
   pi.registerCommand('web-agent', {

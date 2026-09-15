@@ -25,6 +25,17 @@ describe('backend config validation', () => {
     ]);
   });
 
+  it('treats a blank proxy url as the disable marker', () => {
+    expect(
+      validateBackendConfig({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' },
+        proxy: { url: '' }
+      })
+    ).toEqual([]);
+  });
+
   it('warns for fallback values that do not match the selected provider', () => {
     expect(
       validateBackendConfig({

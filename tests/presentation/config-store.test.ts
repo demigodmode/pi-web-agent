@@ -232,7 +232,8 @@ describe('presentation config store', () => {
 
     await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
       search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
-      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http', apiKey: 'do-not-write' }
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http', apiKey: 'do-not-write' },
+      proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'do-not-write' }
     });
 
     const parsed = JSON.parse(readFileSync(projectPath, 'utf8'));
@@ -243,8 +244,30 @@ describe('presentation config store', () => {
     });
     expect(parsed.backends).toEqual({
       search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
-      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }
+      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' },
+      proxy: { url: 'http://127.0.0.1:7890', username: 'user' }
     });
+  });
+
+  it('lets a project-level proxy clear override a global proxy after reload', async () => {
+    const { globalPath, projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+
+    await saveBackendConfigScope({ homeDir, projectDir }, 'global', {
+      proxy: { url: 'http://127.0.0.1:7890' }
+    });
+    await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
+      proxy: { url: '' }
+    });
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+    expect(loaded.effectiveBackends.proxy).toBeUndefined();
+
+    // The marker is persisted in the project file, not dropped.
+    const projectParsed = JSON.parse(readFileSync(projectPath, 'utf8'));
+    expect(projectParsed.backends.proxy).toEqual({ url: '' });
+    // And the global proxy is left intact.
+    const globalParsed = JSON.parse(readFileSync(globalPath, 'utf8'));
+    expect(globalParsed.backends.proxy).toEqual({ url: 'http://127.0.0.1:7890' });
   });
 
   it('removes the selected scope file on reset', async () => {

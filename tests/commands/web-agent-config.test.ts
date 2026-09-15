@@ -142,6 +142,43 @@ describe('web-agent config draft helpers', () => {
     ).toEqual({});
   });
 
+  it('records an explicit proxy disable when clearing a proxy inherited from the parent scope', () => {
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' },
+          proxy: { url: 'http://127.0.0.1:7890' }
+        }
+      )
+    ).toEqual({ proxy: { url: '' } });
+  });
+
+  it('writes a proxy override when the scope sets a proxy that differs from the parent', () => {
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' },
+          proxy: { url: 'http://127.0.0.1:7891' }
+        },
+        {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' },
+          proxy: { url: 'http://127.0.0.1:7890' }
+        }
+      )
+    ).toEqual({ proxy: { url: 'http://127.0.0.1:7891' } });
+  });
+
   it('applies backend provider, fallback, and url draft values', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },

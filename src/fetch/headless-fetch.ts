@@ -3,6 +3,12 @@ import { extractReadableContentSafely } from '../extract/readability.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import type { WebFetchHeadlessResponse } from '../types.js';
 
+export type BrowserProxyOptions = {
+  server: string;
+  username?: string;
+  password?: string;
+};
+
 function cleanupRenderedText(text: string): string {
   let cleaned = text.replace(/(Show more)(\s+\1){1,}/gi, '$1');
   cleaned = cleaned.replace(/(Privacy Terms)(\s+\1){1,}/gi, '$1');
@@ -14,15 +20,23 @@ export async function headlessFetch(
   url: string,
   {
     configuredPath,
+    proxy,
     resolveBrowser = (options?: { configuredPath?: string }) =>
       resolveBrowserExecutable({ configuredPath: options?.configuredPath }),
-    launchBrowser = ({ executablePath, headless }: { executablePath?: string; headless: true }) =>
-      chromium.launch(executablePath ? { executablePath, headless } : { headless }),
+    launchBrowser = ({ executablePath, headless, proxy }: {
+      executablePath?: string;
+      headless: true;
+      proxy?: BrowserProxyOptions;
+    }) =>
+      chromium.launch(
+        executablePath ? { executablePath, headless, ...(proxy ? { proxy } : {}) } : { headless, ...(proxy ? { proxy } : {}) }
+      ),
     now = () => Date.now()
   }: {
     configuredPath?: string;
+    proxy?: BrowserProxyOptions;
     resolveBrowser?: (options?: { configuredPath?: string }) => Promise<BrowserResolutionResult>;
-    launchBrowser?: (options: { executablePath?: string; headless: true }) => Promise<{
+    launchBrowser?: (options: { executablePath?: string; headless: true; proxy?: BrowserProxyOptions }) => Promise<{
       newContext: () => Promise<{ newPage: () => Promise<any>; close: () => Promise<void> }>;
       close: () => Promise<void>;
     }>;
@@ -41,8 +55,8 @@ export async function headlessFetch(
 
   const browserName = resolved.ok ? resolved.browser : 'chromium';
   const launchOptions = resolved.ok
-    ? { executablePath: resolved.executablePath, headless: true as const }
-    : { headless: true as const };
+    ? { executablePath: resolved.executablePath, headless: true as const, ...(proxy ? { proxy } : {}) }
+    : { headless: true as const, ...(proxy ? { proxy } : {}) };
 
   let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
   let context: Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newContext']>> | undefined;

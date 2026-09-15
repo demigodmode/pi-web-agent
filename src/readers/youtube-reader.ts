@@ -5,6 +5,8 @@ import { READER_TEXT_CAP } from './limits.js';
 
 type Subtitle = { start: string; dur: string; text: string };
 type YoutubeReaderDeps = {
+  /** Fetch implementation used for YouTube's requests (defaults to global fetch). */
+  fetchImpl?: typeof fetch;
   fetchSubtitles?: (input: { videoID: string; lang: string }) => Promise<Subtitle[]>;
   fetchDetails?: (input: { videoID: string; lang: string }) => Promise<{ title?: string; description?: string }>;
 };
@@ -28,7 +30,23 @@ function extractVideoId(url: string): string | undefined {
   return undefined;
 }
 
-export function createYoutubeReader({ fetchSubtitles = getSubtitles, fetchDetails = getVideoDetails }: YoutubeReaderDeps = {}): SpecialContentReader {
+export function createYoutubeReader({
+  fetchImpl = fetch,
+  fetchSubtitles,
+  fetchDetails
+}: YoutubeReaderDeps = {}): SpecialContentReader {
+  // Route YouTube's caption/metadata requests through the configured fetch
+  // client (e.g. the proxy) unless an explicit override is provided.
+  const doFetchSubtitles =
+    fetchSubtitles ?? ((input: { videoID: string; lang: string }) => getSubtitles({ ...input, fetch: fetchImpl }));
+  const doFetchDetails =
+    fetchDetails ??
+    ((input: { videoID: string; lang: string }) =>
+      getVideoDetails({ ...input, fetch: fetchImpl }).then((details) => ({
+        title: details.title,
+        description: details.description
+      })));
+
   return {
     name: 'youtube',
     canHandle(url: string): boolean {
@@ -46,8 +64,8 @@ export function createYoutubeReader({ fetchSubtitles = getSubtitles, fetchDetail
       }
       try {
         const [subtitles, details] = await Promise.all([
-          fetchSubtitles({ videoID, lang: 'en' }),
-          fetchDetails({ videoID, lang: 'en' }).catch(() => ({ title: undefined }))
+          doFetchSubtitles({ videoID, lang: 'en' }),
+          doFetchDetails({ videoID, lang: 'en' }).catch(() => ({ title: undefined }))
         ]);
 
         if (!subtitles || subtitles.length === 0) {

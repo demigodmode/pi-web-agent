@@ -1,6 +1,10 @@
 import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
+import { createHttpFetcher } from '../fetch/http-fetch.js';
+import { createProxyFetch, resolveProxyCredentials } from '../fetch/proxy-fetch.js';
+import { headlessFetch } from '../fetch/headless-fetch.js';
 import { createBraveSearchTool } from '../search/brave.js';
 import { createYouComSearchTool } from '../search/youcom.js';
+import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
@@ -11,7 +15,7 @@ import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
 import type { SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
-import { DEFAULT_BACKEND_CONFIG, type BackendConfig, usableSearchProviders } from './config.js';
+import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
 import { createGithubReader } from '../readers/github-reader.js';
 import { createPdfReader } from '../readers/pdf-reader.js';
@@ -33,6 +37,7 @@ export type BackendFactoryDeps = {
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
+  createProxyFetch?: (proxy: ProxyConfig) => typeof fetch;
 };
 
 function invalidSearxngSearch() {
@@ -126,59 +131,117 @@ export function createBackendSet(
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
+  const makeProxyFetch = deps.createProxyFetch ?? createProxyFetch;
+
+  // A blank url is the "disable proxy" marker: treat it as no proxy at all.
+  const proxy = config.proxy && config.proxy.url.trim() !== '' ? config.proxy : undefined;
+
+  // A configured proxy whose url fails validation must not be silently ignored
+  // — that would send traffic direct to the websites. Every request errors out
+  // instead. No connectivity check is needed: the url itself is the problem.
+  if (proxy && !isValidProxyUrl(proxy.url)) {
+    const message =
+      `backends.proxy.url (${proxy.url}) is not a valid http or https URL. ` +
+      'Web requests are blocked until it is fixed; set backends.proxy.url to "" to disable the proxy.';
+    return {
+      search: async () => {
+        const result: WebSearchResponse = {
+          status: 'error',
+          results: [],
+          metadata: { backend: config.search.provider, cacheHit: false },
+          error: { code: 'BACKEND_CONFIG_INVALID', message }
+        };
+        return { ...result, presentation: buildSearchPresentation(result) };
+      },
+      fetchPage: async ({ url }) => {
+        const result: WebFetchResponse = {
+          status: 'error',
+          url,
+          metadata: { method: 'http', cacheHit: false },
+          error: { code: 'BACKEND_CONFIG_INVALID', message }
+        };
+        return { ...result, presentation: buildFetchPresentation(result) };
+      },
+      headlessFetch: async ({ url }) => {
+        const result: WebFetchHeadlessResponse = {
+          status: 'error',
+          url,
+          metadata: { method: 'headless', cacheHit: false },
+          error: { code: 'BACKEND_CONFIG_INVALID', message }
+        };
+        return { ...result, presentation: buildFetchPresentation(result) };
+      }
+    };
+  }
+
+  // When a proxy is configured, every outbound HTTP request (search, fetch,
+  // readers, and doctor-style checks) goes through it; headless browser
+  // traffic gets the same proxy via Playwright launch options.
+  const fetchImpl: typeof fetch = proxy ? makeProxyFetch(proxy) : fetch;
+  const proxyCredentials = proxy ? resolveProxyCredentials(proxy) : undefined;
+  const proxyBrowserOptions = proxy
+    ? {
+        server: stripProxyCredentials(proxy.url),
+        ...(proxyCredentials?.username !== undefined ? { username: proxyCredentials.username } : {}),
+        ...(proxyCredentials?.password !== undefined ? { password: proxyCredentials.password } : {})
+      }
+    : undefined;
+
+  const createDuckDuckGo = () =>
+    createDuckDuckGoSearch({ searchHtml: (query) => fetchDuckDuckGoHtml(query, { fetchImpl }) });
 
   function buildProviderSearch(name: SearchProviderName): BackendSet['search'] {
     switch (name) {
       case 'searxng':
         return config.search.baseUrl
-          ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options })
+          ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options, fetchImpl })
           : invalidSearxngSearch();
       case 'brave':
-        return createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY });
+        return createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY, fetchImpl });
       case 'youcom':
-        return createYouComSearch({ apiKey: process.env.YDC_API_KEY });
+        return createYouComSearch({ apiKey: process.env.YDC_API_KEY, fetchImpl });
       case 'exa':
-        return createExaSearch({ apiKey: process.env.EXA_API_KEY });
+        return createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl });
       case 'tavily':
-        return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY });
+        return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
       case 'duckduckgo':
       default:
-        return createDuckDuckGoSearch();
+        return createDuckDuckGo();
     }
   }
 
   let search = config.search.provider === 'searxng'
     ? config.search.baseUrl
-      ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options })
+      ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options, fetchImpl })
       : invalidSearxngSearch()
     : config.search.provider === 'brave'
-      ? createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY })
+      ? createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY, fetchImpl })
       : config.search.provider === 'youcom'
-        ? createYouComSearch({ apiKey: process.env.YDC_API_KEY })
+        ? createYouComSearch({ apiKey: process.env.YDC_API_KEY, fetchImpl })
         : config.search.provider === 'exa'
-          ? createExaSearch({ apiKey: process.env.EXA_API_KEY })
+          ? createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl })
           : config.search.provider === 'tavily'
-            ? createTavilySearch({ apiKey: process.env.TAVILY_API_KEY })
-            : createDuckDuckGoSearch();
+            ? createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl })
+            : createDuckDuckGo();
 
   if (config.search.provider === 'searxng' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGoSearch(), 'searxng');
+    search = withSearchFallback(search, createDuckDuckGo(), 'searxng');
   }
 
   if (config.search.provider === 'brave' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGoSearch(), 'brave');
+    search = withSearchFallback(search, createDuckDuckGo(), 'brave');
   }
 
   if (config.search.provider === 'youcom' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGoSearch(), 'youcom');
+    search = withSearchFallback(search, createDuckDuckGo(), 'youcom');
   }
 
   if (config.search.provider === 'exa' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGoSearch(), 'exa');
+    search = withSearchFallback(search, createDuckDuckGo(), 'exa');
   }
 
   if (config.search.provider === 'tavily' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGoSearch(), 'tavily');
+    search = withSearchFallback(search, createDuckDuckGo(), 'tavily');
   }
 
   const fanoutConfig = config.search.fanout;
@@ -208,17 +271,18 @@ export function createBackendSet(
   const usingDuckDuckGoDefault =
     config.search.provider === 'duckduckgo' || !config.search.provider;
   if (usingDuckDuckGoDefault && !keylessFallbackDisabled) {
-    search = withSearchFallback(search, createTavilySearch({ keyless: true }), 'duckduckgo');
+    search = withSearchFallback(search, createTavilySearch({ keyless: true, fetchImpl }), 'duckduckgo');
   }
 
-  const httpFetch = createHttpFetch();
+  const httpFetch = createHttpFetch({ fetchPage: createHttpFetcher({ fetchImpl }) });
   let fetchPage = config.fetch.provider === 'firecrawl'
     ? config.fetch.baseUrl
       ? createHttpFetch({
           fetchPage: createFirecrawlFetch({
             baseUrl: config.fetch.baseUrl,
             apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY,
-            options: config.fetch.options
+            options: config.fetch.options,
+            fetchImpl
           })
         })
       : createHttpFetch({ fetchPage: invalidFirecrawlFetch() })
@@ -229,13 +293,16 @@ export function createBackendSet(
   }
 
   const fetchPageWithReaders = createSpecialContentResolver({
-    readers: [createGithubReader(), createPdfReader(), createYoutubeReader()],
+    readers: [createGithubReader({ fetchImpl }), createPdfReader({ fetchImpl }), createYoutubeReader({ fetchImpl })],
     fallback: fetchPage
   });
+
+  const headlessPage = (url: string) =>
+    proxyBrowserOptions ? headlessFetch(url, { proxy: proxyBrowserOptions }) : headlessFetch(url);
 
   return {
     search,
     fetchPage: fetchPageWithReaders,
-    headlessFetch: createHeadlessFetch()
+    headlessFetch: createHeadlessFetch({ fetchPage: headlessPage })
   };
 }
