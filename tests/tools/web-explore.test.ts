@@ -178,14 +178,16 @@ describe('web_explore tool', () => {
   });
 
   it('rejects empty exploration queries', async () => {
-    const webExplore = createWebExploreTool({
-      explore: vi.fn()
+    const explore = vi.fn(async (): Promise<never> => {
+      throw new Error('explore should not run for an empty query');
     });
+    const webExplore = createWebExploreTool({ explore });
 
     await expect(webExplore({ query: '   ' })).resolves.toMatchObject({
       status: 'error',
       error: { code: 'INVALID_QUERY' }
     });
+    expect(explore).not.toHaveBeenCalled();
   });
 
   it('does not leak raw internal worker bookkeeping into visible output', async () => {
