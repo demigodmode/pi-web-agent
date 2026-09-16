@@ -105,6 +105,31 @@ This is an easy way to waste time debugging the wrong thing.
 
 A quick sanity check is to make a tiny local change, reload Pi, and see whether the behavior changes with it.
 
+## Pi fails to start with a module or Set error
+
+You might see an error like:
+
+```
+Error: Failed to load extension "/home/user/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/dist/extension.js": Failed to load extension: ResolveMessage: Cannot find module 'punycode/' from '/home/user/.pi/agent/npm/node_modules/tr46/index.js'
+Hint: Start without extensions using "pi -ne".
+```
+
+Or a variant that says `Failed to load extension: Set operation called on non-Set object`.
+
+Both come from pi's extension loader, which cannot handle two patterns in jsdom's dependency tree. pi-web-agent patches those files on install and again every time the extension loads.
+
+The patch can still come undone in between. Every pi extension shares one `~/.pi/agent/npm/node_modules` tree, so installing or updating any other extension re-extracts the files and reverts it.
+
+To reapply it by hand:
+
+```
+node ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/scripts/patch-jiti-compat.mjs
+```
+
+Then restart Pi.
+
+`/web-agent doctor` reports the current state. A healthy install prints `jsdom compat patch: ok`. If the patch could not be applied it prints `jsdom compat patch: needed (...)` along with the command above.
+
 ## The model used shell commands for web research
 
 That is not the intended path.

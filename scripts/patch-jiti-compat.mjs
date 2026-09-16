@@ -10,19 +10,63 @@
 // when this package is installed as a pi extension via `pi install npm:...`.
 // Safe to run multiple times and safe to no-op if the target files or
 // patterns are missing (e.g. a future dependency bump changes the shape).
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+//
+// src/jiti-compat.ts does the same two patches at extension load time, because
+// the shared ~/.pi/agent/npm tree means another extension's install can revert
+// them long after this hook ran (#34). The logic is deliberately duplicated
+// rather than shared: postinstall runs before `npm run build` in CI and in a
+// fresh clone, so this file cannot depend on dist/. Keep the two in sync.
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
 
-const resolveFromHere = createRequire(import.meta.url).resolve;
+const requireFromHere = createRequire(import.meta.url);
+const resolveFromHere = requireFromHere.resolve;
+
+// Resolve the copies jsdom actually loads. The shared ~/.pi/agent/npm tree
+// often holds a second, nested copy of a package when extensions disagree on
+// versions, and patching a hoisted copy jsdom never requires would fix
+// nothing. Mirrors resolveFromJsdom in src/jiti-compat.ts.
+function resolveFromJsdom(specifier, via) {
+  try {
+    const jsdomEntry = resolveFromHere("jsdom");
+    const importer = via ? createRequire(jsdomEntry).resolve(via) : jsdomEntry;
+    return createRequire(importer).resolve(specifier);
+  } catch {
+    return resolveFromHere(specifier);
+  }
+}
+
+// Temp file + rename, not an in-place write. `writeFileSync` truncates first,
+// so an interrupted write would leave a half-patched file that still contains
+// the marker comment and would be skipped as "already patched" forever.
+// Mirrors writeFileAtomic in src/jiti-compat.ts.
+function writeFileAtomic(path, contents) {
+  const temp = `${path}.pi-web-agent-${process.pid}.tmp`;
+  try {
+    writeFileSync(temp, contents);
+    renameSync(temp, path);
+  } catch (err) {
+    try {
+      if (existsSync(temp)) unlinkSync(temp);
+    } catch {
+      // Best effort.
+    }
+    throw err;
+  }
+}
 
 function findPackageRoot(entryFile, packageName) {
   let directory = dirname(entryFile);
   while (true) {
     const manifestFile = join(directory, "package.json");
     if (existsSync(manifestFile)) {
-      const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
-      if (manifest.name === packageName) return directory;
+      try {
+        const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+        if (manifest.name === packageName) return directory;
+      } catch {
+        // Malformed package.json on the way up. Keep walking.
+      }
     }
 
     const parent = dirname(directory);
@@ -34,7 +78,7 @@ function findPackageRoot(entryFile, packageName) {
 }
 
 function patchTr46() {
-  const file = resolveFromHere("tr46");
+  const file = resolveFromJsdom("tr46", "whatwg-url");
   if (!existsSync(file)) {
     console.debug("patch-jiti-compat: tr46/index.js not found, skipping");
     return;
@@ -44,7 +88,7 @@ function patchTr46() {
     console.debug("patch-jiti-compat: tr46/index.js does not match expected pattern, skipping");
     return;
   }
-  writeFileSync(
+  writeFileAtomic(
     file,
     contents.replaceAll('require("punycode/")', 'require("punycode/punycode.js")'),
   );
@@ -61,7 +105,7 @@ module.exports[Symbol.iterator] = Set.prototype[Symbol.iterator].bind(module.exp
 `;
 
 function patchCssstyleSetExports() {
-  const packageRoot = findPackageRoot(resolveFromHere("cssstyle"), "cssstyle");
+  const packageRoot = findPackageRoot(resolveFromJsdom("cssstyle"), "cssstyle");
   const files = [
     join(packageRoot, "lib", "allExtraProperties.js"),
     join(packageRoot, "lib", "generated", "allProperties.js"),
@@ -79,7 +123,7 @@ function patchCssstyleSetExports() {
       console.debug(`patch-jiti-compat: ${label} does not match expected pattern, skipping`);
       continue;
     }
-    writeFileSync(file, contents + SET_SHIM);
+    writeFileAtomic(file, contents + SET_SHIM);
     console.log(`patch-jiti-compat: patched ${label}`);
   }
 }

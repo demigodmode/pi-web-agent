@@ -732,7 +732,11 @@ describe('web-agent config commands', () => {
         effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
         effectiveBackends: DEFAULT_BACKEND_CONFIG
       }),
-      checkBackends: vi.fn().mockResolvedValue(['search backend: duckduckgo', 'fetch backend: http'])
+      checkBackends: vi.fn().mockResolvedValue(['search backend: duckduckgo', 'fetch backend: http']),
+      // Injected so this stays hermetic. The real checkJitiCompat reads this
+      // machine's node_modules, which would make the test fail on exactly the
+      // trees where #34 has recurred.
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] })
     });
 
     const notify = vi.fn();
@@ -747,6 +751,41 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
     expect(notify.mock.calls[0][0]).toContain('search backend: duckduckgo');
     expect(notify.mock.calls[0][0]).toContain('fetch backend: http');
+    expect(notify.mock.calls[0][0]).toContain('jsdom compat patch: ok');
+  });
+
+  it('reports a needed jsdom compat patch and the recovery command in doctor output', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      resolveBrowser: vi.fn().mockResolvedValue({
+        ok: true,
+        executablePath: '/usr/bin/chromium',
+        browser: 'chromium'
+      }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: ['tr46/index.js'] }),
+      load: vi.fn().mockResolvedValue({
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
+      }),
+      checkBackends: vi.fn().mockResolvedValue([])
+    });
+
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+
+    expect(notify.mock.calls[0][0]).toContain('jsdom compat patch: needed (tr46/index.js)');
+    expect(notify.mock.calls[0][0]).toContain(
+      'Run: node ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/scripts/patch-jiti-compat.mjs'
+    );
+    expect(notify.mock.calls[0][0]).toContain('then restart Pi.');
   });
 
   it('renders backend validation warnings in doctor output', async () => {
