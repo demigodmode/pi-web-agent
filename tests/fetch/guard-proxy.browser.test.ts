@@ -69,6 +69,22 @@ async function fetchInBrowser(
   return { result, refusedHosts };
 }
 
+/**
+ * A lookup that only answers `host`, returning `allowedCalls` answers of 127.0.0.1 and
+ * 127.0.0.2 after that. Chromium (notably Playwright's build in CI) makes its own background
+ * requests through the proxy; answering only `host` keeps those from consuming the sequence.
+ */
+function flippingLookup(host: string, allowedCalls: number) {
+  let calls = 0;
+  return vi.fn<LookupFn>(async (requested) => {
+    if (requested !== host) {
+      throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${requested}`), { code: 'ENOTFOUND' });
+    }
+    calls += 1;
+    return [{ address: calls <= allowedCalls ? '127.0.0.1' : '127.0.0.2', family: 4 }];
+  });
+}
+
 const pairLookup = () => fakeLookup({ 'ok.test': ['127.0.0.1'], 'evil.test': ['127.0.0.2'] });
 
 describe.skipIf(!browserAvailable || process.platform !== 'linux')('guard proxy with a real browser', () => {
@@ -184,10 +200,7 @@ describe.skipIf(!browserAvailable || process.platform !== 'linux')('guard proxy 
   it('never reaches the blocked server when DNS changes between checks', async () => {
     const pair = await startServerPair();
     cleanups.push(() => pair.close());
-    const lookup: LookupFn = vi
-      .fn()
-      .mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }])
-      .mockResolvedValue([{ address: '127.0.0.2', family: 4 }]);
+    const lookup = flippingLookup('flip.test', 1);
 
     const { result, refusedHosts } = await fetchInBrowser(`http://flip.test:${pair.port}/`, { lookup });
 
@@ -212,16 +225,11 @@ describe.skipIf(!browserAvailable || process.platform !== 'linux')('guard proxy 
     cleanups.push(() => pair.close());
     // Call 1 is headless's pre-launch check, call 2 the proxy resolving the page
     // navigation. Every later call (the image's own forwarded request) sees 127.0.0.2.
-    const lookup = vi
-      .fn<LookupFn>()
-      .mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }])
-      .mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }])
-      .mockResolvedValue([{ address: '127.0.0.2', family: 4 }]);
+    const lookup = flippingLookup('flip.test', 2);
 
     const { result, refusedHosts } = await fetchInBrowser(`http://flip.test:${pair.port}/`, { lookup });
 
-    expect(lookup.mock.calls.length).toBeGreaterThanOrEqual(3);
-    expect(lookup.mock.calls.every(([host]) => host === 'flip.test')).toBe(true);
+    expect(lookup.mock.calls.filter(([host]) => host === 'flip.test').length).toBeGreaterThanOrEqual(3);
     expect(result.status).toBe('ok');
     expect(result.metadata.blockedSubresources).toBeGreaterThanOrEqual(1);
     expect(pair.evil.connections).toBe(0);
