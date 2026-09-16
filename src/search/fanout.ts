@@ -90,6 +90,7 @@ function withTimeout(promise: Promise<WebSearchResponse>, ms: number, name: Sear
   });
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(timedOut()), ms);
+    timer.unref?.();
     promise.then(
       (value) => {
         clearTimeout(timer);

@@ -54,7 +54,6 @@ export type ResearchRunMetadata = {
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
   searchCoveragePartial?: boolean;
-  searchAttempts?: Attempt[];
   terminalFailure?: { code: string; message: string };
 };
 
