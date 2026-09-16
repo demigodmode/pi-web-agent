@@ -19,7 +19,9 @@ export type LookupFn = (host: string) => Promise<Array<{ address: string; family
 
 export type NetworkGuardConfig = { allowRanges?: string[] };
 
-export type GuardVerdict = { allowed: true } | { allowed: false; host: string; address: string };
+export type GuardVerdict =
+  | { allowed: true; unresolved?: true }
+  | { allowed: false; host: string; address: string };
 
 export type NetworkGuard = {
   isBlockedAddress(address: string): boolean;
@@ -227,7 +229,7 @@ export function createNetworkGuard(
     } catch {
       // Unresolvable here. The fetch itself will fail with its own error, and
       // on the direct path the connect-time check still applies.
-      return { allowed: true };
+      return { allowed: true, unresolved: true };
     }
 
     // Any private answer blocks: which address a connection picks is not ours to control.

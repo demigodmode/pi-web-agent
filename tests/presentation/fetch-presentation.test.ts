@@ -50,3 +50,24 @@ describe('buildFetchPresentation', () => {
     expect(presentation.views.compact).toBe('firecrawl failed; used http fallback. Fetched page · article extracted · 2 words');
   });
 });
+
+describe('fetch presentation blocked subresources', () => {
+  const base = {
+    status: 'ok' as const,
+    url: 'https://example.com/',
+    content: { title: 'Example', text: 'Readable content' },
+    metadata: { method: 'headless' as const, cacheHit: false }
+  };
+
+  it('shows the blocked request count in the verbose view only', () => {
+    const presentation = buildFetchPresentation({ ...base, metadata: { ...base.metadata, blockedSubresources: 2 } });
+
+    expect(presentation.views.verbose).toContain('Blocked private-address requests: 2');
+    expect(presentation.views.compact).not.toContain('Blocked');
+    expect(presentation.views.preview ?? '').not.toContain('Blocked');
+  });
+
+  it('omits the line when nothing was blocked', () => {
+    expect(buildFetchPresentation(base).views.verbose).not.toContain('Blocked');
+  });
+});

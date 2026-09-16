@@ -2,6 +2,8 @@ import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
 import { createHttpFetcher } from '../fetch/http-fetch.js';
 import { createProxyFetch, resolveProxyCredentials } from '../fetch/proxy-fetch.js';
 import { headlessFetch } from '../fetch/headless-fetch.js';
+import { createGuardedFetch, createPinnedFetch } from '../fetch/guarded-fetch.js';
+import { createNetworkGuard, findBlockedAddressError, type NetworkGuard } from '../fetch/network-guard.js';
 import { createBraveSearchTool } from '../search/brave.js';
 import { createYouComSearchTool } from '../search/youcom.js';
 import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
@@ -38,6 +40,8 @@ export type BackendFactoryDeps = {
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
   createProxyFetch?: (proxy: ProxyConfig) => typeof fetch;
+  networkGuard?: NetworkGuard;
+  createPinnedFetch?: (guard: NetworkGuard) => typeof fetch;
 };
 
 function invalidSearxngSearch() {
@@ -94,6 +98,33 @@ function withSearchFallback(
       }
     };
     return { ...result, presentation: buildSearchPresentation(result) };
+  };
+}
+
+/**
+ * Checks the target URL before dispatching to the http fetcher, a content
+ * reader, or Firecrawl. Doing it here means a private URL is refused once, in
+ * one place, and never reaches Firecrawl or its http fallback (#53).
+ */
+function withTargetGuard(
+  fetchPage: BackendSet['fetchPage'],
+  guard: NetworkGuard
+): BackendSet['fetchPage'] {
+  return async (input) => {
+    try {
+      await guard.assertUrlAllowed(input.url);
+    } catch (error) {
+      const blocked = findBlockedAddressError(error);
+      if (!blocked) throw error;
+      const result: WebFetchResponse = {
+        status: 'error',
+        url: input.url,
+        metadata: { method: 'http', cacheHit: false },
+        error: { code: blocked.code, message: blocked.message }
+      };
+      return { ...result, presentation: buildFetchPresentation(result) };
+    }
+    return fetchPage(input);
   };
 }
 
@@ -187,6 +218,14 @@ export function createBackendSet(
       }
     : undefined;
 
+  // Model-chosen URLs only. Search APIs and the configured SearXNG/Firecrawl
+  // endpoints keep using fetchImpl: the user typed those (#53).
+  const networkGuard = deps.networkGuard ?? createNetworkGuard({ allowRanges: config.network?.allowRanges ?? [] });
+  const makePinnedFetch = deps.createPinnedFetch ?? ((guard: NetworkGuard) => createPinnedFetch(guard));
+  // Behind a proxy the local connection is to the proxy itself, so the
+  // connect-time check would block everything; per-hop checks still apply.
+  const targetFetch = createGuardedFetch(proxy ? fetchImpl : makePinnedFetch(networkGuard), networkGuard);
+
   const createDuckDuckGo = () =>
     createDuckDuckGoSearch({ searchHtml: (query) => fetchDuckDuckGoHtml(query, { fetchImpl }) });
 
@@ -274,7 +313,7 @@ export function createBackendSet(
     search = withSearchFallback(search, createTavilySearch({ keyless: true, fetchImpl }), 'duckduckgo');
   }
 
-  const httpFetch = createHttpFetch({ fetchPage: createHttpFetcher({ fetchImpl }) });
+  const httpFetch = createHttpFetch({ fetchPage: createHttpFetcher({ fetchImpl: targetFetch }) });
   let fetchPage = config.fetch.provider === 'firecrawl'
     ? config.fetch.baseUrl
       ? createHttpFetch({
@@ -293,16 +332,20 @@ export function createBackendSet(
   }
 
   const fetchPageWithReaders = createSpecialContentResolver({
-    readers: [createGithubReader({ fetchImpl }), createPdfReader({ fetchImpl }), createYoutubeReader({ fetchImpl })],
+    readers: [
+      createGithubReader({ fetchImpl: targetFetch }),
+      createPdfReader({ fetchImpl: targetFetch }),
+      createYoutubeReader({ fetchImpl: targetFetch })
+    ],
     fallback: fetchPage
   });
 
   const headlessPage = (url: string) =>
-    proxyBrowserOptions ? headlessFetch(url, { proxy: proxyBrowserOptions }) : headlessFetch(url);
+    headlessFetch(url, { ...(proxyBrowserOptions ? { proxy: proxyBrowserOptions } : {}), guard: networkGuard });
 
   return {
     search,
-    fetchPage: fetchPageWithReaders,
+    fetchPage: withTargetGuard(fetchPageWithReaders, networkGuard),
     headlessFetch: createHeadlessFetch({ fetchPage: headlessPage })
   };
 }

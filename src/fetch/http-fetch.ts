@@ -1,4 +1,5 @@
 import { extractReadableContentSafely } from '../extract/readability.js';
+import { findBlockedAddressError } from './network-guard.js';
 import type { WebFetchResponse } from '../types.js';
 
 function looksLikeScriptShell(html: string): boolean {
@@ -26,7 +27,19 @@ export function createHttpFetcher({
   fetchImpl?: typeof fetch;
 } = {}) {
   return async function httpFetch(url: string): Promise<WebFetchResponse> {
-    const response = await fetchImpl(url);
+    let response: Response;
+    try {
+      response = await fetchImpl(url);
+    } catch (error) {
+      const blocked = findBlockedAddressError(error);
+      if (!blocked) throw error;
+      return {
+        status: 'error',
+        url,
+        metadata: { method: 'http', cacheHit: false },
+        error: { code: blocked.code, message: blocked.message }
+      };
+    }
     const contentType = response.headers.get('content-type') ?? '';
 
     if (!contentType.includes('text/html')) {
