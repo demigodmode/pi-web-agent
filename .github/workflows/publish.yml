@@ -42,7 +42,10 @@ jobs:
       - run: npm -v
       - run: npm ci
       - run: npm run lint
+      - run: npx playwright install --with-deps chromium
       - run: npm test
+        env:
+          PI_WEB_AGENT_REQUIRE_BROWSER_TESTS: '1'
       - run: npm run build
       - run: npx --yes npm@11.13.0 publish --access public --provenance
       - if: failure()
