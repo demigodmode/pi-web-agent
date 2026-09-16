@@ -22,9 +22,14 @@ export function failureOf(result: { status: string; error?: ToolError }): Failur
 export function parseRetryAfter(value: string | null | undefined, now: number): number | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
-  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
-  // Only accept something that looks like an HTTP-date; Date.parse happily reads "-5" as a year.
-  if (!/[a-z]/i.test(trimmed)) return undefined;
+  if (/^\d+$/.test(trimmed)) {
+    const ms = Number(trimmed) * 1000;
+    // A huge digit string overflows to Infinity; keep it finite (and JSON-safe) so the
+    // cooldown clamps to the maximum instead of falling back to the default.
+    return Number.isFinite(ms) ? Math.min(ms, Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+  }
+  // IMF-fixdate only (RFC 9110 preferred form). V8's Date.parse accepts things like "-5" or "abc 2099".
+  if (!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(trimmed)) return undefined;
   const at = Date.parse(trimmed);
   if (Number.isNaN(at) || at <= now) return undefined;
   return at - now;

@@ -132,10 +132,21 @@ describe('brave search', () => {
     }
   });
 
-  it('treats a 200 without a web block as a valid empty search', async () => {
-    const search = createBraveSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ query: { original: 'q' } })) });
+  it('treats a search response without a web block as a valid empty search', async () => {
+    const search = createBraveSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({ type: 'search', query: { original: 'q' } }))
+    });
     const result = await search({ query: 'q' });
     expect(result).toMatchObject({ status: 'ok', results: [] });
+  });
+
+  it('does not trust an error-shaped or partial 200 as a valid empty search', async () => {
+    for (const body of [{}, { type: 'ErrorResponse', error: { code: 'X' } }, { type: 'search', web: null }, { web: 'nope' }]) {
+      const search = createBraveSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
+      const result = await search({ query: 'q' });
+      expect(result.error?.failure?.kind).toBe('bad_response');
+    }
   });
 
   it('classifies a 429 as rate_limited with the retry time, never quota_exhausted', async () => {

@@ -146,3 +146,68 @@ describe('createFanoutSearch', () => {
     expect(res.metadata.fanout?.providers).toEqual([]);
   });
 });
+
+describe('fanout outcomes and precedence (#55)', () => {
+  const okP = (name: any, n = 2) => ({ name, search: async () => ({ status: 'ok' as const, results: Array.from({ length: n }, (_, i) => ({ title: `${name}${i}`, url: `https://${name}${i}.test/`, snippet: '' })), metadata: { backend: name, cacheHit: false } }) });
+  const emptyP = (name: any) => ({ name, search: async () => ({ status: 'ok' as const, results: [], metadata: { backend: name, cacheHit: false } }) });
+  const failP = (name: any, kind: any, attempts?: any) => ({
+    name,
+    search: async () => ({ status: 'error' as const, results: [], metadata: { backend: name, cacheHit: false, ...(attempts ? { attempts } : {}) }, error: { code: 'X', message: `${name} ${kind}`, failure: { kind } } })
+  });
+
+  it('a terminal outcome wins over results and empty responses', async () => {
+    for (const terminal of ['config_global', 'guard_refused']) {
+      const result = await createFanoutSearch({ providers: [okP('brave', 5), emptyP('exa'), failP('tavily', terminal)], mode: 'on' })({ query: 'q' });
+      expect(result.status).toBe('error');
+      expect(result.error?.failure?.kind).toBe(terminal);
+      expect(result.error?.code).not.toBe('FANOUT_ALL_FAILED');
+    }
+  });
+
+  it('results win over empty and failed, with partial coverage when something failed', async () => {
+    const result = await createFanoutSearch({ providers: [okP('brave'), emptyP('exa'), failP('tavily', 'rate_limited')], mode: 'on' })({ query: 'q' });
+    expect(result.status).toBe('ok');
+    expect(result.metadata.coverage).toEqual({ partial: true, unavailable: [{ provider: 'tavily', kind: 'rate_limited' }] });
+    expect(result.metadata.fanout?.outcomes).toEqual([
+      { provider: 'brave', outcome: 'results', count: 2 },
+      { provider: 'exa', outcome: 'empty' },
+      { provider: 'tavily', outcome: 'failed', failure: { kind: 'rate_limited' } }
+    ]);
+  });
+
+  it('a valid empty response with other failures is ok, empty, and partial', async () => {
+    const result = await createFanoutSearch({ providers: [emptyP('brave'), failP('exa', 'blocked')], mode: 'on' })({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.metadata.coverage?.partial).toBe(true);
+  });
+
+  it('all empty is ok and not partial', async () => {
+    const result = await createFanoutSearch({ providers: [emptyP('brave'), emptyP('exa')], mode: 'on' })({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.metadata.coverage).toBeUndefined();
+  });
+
+  it('all failed or skipped is FANOUT_ALL_FAILED, non-terminal, with each outcome kept', async () => {
+    const skippedAttempts = [{ backend: 'exa', outcome: 'skipped', failure: { kind: 'quota_exhausted' }, skipReason: 'disabled' }];
+    const result = await createFanoutSearch({ providers: [failP('brave', 'blocked'), failP('exa', 'quota_exhausted', skippedAttempts)], mode: 'on' })({ query: 'q' });
+    expect(result.error?.code).toBe('FANOUT_ALL_FAILED');
+    expect(['config_global', 'guard_refused']).not.toContain(result.error?.failure?.kind);
+    expect(result.metadata.fanout?.outcomes).toEqual([
+      { provider: 'brave', outcome: 'failed', failure: { kind: 'blocked' } },
+      { provider: 'exa', outcome: 'skipped', failure: { kind: 'quota_exhausted' }, skipReason: 'disabled' }
+    ]);
+  });
+
+  it('a provider timeout is a transient failure outcome', async () => {
+    const slow = { name: 'exa' as const, search: () => new Promise<any>(() => undefined) };
+    const result = await createFanoutSearch({ providers: [okP('brave'), slow], mode: 'on', timeoutMs: 20 })({ query: 'q' });
+    expect(result.metadata.fanout?.outcomes?.[1]).toEqual({ provider: 'exa', outcome: 'failed', failure: { kind: 'transient' } });
+  });
+
+  it('auto mode stops on a terminal primary without fanning out', async () => {
+    const other = vi.fn(async () => okP('exa').search());
+    const result = await createFanoutSearch({ providers: [failP('brave', 'config_global'), { name: 'exa', search: other }], mode: 'auto' })({ query: 'q' });
+    expect(other).not.toHaveBeenCalled();
+    expect(result.error?.failure?.kind).toBe('config_global');
+  });
+});

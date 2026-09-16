@@ -74,6 +74,11 @@ describe('searxng search backend', () => {
     expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response', httpStatus: 200 } });
   });
 
+  it('treats an object-shaped unresponsive_engines as degraded too', async () => {
+    const result = await searchWith(json({ results: [], unresponsive_engines: { google: 'Suspended: too many requests' } }));
+    expect(result.error?.failure?.kind).toBe('bad_response');
+  });
+
   it('keeps results even when some engines were unresponsive', async () => {
     const result = await searchWith(
       json({ results: [{ title: 'T', url: 'https://x.test/', content: 's' }], unresponsive_engines: [['google', 'timeout']] })

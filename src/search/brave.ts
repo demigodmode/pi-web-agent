@@ -14,8 +14,18 @@ export function createBraveSearchTool({ apiKey, fetchImpl = fetch }: { apiKey?: 
       url.searchParams.set('q', query);
       return { url: url.toString(), init: { headers: { Accept: 'application/json', 'X-Subscription-Token': apiKey ?? '' } } };
     },
-    // A 200 with no `web` block, or `web.results` missing, is Brave's valid empty response.
+    // A search response (`type: 'search'`) with no `web` block, or a `web` block with no `results`,
+    // is Brave's valid empty response. Anything else without `web` (an error-shaped or partial 200)
+    // is not trusted as empty.
     normalize: (json) =>
-      normalizeResultsArray(json, (body) => (body.web === undefined ? [] : (body.web?.results ?? [])), 'description')
+      normalizeResultsArray(
+        json,
+        (body) => {
+          if (body.web === undefined) return body.type === 'search' ? [] : undefined;
+          if (!body.web || typeof body.web !== 'object') return undefined;
+          return body.web.results === undefined ? [] : body.web.results;
+        },
+        'description'
+      )
   });
 }

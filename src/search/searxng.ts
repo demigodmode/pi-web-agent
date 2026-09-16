@@ -30,7 +30,8 @@ export function createSearxngSearchTool({
     // Suspended upstream engines still answer 200; version-dependent field (UNVERIFIED everywhere).
     isDegradedEmpty: (json) => {
       const unresponsive = (json as { unresponsive_engines?: unknown }).unresponsive_engines;
-      return Array.isArray(unresponsive) && unresponsive.length > 0;
+      if (Array.isArray(unresponsive)) return unresponsive.length > 0;
+      return !!unresponsive && typeof unresponsive === 'object' && Object.keys(unresponsive).length > 0;
     }
   });
 }

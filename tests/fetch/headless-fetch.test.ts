@@ -328,6 +328,7 @@ describe('headless private address guard', () => {
     });
 
     expect(result).toMatchObject({ status: 'error', error: { code: 'BLOCKED_PRIVATE_ADDRESS' } });
+    expect(result.error?.failure?.kind).toBe('guard_refused');
     expect(getProxy).not.toHaveBeenCalled();
     expect(launchBrowser).not.toHaveBeenCalled();
   });
@@ -561,6 +562,7 @@ describe('headless private address guard', () => {
         message: 'Blocked example.com: the private address guard is not available, so the browser was not started.'
       }
     });
+    expect(result.error?.failure?.kind).toBe('guard_refused');
     expect(launchBrowser).not.toHaveBeenCalled();
   });
 });

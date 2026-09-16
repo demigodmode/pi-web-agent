@@ -1,4 +1,4 @@
-import type { WebSearchResponse } from '../types.js';
+import type { Attempt, WebSearchResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 
 function fanoutNote(result: WebSearchResponse): string {
@@ -11,6 +11,18 @@ function fanoutNote(result: WebSearchResponse): string {
     return ` (fanout; skipped: ${f.skipped.join(', ')})`;
   }
   return '';
+}
+
+export function attemptLines(attempts: Attempt[] | undefined): string | undefined {
+  const interesting = (attempts ?? []).filter((a) => a.outcome !== 'results' && a.outcome !== 'empty');
+  if (interesting.length === 0) return undefined;
+  return interesting
+    .map((a) => {
+      const kind = a.failure?.kind ? ` (${a.failure.kind})` : '';
+      const until = a.cooldownUntil !== undefined ? `, cooling down until ${new Date(a.cooldownUntil).toISOString()}` : '';
+      return `${a.backend}: ${a.outcome}${a.skipReason ? ` [${a.skipReason}]` : ''}${kind}${until}`;
+    })
+    .join('\n');
 }
 
 function formatCompact(result: WebSearchResponse): string {
@@ -42,7 +54,7 @@ export function buildSearchPresentation(result: WebSearchResponse): Presentation
     views: {
       compact: formatCompact(result),
       preview: preview || undefined,
-      verbose: verbose || undefined
+      verbose: [verbose, attemptLines(result.metadata.attempts)].filter(Boolean).join('\n') || undefined
     },
     metrics: {
       resultCount: result.results.length,

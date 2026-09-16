@@ -19,6 +19,16 @@ describe('failure helpers', () => {
     expect(parseRetryAfter('999999', now)).toBe(999_999_000);
   });
 
+  it('keeps an overflowing Retry-After finite', () => {
+    expect(parseRetryAfter('9'.repeat(400), now)).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('accepts only IMF-fixdate HTTP dates', () => {
+    for (const value of ['abc 2099', '2099-01-01', 'Thursday, 01-Jan-2099 00:00:00 GMT']) {
+      expect(parseRetryAfter(value, now)).toBeUndefined();
+    }
+  });
+
   it('marks only config_global and guard_refused terminal', () => {
     expect(isTerminalFailure({ kind: 'config_global' })).toBe(true);
     expect(isTerminalFailure({ kind: 'guard_refused' })).toBe(true);

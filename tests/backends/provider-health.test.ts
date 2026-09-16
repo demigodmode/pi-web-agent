@@ -14,6 +14,8 @@ describe('cooldownFor', () => {
     expect(cooldownFor({ kind: 'rate_limited', providerRetryAfterMs: 30_000 })).toBe(30_000);
     expect(cooldownFor({ kind: 'rate_limited', providerRetryAfterMs: 10 })).toBe(MIN_COOLDOWN_MS);
     expect(cooldownFor({ kind: 'rate_limited', providerRetryAfterMs: 999_999_000 })).toBe(MAX_COOLDOWN_MS);
+    expect(cooldownFor({ kind: 'rate_limited', providerRetryAfterMs: Number.MAX_SAFE_INTEGER })).toBe(MAX_COOLDOWN_MS);
+    expect(cooldownFor({ kind: 'rate_limited', providerRetryAfterMs: Number.POSITIVE_INFINITY })).toBe(MAX_COOLDOWN_MS);
     expect(MIN_COOLDOWN_MS).toBe(1000);
     expect(MAX_COOLDOWN_MS).toBe(15 * 60_000);
   });

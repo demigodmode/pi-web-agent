@@ -16,6 +16,7 @@ describe('http fetch blocked redirect', () => {
       metadata: { method: 'http', cacheHit: false },
       error: { code: 'BLOCKED_PRIVATE_ADDRESS' }
     });
+    expect(result.error?.failure).toEqual({ kind: 'guard_refused' });
   });
 
   it('still throws unrelated errors', async () => {

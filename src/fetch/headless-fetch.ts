@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import { extractReadableContentSafely } from '../extract/readability.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import { BLOCKED_HEADER, type GuardProxy } from './guard-proxy.js';
-import { BLOCKED_PRIVATE_ADDRESS, BlockedAddressError, type NetworkGuard } from './network-guard.js';
+import { BLOCKED_PRIVATE_ADDRESS, BlockedAddressError, UPSTREAM_PROXY_REFUSED, type NetworkGuard } from './network-guard.js';
 import type { WebFetchHeadlessResponse } from '../types.js';
 
 export type BrowserProxyOptions = {
@@ -20,7 +20,13 @@ function cleanupRenderedText(text: string): string {
 }
 
 function errorResult(url: string, code: string, message: string): WebFetchHeadlessResponse {
-  return { status: 'error', url, metadata: { method: 'headless', cacheHit: false }, error: { code, message } };
+  const guard = code === BLOCKED_PRIVATE_ADDRESS || code === UPSTREAM_PROXY_REFUSED;
+  return {
+    status: 'error',
+    url,
+    metadata: { method: 'headless', cacheHit: false },
+    error: { code, message, ...(guard ? { failure: { kind: 'guard_refused' as const } } : {}) }
+  };
 }
 
 function hostnameOf(url: string): string | undefined {

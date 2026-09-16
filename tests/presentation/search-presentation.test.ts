@@ -58,4 +58,24 @@ describe('buildSearchPresentation', () => {
     });
     expect(p.views.compact as string).toContain('(fanout: duckduckgo, brave)');
   });
+
+  it('lists skipped attempts in verbose only', () => {
+    const presentation = buildSearchPresentation({
+      status: 'ok',
+      results: [{ title: 'Example One', url: 'https://example.com/one', snippet: 'First snippet' }],
+      metadata: {
+        backend: 'duckduckgo',
+        cacheHit: false,
+        attempts: [
+          { backend: 'brave', outcome: 'skipped', skipReason: 'cooling_down', failure: { kind: 'rate_limited' }, cooldownUntil: 0 },
+          { backend: 'duckduckgo', outcome: 'results' }
+        ]
+      }
+    });
+
+    expect(presentation.views.verbose).toContain('brave: skipped [cooling_down] (rate_limited), cooling down until 1970-01-01T00:00:00.000Z');
+    expect(presentation.views.verbose).not.toContain('duckduckgo: results');
+    expect(presentation.views.compact).not.toContain('skipped');
+    expect(presentation.views.preview).not.toContain('skipped');
+  });
 });

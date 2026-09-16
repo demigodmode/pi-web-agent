@@ -1,6 +1,7 @@
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { canonicalizeUrl } from '../orchestration/url.js';
-import type { FanoutMetadata, FanoutMode, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
+import { failureOf, isTerminalFailure } from '../backends/failure.js';
+import type { Attempt, FailureInfo, FanoutMetadata, FanoutMode, FanoutOutcome, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
 
 export type FanoutProvider = {
   name: SearchProviderName;
@@ -61,14 +62,17 @@ function withPresentation(result: WebSearchResponse): WebSearchResponse {
 
 const FANOUT_PROVIDER_TIMEOUT_MS = 8000;
 
-/** Resolve to undefined if the provider doesn't answer in time, so one slow/unreachable
- *  provider (e.g. a down self-hosted SearXNG) can't stall the whole fanout across passes. */
-function withTimeout(
-  promise: Promise<WebSearchResponse>,
-  ms: number
-): Promise<WebSearchResponse | undefined> {
+/** A provider that doesn't answer in time (or throws) counts as a transient failure, so one
+ *  slow/unreachable provider (e.g. a down self-hosted SearXNG) can't stall the whole fanout. */
+function withTimeout(promise: Promise<WebSearchResponse>, ms: number, name: SearchProviderName): Promise<WebSearchResponse> {
+  const timedOut = (): WebSearchResponse => ({
+    status: 'error',
+    results: [],
+    metadata: { backend: name, cacheHit: false },
+    error: { code: 'FETCH_FAILED', message: `${name} did not answer in time.`, failure: { kind: 'transient' } }
+  });
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), ms);
+    const timer = setTimeout(() => resolve(timedOut()), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -76,10 +80,21 @@ function withTimeout(
       },
       () => {
         clearTimeout(timer);
-        resolve(undefined);
+        resolve(timedOut());
       }
     );
   });
+}
+
+function outcomeOf(name: SearchProviderName, response: WebSearchResponse): FanoutOutcome {
+  const failure = failureOf(response);
+  if (!failure) {
+    return response.results.length > 0 ? { provider: name, outcome: 'results', count: response.results.length } : { provider: name, outcome: 'empty' };
+  }
+  const skipped = response.metadata.attempts?.find((a) => a.outcome === 'skipped');
+  return skipped
+    ? { provider: name, outcome: 'skipped', failure, ...(skipped.skipReason ? { skipReason: skipped.skipReason } : {}) }
+    : { provider: name, outcome: 'failed', failure };
 }
 
 export function createFanoutSearch({
@@ -95,60 +110,68 @@ export function createFanoutSearch({
     const [primary, ...rest] = providers;
 
     async function runSet(set: FanoutProvider[]) {
-      const settled = await Promise.all(set.map((p) => withTimeout(p.search({ query }), timeoutMs)));
-      const contributing: Array<{ name: SearchProviderName; results: SearchResult[] }> = [];
-      const skipped: SearchProviderName[] = [];
-      set.forEach((provider, i) => {
-        const value = settled[i];
-        if (value && value.status === 'ok' && value.results.length > 0) {
-          contributing.push({ name: provider.name, results: value.results });
-        } else {
-          skipped.push(provider.name);
-        }
-      });
-      return { contributing, skipped };
+      const responses = await Promise.all(set.map((p) => withTimeout(p.search({ query }), timeoutMs, p.name)));
+      return set.map((provider, i) => ({ provider, response: responses[i] }));
     }
 
-    function finalize(
-      lists: Array<{ name: SearchProviderName; results: SearchResult[] }>,
-      skipped: SearchProviderName[],
-      resolvedMode: Exclude<FanoutMode, 'off'>
-    ): WebSearchResponse {
-      if (lists.length === 0) {
-        const fanout: FanoutMetadata = { mode: resolvedMode, providers: [] };
-        if (skipped.length > 0) fanout.skipped = skipped;
+    function finalize(entries: Array<{ provider: FanoutProvider; response: WebSearchResponse }>, resolvedMode: Exclude<FanoutMode, 'off'>): WebSearchResponse {
+      const outcomes = entries.map(({ provider, response }) => outcomeOf(provider.name, response));
+      const attempts: Attempt[] = entries.flatMap(({ response }) => response.metadata.attempts ?? []);
+      const contributing = entries.filter((_, i) => outcomes[i].outcome === 'results');
+      const fanout: FanoutMetadata = {
+        mode: resolvedMode,
+        providers: contributing.map(({ provider }) => provider.name),
+        outcomes
+      };
+      const skippedNames = outcomes.filter((o) => o.outcome !== 'results').map((o) => o.provider);
+      if (skippedNames.length > 0) fanout.skipped = skippedNames;
+
+      // 1. terminal
+      const terminal = entries.find(({ response }) => isTerminalFailure(failureOf(response)));
+      if (terminal) {
+        return withPresentation({ ...terminal.response, metadata: { ...terminal.response.metadata, backend: primary.name, fanout, attempts } });
+      }
+
+      const unavailable = outcomes
+        .filter((o) => o.outcome === 'failed' || o.outcome === 'skipped')
+        .map((o) => ({ provider: o.provider, kind: (o.failure as FailureInfo).kind }));
+      const coverage = unavailable.length > 0 ? { coverage: { partial: true as const, unavailable } } : {};
+
+      // 2. results
+      if (contributing.length > 0) {
         return withPresentation({
-          status: 'error',
-          results: [],
-          metadata: { backend: primary.name, cacheHit: false, fanout },
-          error: { code: 'FANOUT_NO_RESULTS', message: 'No fanout provider returned usable results.' }
+          status: 'ok',
+          results: merge(contributing.map(({ provider, response }) => ({ name: provider.name, results: response.results }))),
+          metadata: { backend: primary.name, cacheHit: false, fanout, attempts, ...coverage }
         });
       }
-      const fanout: FanoutMetadata = { mode: resolvedMode, providers: lists.map((l) => l.name) };
-      if (skipped.length > 0) fanout.skipped = skipped;
+
+      // 3. valid empty
+      if (outcomes.some((o) => o.outcome === 'empty')) {
+        return withPresentation({ status: 'ok', results: [], metadata: { backend: primary.name, cacheHit: false, fanout, attempts, ...coverage } });
+      }
+
+      // 4. all failed or skipped: non-terminal, so an outer fallback may still run
+      const lastFailure = [...outcomes].reverse().find((o) => o.failure)?.failure ?? { kind: 'bad_response' as const };
       return withPresentation({
-        status: 'ok',
-        results: merge(lists),
-        metadata: { backend: primary.name, cacheHit: false, fanout }
+        status: 'error',
+        results: [],
+        metadata: { backend: primary.name, cacheHit: false, fanout, attempts },
+        error: { code: 'FANOUT_ALL_FAILED', message: 'Every fanout provider failed or was unavailable.', failure: lastFailure }
       });
     }
 
     if (mode === 'auto') {
-      const primaryOutcome = await withTimeout(primary.search({ query }), timeoutMs);
-      const primaryResults = primaryOutcome?.status === 'ok' ? primaryOutcome.results : [];
-      if (primaryResults.length > 0 && !primaryLooksWeak(primaryResults)) {
-        return withPresentation(primaryOutcome as WebSearchResponse); // strong primary: no fanout
+      const primaryResponse = await withTimeout(primary.search({ query }), timeoutMs, primary.name);
+      if (isTerminalFailure(failureOf(primaryResponse))) {
+        return finalize([{ provider: primary, response: primaryResponse }], 'auto');
       }
-      const { contributing, skipped } = await runSet(rest);
-      const lists = [
-        ...(primaryResults.length ? [{ name: primary.name, results: primaryResults }] : []),
-        ...contributing
-      ];
-      const allSkipped = [...(primaryResults.length ? [] : [primary.name]), ...skipped];
-      return finalize(lists, allSkipped, 'auto');
+      if (primaryResponse.status === 'ok' && primaryResponse.results.length > 0 && !primaryLooksWeak(primaryResponse.results)) {
+        return withPresentation(primaryResponse); // strong primary: no fanout
+      }
+      return finalize([{ provider: primary, response: primaryResponse }, ...(await runSet(rest))], 'auto');
     }
 
-    const { contributing, skipped } = await runSet(providers);
-    return finalize(contributing, skipped, 'on');
+    return finalize(await runSet(providers), 'on');
   };
 }

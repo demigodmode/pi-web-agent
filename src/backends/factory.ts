@@ -13,6 +13,8 @@ import { createExaSearchTool } from '../search/exa.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { createFanoutSearch } from '../search/fanout.js';
+import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from './fallback-policy.js';
+import { createProviderHealth, type ProviderHealth } from './provider-health.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
@@ -48,6 +50,9 @@ export type BackendFactoryDeps = {
   /** Test seam: the fetch used for model-chosen URLs, before redirect handling. */
   createModelFetch?: (guard: NetworkGuard) => typeof fetch;
   createGuardProxy?: (options: GuardProxyOptions) => Promise<GuardProxy>;
+  providerHealth?: ProviderHealth;
+  /** Test seam for the retry sleep, jitter, and clock. */
+  policy?: Omit<PolicyDeps, 'health'>;
 };
 
 function invalidSearxngSearch() {
@@ -58,7 +63,8 @@ function invalidSearxngSearch() {
       metadata: { backend: 'searxng', cacheHit: false },
       error: {
         code: 'BACKEND_CONFIG_INVALID',
-        message: 'SearXNG search requires backends.search.baseUrl.'
+        message: 'SearXNG search requires backends.search.baseUrl.',
+        failure: { kind: 'not_configured' }
       }
     };
 
@@ -74,36 +80,12 @@ function invalidFirecrawlFetch() {
       metadata: { method: 'firecrawl', cacheHit: false },
       error: {
         code: 'BACKEND_CONFIG_INVALID',
-        message: 'Firecrawl fetch requires backends.fetch.baseUrl.'
+        message: 'Firecrawl fetch requires backends.fetch.baseUrl.',
+        failure: { kind: 'not_configured' }
       }
     };
 
     return { ...result, presentation: buildFetchPresentation(result) };
-  };
-}
-
-function withSearchFallback(
-  primary: BackendSet['search'],
-  fallback: BackendSet['search'],
-  fallbackFrom: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'duckduckgo'
-): BackendSet['search'] {
-  return async (input) => {
-    const first = await primary(input);
-    if (first.status !== 'error') return first;
-
-    const second = await fallback(input);
-    const result: WebSearchResponse = {
-      ...second,
-      metadata: {
-        ...second.metadata,
-        fallbackFrom,
-        fallbackReason: first.error?.message ?? `${fallbackFrom} search failed.`,
-        // Keep the primary's fanout provenance (which providers were tried/skipped) even though
-        // the answer came from the fallback backend.
-        ...(first.metadata.fanout ? { fanout: first.metadata.fanout } : {})
-      }
-    };
-    return { ...result, presentation: buildSearchPresentation(result) };
   };
 }
 
@@ -127,32 +109,11 @@ function withTargetGuard(
         status: 'error',
         url: input.url,
         metadata: { method, cacheHit: false },
-        error: { code: blocked.code, message: blocked.message }
+        error: { code: blocked.code, message: blocked.message, failure: { kind: 'guard_refused' } }
       };
       return { ...result, presentation: buildFetchPresentation(result) };
     }
     return fetchPage(input);
-  };
-}
-
-function withFetchFallback(
-  primary: BackendSet['fetchPage'],
-  fallback: BackendSet['fetchPage']
-): BackendSet['fetchPage'] {
-  return async (input) => {
-    const first = await primary(input);
-    if (first.status !== 'error' && first.status !== 'needs_headless') return first;
-
-    const second = await fallback(input);
-    const result: WebFetchResponse = {
-      ...second,
-      metadata: {
-        ...second.metadata,
-        fallbackFrom: 'firecrawl',
-        fallbackReason: first.error?.message ?? 'Firecrawl fetch failed.'
-      }
-    };
-    return { ...result, presentation: buildFetchPresentation(result) };
   };
 }
 
@@ -187,7 +148,7 @@ export function createBackendSet(
           status: 'error',
           results: [],
           metadata: { backend: config.search.provider, cacheHit: false },
-          error: { code: 'BACKEND_CONFIG_INVALID', message }
+          error: { code: 'BACKEND_CONFIG_INVALID', message, failure: { kind: 'config_global' } }
         };
         return { ...result, presentation: buildSearchPresentation(result) };
       },
@@ -196,7 +157,7 @@ export function createBackendSet(
           status: 'error',
           url,
           metadata: { method: 'http', cacheHit: false },
-          error: { code: 'BACKEND_CONFIG_INVALID', message }
+          error: { code: 'BACKEND_CONFIG_INVALID', message, failure: { kind: 'config_global' } }
         };
         return { ...result, presentation: buildFetchPresentation(result) };
       },
@@ -205,7 +166,7 @@ export function createBackendSet(
           status: 'error',
           url,
           metadata: { method: 'headless', cacheHit: false },
-          error: { code: 'BACKEND_CONFIG_INVALID', message }
+          error: { code: 'BACKEND_CONFIG_INVALID', message, failure: { kind: 'config_global' } }
         };
         return { ...result, presentation: buildFetchPresentation(result) };
       },
@@ -270,6 +231,11 @@ export function createBackendSet(
       }
     })());
 
+  // One health state per backend set: a rebuilt set (config change) starts fresh.
+  const policyDeps: PolicyDeps = { health: deps.providerHealth ?? createProviderHealth(deps.policy?.now ? { now: deps.policy.now } : {}), ...deps.policy };
+  const guarded = (name: SearchProviderName, search: BackendSet['search'], healthKey?: string) =>
+    withSearchPolicy(name, search, policyDeps, healthKey);
+
   const createDuckDuckGo = () =>
     createDuckDuckGoSearch({ searchHtml: (query) => fetchDuckDuckGoHtml(query, { fetchImpl }) });
 
@@ -293,39 +259,12 @@ export function createBackendSet(
     }
   }
 
-  let search = config.search.provider === 'searxng'
-    ? config.search.baseUrl
-      ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options, fetchImpl })
-      : invalidSearxngSearch()
-    : config.search.provider === 'brave'
-      ? createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY, fetchImpl })
-      : config.search.provider === 'youcom'
-        ? createYouComSearch({ apiKey: process.env.YDC_API_KEY, fetchImpl })
-        : config.search.provider === 'exa'
-          ? createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl })
-          : config.search.provider === 'tavily'
-            ? createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl })
-            : createDuckDuckGo();
-
-  if (config.search.provider === 'searxng' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGo(), 'searxng');
+  const primarySearch = guarded(config.search.provider, buildProviderSearch(config.search.provider));
+  const chain: BackendSet['search'][] = [primarySearch];
+  if (config.search.provider !== 'duckduckgo' && config.search.fallback === 'duckduckgo') {
+    chain.push(guarded('duckduckgo', createDuckDuckGo()));
   }
-
-  if (config.search.provider === 'brave' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGo(), 'brave');
-  }
-
-  if (config.search.provider === 'youcom' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGo(), 'youcom');
-  }
-
-  if (config.search.provider === 'exa' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGo(), 'exa');
-  }
-
-  if (config.search.provider === 'tavily' && config.search.fallback === 'duckduckgo') {
-    search = withSearchFallback(search, createDuckDuckGo(), 'tavily');
-  }
+  let search: BackendSet['search'] = chainSearch(chain, policyDeps);
 
   const fanoutConfig = config.search.fanout;
   if (fanoutConfig && fanoutConfig.mode !== 'off') {
@@ -342,7 +281,7 @@ export function createBackendSet(
       (n, i, arr) => arr.indexOf(n) === i
     );
     search = createFanoutSearch({
-      providers: ordered.map((name) => ({ name, search: buildProviderSearch(name) })),
+      providers: ordered.map((name) => ({ name, search: guarded(name, buildProviderSearch(name)) })),
       mode: fanoutConfig.mode
     });
   }
@@ -354,26 +293,28 @@ export function createBackendSet(
   const usingDuckDuckGoDefault =
     config.search.provider === 'duckduckgo' || !config.search.provider;
   if (usingDuckDuckGoDefault && !keylessFallbackDisabled) {
-    search = withSearchFallback(search, createTavilySearch({ keyless: true, fetchImpl }), 'duckduckgo');
+    // chainSearch only falls back on non-terminal failures, so a terminal result or bad_request never reaches keyless Tavily.
+    search = chainSearch([search, guarded('tavily', createTavilySearch({ keyless: true, fetchImpl }), 'tavily-keyless')], policyDeps);
   }
 
   const httpFetch = createHttpFetch({ fetchPage: createHttpFetcher({ fetchImpl: targetFetch }) });
-  let fetchPage = config.fetch.provider === 'firecrawl'
-    ? config.fetch.baseUrl
-      ? createHttpFetch({
-          fetchPage: createFirecrawlFetch({
-            baseUrl: config.fetch.baseUrl,
-            apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY,
-            options: config.fetch.options,
-            fetchImpl
-          })
-        })
-      : createHttpFetch({ fetchPage: invalidFirecrawlFetch() })
-    : httpFetch;
-
-  if (config.fetch.provider === 'firecrawl' && config.fetch.fallback === 'http') {
-    fetchPage = withFetchFallback(fetchPage, httpFetch);
-  }
+  const fetchPage: BackendSet['fetchPage'] =
+    config.fetch.provider === 'firecrawl'
+      ? withFetchPolicy(
+          config.fetch.baseUrl
+            ? createHttpFetch({
+                fetchPage: createFirecrawlFetch({
+                  baseUrl: config.fetch.baseUrl,
+                  apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY,
+                  options: config.fetch.options,
+                  fetchImpl
+                })
+              })
+            : createHttpFetch({ fetchPage: invalidFirecrawlFetch() }),
+          config.fetch.fallback === 'http' ? httpFetch : undefined,
+          policyDeps
+        )
+      : httpFetch;
 
   const fetchPageWithReaders = createSpecialContentResolver({
     readers: [

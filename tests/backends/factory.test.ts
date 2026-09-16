@@ -16,7 +16,8 @@ function offlineNetworkDeps() {
       ((input: Parameters<typeof fetch>[0], init?: RequestInit) => globalThis.fetch(input, init)) as typeof fetch,
     createGuardProxy: vi.fn(async () => {
       throw new Error('tests must not start a real guard proxy');
-    })
+    }),
+    policy: { sleep: async () => undefined, random: () => 0 }
   };
 }
 
@@ -60,10 +61,12 @@ describe('backend factory', () => {
       offlineNetworkDeps()
     );
 
+    // #55: a plain chain where every provider failed reports SEARCH_BACKENDS_UNAVAILABLE,
+    // with the missing base URL classified as not_configured (no silent DuckDuckGo fallback).
     await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
       status: 'error',
       metadata: { backend: 'searxng', cacheHit: false },
-      error: { code: 'BACKEND_CONFIG_INVALID' }
+      error: { code: 'SEARCH_BACKENDS_UNAVAILABLE', failure: { kind: 'not_configured' } }
     });
 
     await expect(backends.fetchPage({ url: 'https://example.com' })).resolves.toMatchObject({
@@ -951,5 +954,88 @@ describe('backend factory guard proxy wiring', () => {
     await backends.fetchPage({ url: 'https://example.com/' }).catch(() => undefined);
 
     expect(createGuardProxy).not.toHaveBeenCalled();
+  });
+});
+
+describe('backend factory failure-aware fallback (#55)', () => {
+  const ok = (backend: string) => async () => ({ status: 'ok' as const, results: [{ title: 't', url: 'https://r.test/', snippet: '' }], metadata: { backend, cacheHit: false } });
+  const failing = (backend: string, kind: string) =>
+    vi.fn(async () => ({ status: 'error' as const, results: [], metadata: { backend, cacheHit: false }, error: { code: 'X', message: `${backend} ${kind}`, failure: { kind } } }));
+
+  it('cools a rate-limited primary down across calls and uses the fallback meanwhile', async () => {
+    const brave = failing('brave', 'rate_limited');
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+      { ...offlineNetworkDeps(), createBraveSearch: () => brave as any, createDuckDuckGoSearch: () => ok('duckduckgo') as any }
+    );
+
+    await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+
+    expect(brave).toHaveBeenCalledTimes(1);
+    expect(second.status).toBe('ok');
+    expect(second.metadata.attempts?.[0]).toMatchObject({ backend: 'brave', outcome: 'skipped', skipReason: 'cooling_down', failure: { kind: 'rate_limited' } });
+  });
+
+  it('a new backend set starts with fresh provider health', async () => {
+    const make = () =>
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+        { ...offlineNetworkDeps(), createBraveSearch: () => failing('brave', 'auth_failed') as any, createDuckDuckGoSearch: () => ok('duckduckgo') as any }
+      );
+    await make().search({ query: 'a' });
+    const fresh = await make().search({ query: 'a' });
+    expect(fresh.metadata.attempts?.[0]).toMatchObject({ backend: 'brave', outcome: 'failed' });
+  });
+
+  it('gives keyless Tavily its own health key', async () => {
+    const tavilyCalls: string[] = [];
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      ...offlineNetworkDeps(),
+      createDuckDuckGoSearch: () => failing('duckduckgo', 'blocked') as any,
+      createTavilySearch: (options: any) => {
+        tavilyCalls.push(options.keyless ? 'keyless' : 'keyed');
+        return ok('tavily') as any;
+      }
+    });
+    const result = await backends.search({ query: 'q' });
+    expect(tavilyCalls).toEqual(['keyless']);
+    expect(result.metadata.coverage?.partial).toBe(true);
+  });
+
+  it('never falls back or retries when the shared proxy config is invalid (config_global)', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'htttp://bad' } }, offlineNetworkDeps());
+    const search = await backends.search({ query: 'q' });
+    const page = await backends.fetchPage({ url: 'https://example.com/' });
+    const headless = await backends.headlessFetch({ url: 'https://example.com/' });
+    for (const result of [search, page, headless]) {
+      expect(result.error?.failure?.kind).toBe('config_global');
+    }
+  });
+
+  it('marks a missing SearXNG base URL and Firecrawl base URL as not_configured', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'searxng' }, fetch: { provider: 'firecrawl' } },
+      offlineNetworkDeps()
+    );
+    const search = await backends.search({ query: 'q' });
+    expect(search.metadata.attempts?.[0]?.failure?.kind).toBe('not_configured');
+  });
+
+  it('never hands a guard-refused page to Firecrawl or the http fallback', async () => {
+    const firecrawl = vi.fn();
+    const httpPage = vi.fn();
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, fetch: { provider: 'firecrawl', baseUrl: 'http://127.0.0.1:3002', fallback: 'http' } },
+      {
+        ...offlineNetworkDeps(),
+        createFirecrawlFetch: vi.fn(() => firecrawl) as any,
+        createHttpFetch: vi.fn(() => httpPage) as any
+      }
+    );
+    const result = await backends.fetchPage({ url: 'http://169.254.169.254/' });
+    expect(result.error?.failure?.kind).toBe('guard_refused');
+    expect(firecrawl).not.toHaveBeenCalled();
+    expect(httpPage).not.toHaveBeenCalled();
   });
 });

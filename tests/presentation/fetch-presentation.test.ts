@@ -70,4 +70,16 @@ describe('fetch presentation blocked subresources', () => {
   it('omits the line when nothing was blocked', () => {
     expect(buildFetchPresentation(base).views.verbose).not.toContain('Blocked');
   });
+
+  it('lists skipped attempts in verbose only, even when the fetch failed', () => {
+    const presentation = buildFetchPresentation({
+      status: 'error',
+      url: 'https://example.com',
+      metadata: { method: 'firecrawl', cacheHit: false, attempts: [{ backend: 'firecrawl', outcome: 'skipped', skipReason: 'disabled', failure: { kind: 'auth_failed' } }] },
+      error: { code: 'BACKEND_UNAVAILABLE', message: 'firecrawl is disabled for this session after auth_failed.' }
+    });
+
+    expect(presentation.views.verbose).toBe('firecrawl: skipped [disabled] (auth_failed)');
+    expect(presentation.views.compact).not.toContain('[disabled]');
+  });
 });

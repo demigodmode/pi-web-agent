@@ -17,7 +17,7 @@ export type ProviderHealth = {
 /** The applied cooldown. The provider's own value stays in failure.providerRetryAfterMs. */
 export function cooldownFor(failure: FailureInfo): number {
   const raw = failure.providerRetryAfterMs;
-  if (raw === undefined || !Number.isFinite(raw)) return DEFAULT_COOLDOWN_MS;
+  if (raw === undefined || Number.isNaN(raw)) return DEFAULT_COOLDOWN_MS;
   return Math.min(MAX_COOLDOWN_MS, Math.max(MIN_COOLDOWN_MS, raw));
 }
 
