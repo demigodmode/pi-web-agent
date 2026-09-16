@@ -39,6 +39,11 @@ async function startProxyServer(): Promise<ProxyServer> {
     const targetUrl = req.url ?? '';
     requests.push({ url: targetUrl, method: req.method ?? 'GET', proxyAuthorization: req.headers['proxy-authorization'] });
     const target = new URL(targetUrl);
+    // Test fixture: only ever forward to the local test servers.
+    if (target.hostname !== '127.0.0.1') {
+      res.writeHead(403).end();
+      return;
+    }
     const upstream = http.request(
       target,
       { method: req.method, headers: { ...req.headers, host: target.host } },
@@ -54,6 +59,10 @@ async function startProxyServer(): Promise<ProxyServer> {
     const target = req.url ?? '';
     connects.push(target);
     const [host, port] = target.split(':');
+    if (host !== '127.0.0.1') {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+      return;
+    }
     const upstream = net.connect(Number(port) || 443, host, () => {
       socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head.length > 0) upstream.write(head);
