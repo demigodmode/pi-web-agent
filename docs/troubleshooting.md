@@ -188,7 +188,7 @@ If every configured backend is being skipped, searches fail with a message like:
 No search backend is available: brave rate_limited (available again at 2026-09-16T12:05:00.000Z), exa quota_exhausted.
 ```
 
-A rate limit clears on its own. For a quota or key problem, fix the key or plan, and the next change to your settings resets it. Verbose output shows each backend that was tried, retried, or skipped and why.
+A rate limit clears on its own. For a quota or key problem, fix the key or plan. A change to your pi-web-agent settings resets it right away; an API key set as an environment variable takes effect after you restart Pi. The verbose search output shows each backend that was tried, retried, or skipped and why.
 
 When some backends failed but another one answered, the answer notes that results may be incomplete.
 

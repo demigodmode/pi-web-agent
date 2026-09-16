@@ -9,7 +9,9 @@ export type ResearchStepDecision =
   | { action: 'headless'; url: string };
 
 function activeCaveatReasons(evidence: ResearchEvidence[], quality?: EvidenceQualityReport) {
-  const reasons = quality?.caveatReasons ?? [];
+  // Partial search coverage is reported as a caveat but never changes the decision (#55):
+  // a strong answer stays an answer, and web-explore adds just the coverage sentence.
+  const reasons = (quality?.caveatReasons ?? []).filter((reason) => reason !== 'partial-search-coverage');
   if (!hasOfficialDocsAndApi(evidence)) return reasons;
   return reasons.filter((reason) => reason !== 'low-diversity');
 }

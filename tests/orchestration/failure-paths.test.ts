@@ -79,6 +79,17 @@ describe('failure paths through orchestration (#55)', () => {
     expect(matches).toHaveLength(1);
   });
 
+  it('a confident answer with partial coverage mentions only the coverage', async () => {
+    const coverage = { partial: true as const, unavailable: [{ provider: 'brave', kind: 'rate_limited' as const }] };
+    const urls = ['https://vitest.dev/guide/coverage.html', 'https://vitest.dev/config/coverage'];
+    const withCoverage = await run(
+      vi.fn(async () => searchOk(urls, coverage)),
+      vi.fn(async ({ url }: { url: string }) => readable(url)),
+      vi.fn(async () => ({} as WebFetchHeadlessResponse))
+    );
+    expect(withCoverage.caveat).toBe('Evidence is partial: some search backends were unavailable, so results may be incomplete.');
+  });
+
   it('a fully successful empty search adds no coverage caveat', async () => {
     const result = await run(vi.fn(async () => searchOk([])), vi.fn(), vi.fn());
     expect(result.caveat ?? '').not.toMatch(/search backends were unavailable/i);
