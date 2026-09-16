@@ -148,9 +148,31 @@ If you meant to reach that address, add its range under Settings → Backends �
 
 If every fetch fails this way, check whether you run a proxy app in fake-IP (TUN) mode. Those make every website resolve to an address in `198.18.0.0/15`. Add `198.18.0.0/15` to the allow list.
 
-On headless pages you may instead see `Blocked example.internal: could not verify its address before loading it in the browser.` That shows up when there is no proxy configured and the host just will not resolve, and it usually points to a DNS problem on the machine running Pi.
+You may instead see `Blocked example.internal: could not verify its address before connecting.` That means the address could not be looked up from this machine, so pi-web-agent refused rather than let something else resolve it. It usually points to a DNS problem on the machine running Pi.
 
 This does not affect search backends or the SearXNG, Firecrawl, and proxy addresses you configured yourself. Those are always allowed.
+
+The check applies to connections that go through pi-web-agent's local guard proxy, which is how it handles page fetches and everything the headless browser loads. It is not a full network sandbox for the browser. If you need that guarantee, restrict outbound traffic at the OS or container level.
+
+## Fetches fail with an upstream proxy refused error
+
+With `backends.proxy` set, pi-web-agent looks up each address itself and asks your proxy to connect to that IP, so the proxy can't quietly send the request somewhere else. Some proxies only accept hostnames and reject that:
+
+```
+Upstream proxy refused 93.184.216.34:443 for example.com (HTTP 403). If it only accepts hostnames, set backends.network.trustProxyDns to trust it to enforce private-address restrictions.
+```
+
+If you trust that proxy to keep requests away from private addresses itself, turn on Settings → Backends → Trust the upstream proxy to enforce private-address restrictions, or set:
+
+```json
+{
+  "backends": {
+    "network": { "trustProxyDns": true }
+  }
+}
+```
+
+That hands the address decision to your proxy. pi-web-agent still refuses literal private addresses, localhost, and any private address it can see locally. The same setting helps when names only resolve inside the proxy's network. Even with this turned on, a name that resolves on your machine to a private address is still refused before it reaches the proxy.
 
 Then restart Pi.
 

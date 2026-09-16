@@ -771,6 +771,7 @@ describe('backend factory private address guard', () => {
     const result = await backends.fetchPage({ url: 'http://10.0.0.8/admin' });
 
     expect(result.error?.code).toBe('BLOCKED_PRIVATE_ADDRESS');
+    expect(result.metadata.method).toBe('firecrawl');
     expect(firecrawlFetch).not.toHaveBeenCalled();
   });
 
@@ -888,6 +889,34 @@ describe('backend factory guard proxy wiring', () => {
     await pendingFetch;
 
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries starting the guard proxy after a failed attempt instead of caching the rejection', async () => {
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: vi.fn(() => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' })),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close: vi.fn(async () => undefined)
+    };
+    const createGuardProxy = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('listen EADDRINUSE'))
+      .mockResolvedValueOnce(proxy);
+
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: offlineNetworkDeps().networkGuard,
+      createGuardProxy
+    });
+
+    await expect(backends.fetchPage({ url: 'https://example.com/a' })).rejects.toThrow('listen EADDRINUSE');
+    expect(createGuardProxy).toHaveBeenCalledTimes(1);
+
+    await backends.fetchPage({ url: 'https://example.com/b' }).catch(() => undefined);
+    expect(createGuardProxy).toHaveBeenCalledTimes(2);
+
+    await backends.close();
+    expect(createGuardProxy).toHaveBeenCalledTimes(2);
   });
 
   it('refuses to start a guard proxy after close', async () => {

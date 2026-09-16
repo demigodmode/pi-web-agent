@@ -30,8 +30,9 @@ export function createGuardProxyFetch(
   let ready: Promise<{ proxy: GuardProxy; client: GuardProxyClient; agent: ProxyAgent }> | undefined;
   let closed = false;
 
-  const ensure = () =>
-    (ready ??= getProxy().then((proxy) => {
+  const ensure = () => {
+    if (ready) return ready;
+    const started = getProxy().then((proxy) => {
       const client = proxy.client('node');
       const agent = new ProxyAgent({
         uri: client.server,
@@ -39,7 +40,15 @@ export function createGuardProxyFetch(
         ...(tls ? { requestTls: tls } : {})
       });
       return { proxy, client, agent };
-    }));
+    });
+    ready = started;
+    // Don't let one failed attempt poison every later fetch: clear it so the
+    // next call retries, unless a newer attempt has already replaced it.
+    started.catch(() => {
+      if (ready === started) ready = undefined;
+    });
+    return started;
+  };
 
   const guardedFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     if (closed) throw new Error('Guard proxy fetch is closed.');

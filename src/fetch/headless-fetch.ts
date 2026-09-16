@@ -104,7 +104,18 @@ export async function headlessFetch(
 
   let enforcement: { proxy: GuardProxy; username: string; since: number; launchProxy: BrowserProxyOptions } | undefined;
   if (guard && guardProxy) {
-    const activeProxy = await guardProxy();
+    let activeProxy: GuardProxy;
+    try {
+      activeProxy = await guardProxy();
+    } catch {
+      // The guard proxy could not start (backend set closed, or the listener
+      // failed). Enforcement lives there, so the browser must not launch.
+      return errorResult(
+        url,
+        BLOCKED_PRIVATE_ADDRESS,
+        `Blocked ${hostnameOf(url) ?? url}: the private address guard is not available, so the browser was not started.`
+      );
+    }
     const client = activeProxy.client('headless');
     enforcement = {
       proxy: activeProxy,

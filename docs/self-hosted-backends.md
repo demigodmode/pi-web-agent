@@ -390,6 +390,8 @@ The proxy URL is editable from **Settings → Backends**. The settings UI does n
 
 A proxy that is unreachable makes requests fail with a clear proxy error instead of silently bypassing the proxy.
 
+Page fetches and the headless browser connect through a local guard proxy that checks addresses before connecting, then chains to your proxy by IP. If your proxy only accepts hostnames, see "Fetches fail with an upstream proxy refused error" in the troubleshooting guide.
+
 ## Full self-hosted example
 
 ```json

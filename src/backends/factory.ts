@@ -114,7 +114,8 @@ function withSearchFallback(
  */
 function withTargetGuard(
   fetchPage: BackendSet['fetchPage'],
-  guard: NetworkGuard
+  guard: NetworkGuard,
+  method: 'http' | 'firecrawl'
 ): BackendSet['fetchPage'] {
   return async (input) => {
     try {
@@ -125,7 +126,7 @@ function withTargetGuard(
       const result: WebFetchResponse = {
         status: 'error',
         url: input.url,
-        metadata: { method: 'http', cacheHit: false },
+        metadata: { method, cacheHit: false },
         error: { code: blocked.code, message: blocked.message }
       };
       return { ...result, presentation: buildFetchPresentation(result) };
@@ -229,7 +230,8 @@ export function createBackendSet(
   let isClosed = false;
   const getGuardProxy = () => {
     if (isClosed) return Promise.reject(new Error('Backend set is closed.'));
-    return (guardProxy ??= (deps.createGuardProxy ?? startGuardProxy)({
+    if (guardProxy) return guardProxy;
+    const started = (deps.createGuardProxy ?? startGuardProxy)({
       guard: networkGuard,
       ...(proxy
         ? {
@@ -241,7 +243,15 @@ export function createBackendSet(
           }
         : {}),
       trustProxyDns: config.network?.trustProxyDns === true
-    }));
+    });
+    guardProxy = started;
+    // A failed start should not stick around for the rest of the backend
+    // set's life: clear it so the next call tries again, unless a newer
+    // attempt has already replaced it.
+    started.catch(() => {
+      if (guardProxy === started) guardProxy = undefined;
+    });
+    return started;
   };
 
   const modelFetch: typeof fetch | GuardProxyFetch = deps.createModelFetch
@@ -378,7 +388,7 @@ export function createBackendSet(
 
   return {
     search,
-    fetchPage: withTargetGuard(fetchPageWithReaders, networkGuard),
+    fetchPage: withTargetGuard(fetchPageWithReaders, networkGuard, config.fetch.provider === 'firecrawl' ? 'firecrawl' : 'http'),
     headlessFetch: createHeadlessFetch({ fetchPage: headlessPage }),
     close
   };

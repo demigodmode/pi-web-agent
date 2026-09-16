@@ -410,4 +410,27 @@ describe('headless private address guard', () => {
     expect(result).toMatchObject({ status: 'error', error: { code: 'BLOCKED_PRIVATE_ADDRESS' } });
     expect(launchBrowser).not.toHaveBeenCalled();
   });
+
+  it('refuses without launching the browser when the guard proxy fails to start', async () => {
+    const launchBrowser = vi.fn();
+    const getProxy = vi.fn(async () => {
+      throw new Error('listen EADDRINUSE');
+    });
+
+    const result = await headlessFetch('https://example.com/', {
+      resolveBrowser,
+      launchBrowser: launchBrowser as any,
+      guard,
+      guardProxy: getProxy
+    });
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: {
+        code: 'BLOCKED_PRIVATE_ADDRESS',
+        message: 'Blocked example.com: the private address guard is not available, so the browser was not started.'
+      }
+    });
+    expect(launchBrowser).not.toHaveBeenCalled();
+  });
 });

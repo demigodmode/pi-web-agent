@@ -161,6 +161,25 @@ describe.skipIf(process.platform !== 'linux')('guard proxy fetch', () => {
     expect(getProxy).not.toHaveBeenCalled();
   });
 
+  it('retries getProxy after a failed attempt instead of caching the rejection', async () => {
+    const pair = await startServerPair();
+    cleanups.push(() => pair.close());
+    const guard = createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: fakeLookup(table) });
+    const proxy = await startGuardProxy({ guard });
+    cleanups.push(() => proxy.close());
+
+    const getProxy = vi.fn().mockRejectedValueOnce(new Error('listen EADDRINUSE')).mockResolvedValueOnce(proxy);
+    const proxyFetch = createGuardProxyFetch(getProxy, { tls: { ca: FIXTURE_CERT } });
+
+    await expect(proxyFetch(`http://ok.test:${pair.port}/`)).rejects.toThrow('listen EADDRINUSE');
+    expect(getProxy).toHaveBeenCalledTimes(1);
+
+    const response = await proxyFetch(`http://ok.test:${pair.port}/`);
+
+    expect(response.status).toBe(200);
+    expect(getProxy).toHaveBeenCalledTimes(2);
+  });
+
   describe('through an upstream proxy', () => {
     it('sends the approved IP upstream while the destination sees the original Host and SNI', async () => {
       const pair = await startServerPair({ tls: true });
