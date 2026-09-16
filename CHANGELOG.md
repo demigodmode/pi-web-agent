@@ -13,7 +13,7 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Fixed
-- None.
+- web_explore no longer fetches private, loopback, or link-local addresses when the link came from the model or a page it read, including redirects and anything a headless page tries to load. A web page could previously steer it at cloud metadata endpoints or services on your network. Addresses you configured yourself (search backends, SearXNG, Firecrawl, the proxy) are unaffected. If you do need to reach a private range, add it under Settings → Backends → Network allow list. (#53)
 
 ### Breaking
 - None.

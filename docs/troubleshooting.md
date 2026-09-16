@@ -126,6 +126,32 @@ To reapply it by hand:
 node ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/scripts/patch-jiti-compat.mjs
 ```
 
+## Fetches fail with a private address error
+
+web_explore refuses to fetch pages on private, loopback, or link-local addresses when the link came from the model or from a page it read. That stops a web page from steering it at things like cloud metadata endpoints, services on localhost, or devices on your network.
+
+The error names the host and the address it resolved to:
+
+```
+Blocked example.internal: resolves to private address 10.0.0.12. Add it to backends.network.allowRanges if this is intended.
+```
+
+If you meant to reach that address, add its range under Settings → Backends → Network allow list, or in your config:
+
+```json
+{
+  "backends": {
+    "network": { "allowRanges": ["10.0.0.0/24"] }
+  }
+}
+```
+
+If every fetch fails this way, check whether you run a proxy app in fake-IP (TUN) mode. Those make every website resolve to an address in `198.18.0.0/15`. Add `198.18.0.0/15` to the allow list.
+
+On headless pages you may instead see `Blocked example.internal: could not verify its address before loading it in the browser.` That shows up when there is no proxy configured and the host just will not resolve, and it usually points to a DNS problem on the machine running Pi.
+
+This does not affect search backends or the SearXNG, Firecrawl, and proxy addresses you configured yourself. Those are always allowed.
+
 Then restart Pi.
 
 `/web-agent doctor` reports the current state. A healthy install prints `jsdom compat patch: ok`. If the patch could not be applied it prints `jsdom compat patch: needed (...)` along with the command above.

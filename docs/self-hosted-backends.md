@@ -302,6 +302,8 @@ Supported Firecrawl options can stay in config:
 
 These are sent in the Firecrawl scrape request body. The supported set is intentionally small for now.
 
+pi-web-agent checks the page URL before sending it to Firecrawl and refuses private addresses. What a Firecrawl server fetches on its own side, such as redirects it follows, is outside that check.
+
 ## Search fanout
 
 Search fanout queries several configured search providers at once, dedupes the merged results by URL, and reranks so URLs multiple providers agree on rank higher. Then the normal research loop continues.

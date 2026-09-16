@@ -282,4 +282,27 @@ describe('presentation config store', () => {
     const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
     expect(loaded.project.exists).toBe(false);
   });
+
+  it('persists the network allow list', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+
+    await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
+      network: { allowRanges: ['198.18.0.0/15'] }
+    });
+
+    const parsed = JSON.parse(readFileSync(projectPath, 'utf8'));
+    expect(parsed.backends).toEqual({ network: { allowRanges: ['198.18.0.0/15'] } });
+  });
+
+  it('lets a project-level empty allow list clear a global one after reload', async () => {
+    await saveBackendConfigScope({ homeDir, projectDir }, 'global', {
+      network: { allowRanges: ['198.18.0.0/15'] }
+    });
+    await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
+      network: { allowRanges: [] }
+    });
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+    expect(loaded.effectiveBackends.network).toEqual({ allowRanges: [] });
+  });
 });

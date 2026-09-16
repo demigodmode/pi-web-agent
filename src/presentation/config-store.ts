@@ -121,6 +121,10 @@ function serializeBackendConfigOverride(config: BackendConfigOverride): BackendC
     backends.proxy = { ...proxy };
   }
 
+  if (config.network) {
+    backends.network = { allowRanges: [...config.network.allowRanges] };
+  }
+
   return { backends };
 }
 
