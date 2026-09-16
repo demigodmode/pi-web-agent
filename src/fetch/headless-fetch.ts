@@ -154,16 +154,16 @@ export async function headlessFetch(
     browser = await launchBrowser(launchOptions);
     // Service workers can fetch on a page's behalf; blocking them keeps the page's traffic simple to account for.
     context = await browser.newContext(enforcement ? { serviceWorkers: 'block' } : undefined);
-    page = await context.newPage();
-
     if (enforcement) {
-      const activePage = page;
+      // Watch every page in the context: popups opened by the page can hit blocked
+      // hosts too. Only the primary page's main-frame navigation is "the navigation".
+      let primaryPage: any;
       const recordRequest = (request: any) => {
         try {
           if (!request || seenRequests.has(request)) return;
           seenRequests.add(request);
           const host = normalizeHost(new URL(request.url()).hostname);
-          if (request.isNavigationRequest() && request.frame() === activePage.mainFrame()) {
+          if (primaryPage && request.isNavigationRequest() && request.frame() === primaryPage.mainFrame()) {
             failedNavigationHosts.add(host);
           } else {
             failedSubresourceHosts.push(host);
@@ -172,37 +172,52 @@ export async function headlessFetch(
           // Unparseable URL or a detached frame: nothing to attribute.
         }
       };
-      activePage.on?.('requestfailed', recordRequest);
-      activePage.on?.('response', (response: any) => {
-        try {
-          if (response.headers()[BLOCKED_HEADER]) recordRequest(response.request());
-        } catch {
-          // ignore
-        }
-      });
-      // Best effort: Playwright doesn't say why a WebSocket died, so an error or a
-      // close before any frame counts as failed. Only refused hosts get counted.
-      activePage.on?.('websocket', (ws: any) => {
-        let host: string;
-        try {
-          host = normalizeHost(new URL(ws.url()).hostname);
-        } catch {
-          return;
-        }
-        let framed = false;
-        let recorded = false;
-        const fail = () => {
-          if (recorded) return;
-          recorded = true;
-          failedSubresourceHosts.push(host);
-        };
-        ws.on?.('framereceived', () => (framed = true));
-        ws.on?.('framesent', () => (framed = true));
-        ws.on?.('socketerror', fail);
-        ws.on?.('close', () => {
-          if (!framed) fail();
+      const watchPage = (watched: any) => {
+        watched?.on?.('requestfailed', recordRequest);
+        watched?.on?.('response', (response: any) => {
+          try {
+            if (response.headers()[BLOCKED_HEADER]) recordRequest(response.request());
+          } catch {
+            // ignore
+          }
         });
-      });
+        // Best effort: Playwright doesn't say why a WebSocket died, so an error or a
+        // close before any frame counts as failed. Only refused hosts get counted.
+        watched?.on?.('websocket', (ws: any) => {
+          let host: string;
+          try {
+            host = normalizeHost(new URL(ws.url()).hostname);
+          } catch {
+            return;
+          }
+          let framed = false;
+          let recorded = false;
+          const fail = () => {
+            if (recorded) return;
+            recorded = true;
+            failedSubresourceHosts.push(host);
+          };
+          ws.on?.('framereceived', () => (framed = true));
+          ws.on?.('framesent', () => (framed = true));
+          ws.on?.('socketerror', fail);
+          ws.on?.('close', () => {
+            if (!framed) fail();
+          });
+        });
+      };
+      const watchedPages = new WeakSet<object>();
+      const watchOnce = (candidate: any) => {
+        if (!candidate || watchedPages.has(candidate)) return;
+        watchedPages.add(candidate);
+        watchPage(candidate);
+      };
+      // Registered before newPage(), so the primary page's own 'page' event is covered too.
+      (context as any).on?.('page', watchOnce);
+      page = await context.newPage();
+      primaryPage = page;
+      watchOnce(page);
+    } else {
+      page = await context.newPage();
     }
 
     const startedAt = now();

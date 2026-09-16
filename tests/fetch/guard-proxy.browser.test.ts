@@ -126,6 +126,28 @@ describe.skipIf(!browserAvailable || process.platform !== 'linux')('guard proxy 
     expect(refusedHosts()).toContain('evil.test');
   }, 60_000);
 
+  it('counts a popup to a blocked address while the page itself loads', async () => {
+    const pair = await startServerPair({
+      okHandler: (request, response) => {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(
+          READABLE_PAGE.replace(
+            '</article>',
+            `</article><script>window.addEventListener('load', () => window.open('http://evil.test:${pair.port}/popup'));</script>`
+          )
+        );
+      }
+    });
+    cleanups.push(() => pair.close());
+
+    const { result, refusedHosts } = await fetchInBrowser(`http://ok.test:${pair.port}/`, { lookup: pairLookup() });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.blockedSubresources).toBeGreaterThanOrEqual(1);
+    expect(pair.evil.connections).toBe(0);
+    expect(refusedHosts()).toContain('evil.test');
+  }, 60_000);
+
   it('blocks a WebSocket to a blocked address while an allowed WebSocket opens', async () => {
     const pair = await startServerPair({
       websocket: true,

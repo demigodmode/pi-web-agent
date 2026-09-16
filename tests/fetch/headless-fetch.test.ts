@@ -435,6 +435,41 @@ describe('headless private address guard', () => {
     expect(result.metadata.blockedSubresources).toBe(2);
   });
 
+  it('counts a refused navigation in a popup page as blocked, without failing the primary page', async () => {
+    // The popup's own events fire from the primary page's goto, after the context announced it.
+    let popupGoto: (events: PageEvents) => Promise<unknown> = async () => undefined;
+    const popup = page((events) => popupGoto(events));
+    const contextListeners: Array<(page: unknown) => void> = [];
+    const primary = page(async (events) => {
+      const response = events.response('https://example.com/');
+      for (const listener of contextListeners) listener(popup);
+      popupGoto = async (popupEvents) => popupEvents.failed('https://evil.example/popup', true);
+      await popup.goto();
+      return response;
+    });
+    const context = {
+      on: vi.fn((event: string, listener: (page: unknown) => void) => {
+        if (event === 'page') contextListeners.push(listener);
+      }),
+      newPage: async () => primary,
+      close: async () => undefined
+    };
+    const launchBrowser = vi.fn(async () => ({ newContext: async () => context, close: async () => undefined }));
+
+    const result = await headlessFetch('https://example.com/', {
+      resolveBrowser,
+      launchBrowser,
+      guard,
+      guardProxy: async () => fakeProxy([refusal('evil.example')])
+    });
+
+    expect(context.on).toHaveBeenCalledWith('page', expect.any(Function));
+    expect(result.status).toBe('ok');
+    expect(result.error).toBeUndefined();
+    expect(result.content?.text).toContain('Rendered page');
+    expect(result.metadata.blockedSubresources).toBe(1);
+  });
+
   it('counts a refused subresource on the same host as the page that loaded', async () => {
     const { launchBrowser } = fakeBrowser(
       page(async (events) => {

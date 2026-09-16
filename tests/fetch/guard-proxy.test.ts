@@ -175,15 +175,18 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
 
   it('refuses a destination whose lookup never finishes', async () => {
     const proxy = await proxyWith({
-      guard: createNetworkGuard({}, { lookup: () => new Promise(() => undefined) }),
-      connectTimeoutMs: 100
+      guard: createNetworkGuard({}, { lookup: () => new Promise(() => undefined), lookupTimeoutMs: 50 }),
+      // Shorter than the lookup timeout: only the guard's own deadline should bound resolution.
+      connectTimeoutMs: 30
     });
     const client = proxy.client('t');
 
+    const startedAt = Date.now();
     const { status, socket } = await rawConnect(proxy.url, 'slow.test:443', client);
     socket.destroy();
 
     expect(status).toBe(403);
+    expect(Date.now() - startedAt).toBeLessThan(2000);
     expect(proxy.refusalsSince(client.username, 0)[0].error).toBeInstanceOf(UnverifiedDestinationError);
   });
 
@@ -311,6 +314,28 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
       expect(local.status).toBe(403);
       expect(upstream.targets).toEqual([`ok.test:${pair.port}`, `inside-only.test:${pair.port}`]);
       expect(pair.evil.connections).toBe(0);
+    });
+
+    it('delegates a hostname whose lookup timed out to a trusted upstream', async () => {
+      const upstream = await startRecordingUpstream();
+      cleanups.push(() => upstream.close());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({}, { lookup: () => new Promise(() => undefined), lookupTimeoutMs: 50 }),
+        upstream: { url: upstream.url },
+        trustProxyDns: true,
+        // Lower than the lookup timeout, so an outer race on resolution would refuse first.
+        connectTimeoutMs: 30
+      });
+      const client = proxy.client('t');
+
+      const startedAt = Date.now();
+      const { socket } = await rawConnect(proxy.url, 'slow.test:4443', client);
+      socket.destroy();
+
+      // The recording upstream can't resolve slow.test and answers 502; what matters is it was asked.
+      expect(upstream.targets).toEqual(['slow.test:4443']);
+      expect(Date.now() - startedAt).toBeLessThan(2000);
+      expect(proxy.refusalsSince(client.username, 0).some((r) => r.error instanceof UnverifiedDestinationError)).toBe(false);
     });
 
     it('never delegates a malformed authority to a trusted upstream', async () => {

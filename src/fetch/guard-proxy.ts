@@ -166,21 +166,12 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
   }
 
   async function decide(host: string): Promise<Destination> {
-    const unverified: Destination = { action: 'refuse', error: new UnverifiedDestinationError(host) };
-    let timer: NodeJS.Timeout | undefined;
-    // A lookup that never settles must not pin the client connection open.
-    const timeout = new Promise<Destination>((resolve) => {
-      timer = setTimeout(() => resolve(unverified), connectTimeoutMs);
-    });
+    // Resolution is bounded by the guard's own lookup timeout, and an unresolved
+    // result still goes through the policy (a trusted upstream may take it).
     try {
-      return await Promise.race([
-        decideDestination(host, guard, { upstream: Boolean(upstream), trustProxyDns }),
-        timeout
-      ]);
+      return await decideDestination(host, guard, { upstream: Boolean(upstream), trustProxyDns });
     } catch {
-      return unverified;
-    } finally {
-      clearTimeout(timer);
+      return { action: 'refuse', error: new UnverifiedDestinationError(host) };
     }
   }
 
