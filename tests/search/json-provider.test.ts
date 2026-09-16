@@ -31,7 +31,23 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
     headers: { 'content-type': 'application/json', ...headers }
   });
 
+const brokenBody = () =>
+  new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"results": ['));
+        controller.error(new Error('socket hang up'));
+      }
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } }
+  );
+
 describe('createJsonSearchProvider', () => {
+  it('a body that fails mid-read is a transient transport failure, not bad_response', async () => {
+    const result = await provider((async () => brokenBody()) as any)({ query: 'q' });
+    expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind: 'transient' } } });
+  });
+
   it('rejects an empty query as bad_request without a request', async () => {
     const fetchImpl = vi.fn();
     const result = await provider(fetchImpl as any)({ query: '   ' });

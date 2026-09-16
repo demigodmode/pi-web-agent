@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('firecrawl fetch backend', () => {
+  it('treats a body that fails mid-read as a transient FETCH_FAILED', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"success": tr'));
+        controller.error(new Error('connection reset'));
+      }
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
+    const result = await createFirecrawlFetcher({ baseUrl: 'http://localhost:3002', fetchImpl })('https://example.com/');
+    expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind: 'transient' } } });
+  });
+
   it('scrapes a URL through Firecrawl and returns extracted markdown', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
         success: true,

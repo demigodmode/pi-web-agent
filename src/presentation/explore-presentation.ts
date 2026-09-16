@@ -1,5 +1,6 @@
 import type { FetchMethod, WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
+import { attemptLines } from './search-presentation.js';
 
 function internalReaderLabel(method?: FetchMethod) {
   if (method === 'headless') return 'web_fetch_headless';
@@ -48,7 +49,8 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     'Sources',
     ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${source.title}: ${source.url}`),
     internalSummary ? `\nInternal tools\n${internalSummary}` : undefined,
-    result.caveat ? `\nCaveat\n${result.caveat}` : undefined
+    result.caveat ? `\nCaveat\n${result.caveat}` : undefined,
+    attemptLines(result.metadata?.attempts)
   ]
     .filter((line) => line !== undefined)
     .join('\n');

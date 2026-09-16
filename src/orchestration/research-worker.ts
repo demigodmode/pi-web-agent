@@ -117,6 +117,7 @@ export function createResearchWorker({
 
       const searchResult = await search({ query });
       const searchCoveragePartial = searchResult.metadata.coverage?.partial === true;
+      const searchAttempts = searchResult.metadata.attempts;
       if (isTerminalFailure(failureOf(searchResult))) {
         return {
           searchQueries,
@@ -124,6 +125,7 @@ export function createResearchWorker({
           gaps: [],
           lowValueOutcomes,
           exhaustedBudget: false,
+          searchAttempts,
           terminalFailure: {
             code: searchResult.error?.code ?? 'SEARCH_FAILED',
             message: `${searchResult.error?.message ?? 'Search failed.'} (${searchResult.error?.failure?.kind})`
@@ -147,7 +149,8 @@ export function createResearchWorker({
           exhaustedBudget: false,
           fanoutProviders,
           fanoutSkipped,
-          searchCoveragePartial
+          searchCoveragePartial,
+          searchAttempts
         };
       }
 
@@ -166,7 +169,8 @@ export function createResearchWorker({
           exhaustedBudget: false,
           fanoutProviders,
           fanoutSkipped,
-          searchCoveragePartial
+          searchCoveragePartial,
+          searchAttempts
         };
       }
 
@@ -226,7 +230,8 @@ export function createResearchWorker({
         exhaustedBudget: false,
         fanoutProviders,
         fanoutSkipped,
-        searchCoveragePartial
+        searchCoveragePartial,
+        searchAttempts
       };
     }
   };

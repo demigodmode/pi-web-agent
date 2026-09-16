@@ -1,6 +1,7 @@
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { canonicalizeUrl } from '../orchestration/url.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
+import { RETRY_BASE_MS, RETRY_JITTER_MS } from '../backends/fallback-policy.js';
 import type { Attempt, FailureInfo, FanoutMetadata, FanoutMode, FanoutOutcome, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
 
 export type FanoutProvider = {
@@ -60,7 +61,23 @@ function withPresentation(result: WebSearchResponse): WebSearchResponse {
   return { ...result, presentation: buildSearchPresentation(result) };
 }
 
-const FANOUT_PROVIDER_TIMEOUT_MS = 8000;
+export const FANOUT_PROVIDER_TIMEOUT_MS = 8000;
+const BACKSTOP_MARGIN_MS = 250;
+
+/** Longest a policy-wrapped provider can legitimately take: two timed-out calls and the retry sleep. */
+export function fanoutBackstopMs(timeoutMs: number): number {
+  return 2 * timeoutMs + RETRY_BASE_MS + RETRY_JITTER_MS + BACKSTOP_MARGIN_MS;
+}
+
+type SearchFn = FanoutProvider['search'];
+
+/**
+ * Per-call timeout. Wrap it INSIDE the retry policy so a stalled call is a transient
+ * failure the policy can retry once (#55).
+ */
+export function withCallTimeout(search: SearchFn, timeoutMs: number, name: SearchProviderName): SearchFn {
+  return (input) => withTimeout(search(input), timeoutMs, name);
+}
 
 /** A provider that doesn't answer in time (or throws) counts as a transient failure, so one
  *  slow/unreachable provider (e.g. a down self-hosted SearXNG) can't stall the whole fanout. */
@@ -104,13 +121,16 @@ export function createFanoutSearch({
 }: {
   providers: FanoutProvider[];
   mode: Exclude<FanoutMode, 'off'>;
+  /** Per-call timeout the providers apply themselves (see withCallTimeout). Fanout only keeps a
+   *  backstop that can't cut a retry short. */
   timeoutMs?: number;
 }) {
+  const backstopMs = fanoutBackstopMs(timeoutMs);
   return async function fanoutSearch({ query }: { query: string }): Promise<WebSearchResponse> {
     const [primary, ...rest] = providers;
 
     async function runSet(set: FanoutProvider[]) {
-      const responses = await Promise.all(set.map((p) => withTimeout(p.search({ query }), timeoutMs, p.name)));
+      const responses = await Promise.all(set.map((p) => withTimeout(p.search({ query }), backstopMs, p.name)));
       return set.map((provider, i) => ({ provider, response: responses[i] }));
     }
 
@@ -165,7 +185,7 @@ export function createFanoutSearch({
     }
 
     if (mode === 'auto') {
-      const primaryResponse = await withTimeout(primary.search({ query }), timeoutMs, primary.name);
+      const primaryResponse = await withTimeout(primary.search({ query }), backstopMs, primary.name);
       if (isTerminalFailure(failureOf(primaryResponse))) {
         return finalize([{ provider: primary, response: primaryResponse }], 'auto');
       }

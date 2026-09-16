@@ -10,13 +10,24 @@ export type ResponseParts = {
   json?: unknown;
 };
 
-/** Reads a response body once, keeping status and headers alongside the parsed JSON. */
+export class BodyReadError extends Error {
+  constructor(readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'BodyReadError';
+  }
+}
+
+/**
+ * Reads a response body once, keeping status and headers alongside the parsed JSON.
+ * A body that can't be read (connection dropped mid-stream) throws BodyReadError: that's
+ * a transport failure, not a malformed response.
+ */
 export async function readResponseParts(response: Response): Promise<ResponseParts & { text: string }> {
-  let text = '';
+  let text: string;
   try {
     text = await response.text();
-  } catch {
-    text = '';
+  } catch (error) {
+    throw new BodyReadError(error);
   }
   let json: unknown;
   try {

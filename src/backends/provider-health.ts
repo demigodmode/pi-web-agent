@@ -6,12 +6,12 @@ export const MAX_COOLDOWN_MS = 15 * 60_000;
 
 export type ProviderHealthState =
   | { state: 'available' }
-  | { state: 'cooling_down'; until: number; failure: FailureInfo }
-  | { state: 'disabled'; failure: FailureInfo };
+  | { state: 'cooling_down'; until: number; failure: FailureInfo; detail?: string }
+  | { state: 'disabled'; failure: FailureInfo; detail?: string };
 
 export type ProviderHealth = {
   get(key: string): ProviderHealthState;
-  record(key: string, failure: FailureInfo): ProviderHealthState;
+  record(key: string, failure: FailureInfo, detail?: string): ProviderHealthState;
 };
 
 /** The applied cooldown. The provider's own value stays in failure.providerRetryAfterMs. */
@@ -38,7 +38,7 @@ export function createProviderHealth({ now = Date.now }: { now?: () => number } 
     return current;
   }
 
-  function record(key: string, failure: FailureInfo): ProviderHealthState {
+  function record(key: string, failure: FailureInfo, detail?: string): ProviderHealthState {
     const current = get(key);
     if (current.state === 'disabled') return current;
 
@@ -51,7 +51,7 @@ export function createProviderHealth({ now = Date.now }: { now?: () => number } 
       case 'quota_exhausted':
       case 'auth_failed':
       case 'not_configured': {
-        const next = { state: 'disabled' as const, failure };
+        const next = { state: 'disabled' as const, failure, ...(detail ? { detail } : {}) };
         states.set(key, next);
         return next;
       }

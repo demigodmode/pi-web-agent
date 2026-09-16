@@ -54,6 +54,8 @@ export type Attempt = {
   failure?: FailureInfo;
   skipReason?: 'cooling_down' | 'disabled';
   cooldownUntil?: number;
+  /** The provider's own message for a user-fixable failure, e.g. a missing key or base URL. */
+  detail?: string;
 };
 
 export type SearchCoverage = {
@@ -146,6 +148,7 @@ export type WebExploreResponse = {
     caveatReasons?: string[];
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];
+    attempts?: Attempt[];
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;

@@ -1,4 +1,4 @@
-import type { SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
+import type { Attempt, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
@@ -119,7 +119,8 @@ function buildMetadata({
   exhaustedBudget,
   caveatReasons = [],
   fanoutProviders,
-  fanoutSkipped
+  fanoutSkipped,
+  attempts
 }: {
   previousQueries: string[];
   allEvidence: ResearchEvidence[];
@@ -130,6 +131,7 @@ function buildMetadata({
   caveatReasons?: EvidenceCaveatReason[];
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
+  attempts?: Attempt[];
 }) {
   return {
     searchPasses: previousQueries.length,
@@ -138,7 +140,8 @@ function buildMetadata({
     exhaustedBudget,
     caveatReasons,
     fanoutProviders,
-    fanoutSkipped
+    fanoutSkipped,
+    ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
 }
 
@@ -195,11 +198,12 @@ export function createResearchOrchestrator({
       let searchCoveragePartial = false;
       const fanoutProvidersSeen = new Set<SearchProviderName>();
       const fanoutSkippedSeen = new Set<SearchProviderName>();
+      const searchAttempts: Attempt[] = [];
 
       function fanoutSnapshot() {
         const providers = fanoutProvidersSeen.size ? [...fanoutProvidersSeen] : undefined;
         const skipped = [...fanoutSkippedSeen].filter((p) => !fanoutProvidersSeen.has(p));
-        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined };
+        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...searchAttempts] };
       }
 
       if (fetchDirect) {
@@ -291,6 +295,7 @@ export function createResearchOrchestrator({
           });
 
           lastPass = pass;
+          if (pass.searchAttempts) searchAttempts.push(...pass.searchAttempts);
           if (pass.searchCoveragePartial) searchCoveragePartial = true;
           if (pass.terminalFailure) {
             return {

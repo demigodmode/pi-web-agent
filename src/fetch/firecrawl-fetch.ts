@@ -60,7 +60,12 @@ export function createFirecrawlFetcher({
       return failed(`Firecrawl scrape failed: ${errorMessage(error)}`, { kind: 'transient' });
     }
 
-    const parts = await readResponseParts(response);
+    let parts: Awaited<ReturnType<typeof readResponseParts>>;
+    try {
+      parts = await readResponseParts(response);
+    } catch (error) {
+      return failed(`Firecrawl scrape response could not be read: ${errorMessage(error)}`, { kind: 'transient' });
+    }
     if (!response.ok) {
       const code = (parts.json as { code?: unknown } | undefined)?.code;
       if (response.status === 500 && code === 'SCRAPE_ALL_ENGINES_FAILED') {

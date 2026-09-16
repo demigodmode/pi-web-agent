@@ -1,4 +1,4 @@
-import type { SearchProviderName } from '../types.js';
+import type { Attempt, SearchProviderName } from '../types.js';
 
 export type ResearchSourceKind =
   | 'primary-content'
@@ -42,6 +42,7 @@ export type ResearchWorkerResult = {
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
   searchCoveragePartial?: boolean;
+  searchAttempts?: Attempt[];
   terminalFailure?: { code: string; message: string };
 };
 
@@ -53,6 +54,7 @@ export type ResearchRunMetadata = {
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
   searchCoveragePartial?: boolean;
+  searchAttempts?: Attempt[];
   terminalFailure?: { code: string; message: string };
 };
 

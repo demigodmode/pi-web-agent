@@ -12,7 +12,7 @@ import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
-import { createFanoutSearch } from '../search/fanout.js';
+import { createFanoutSearch, FANOUT_PROVIDER_TIMEOUT_MS, withCallTimeout } from '../search/fanout.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from './fallback-policy.js';
 import { createProviderHealth, type ProviderHealth } from './provider-health.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
@@ -53,6 +53,8 @@ export type BackendFactoryDeps = {
   providerHealth?: ProviderHealth;
   /** Test seam for the retry sleep, jitter, and clock. */
   policy?: Omit<PolicyDeps, 'health'>;
+  /** Test seam for the per-call fanout provider timeout. */
+  fanoutTimeoutMs?: number;
 };
 
 function invalidSearxngSearch() {
@@ -280,9 +282,12 @@ export function createBackendSet(
     const ordered = [config.search.provider, ...providerNames.filter((n) => n !== config.search.provider)].filter(
       (n, i, arr) => arr.indexOf(n) === i
     );
+    const timeoutMs = deps.fanoutTimeoutMs ?? FANOUT_PROVIDER_TIMEOUT_MS;
     search = createFanoutSearch({
-      providers: ordered.map((name) => ({ name, search: guarded(name, buildProviderSearch(name)) })),
-      mode: fanoutConfig.mode
+      // The timeout sits inside the policy so a stalled provider gets its one transient retry.
+      providers: ordered.map((name) => ({ name, search: guarded(name, withCallTimeout(buildProviderSearch(name), timeoutMs, name)) })),
+      mode: fanoutConfig.mode,
+      timeoutMs
     });
   }
 

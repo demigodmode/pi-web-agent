@@ -56,7 +56,13 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
       return error('FETCH_FAILED', `${label} search request failed: ${message}`, { kind: 'transient' });
     }
 
-    const parts = await readResponseParts(response);
+    let parts: Awaited<ReturnType<typeof readResponseParts>>;
+    try {
+      parts = await readResponseParts(response);
+    } catch (thrown) {
+      const message = thrown instanceof Error ? thrown.message : String(thrown);
+      return error('FETCH_FAILED', `${label} search response could not be read: ${message}`, { kind: 'transient' });
+    }
     if (!response.ok) {
       return error('FETCH_FAILED', `${label} search request failed: HTTP ${response.status}`, classifyHttpFailure(name, parts, now()));
     }

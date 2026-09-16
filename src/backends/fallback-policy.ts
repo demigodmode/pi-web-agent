@@ -17,6 +17,13 @@ export type PolicyDeps = {
 type Search = (input: { query: string }) => Promise<WebSearchResponse>;
 type FetchPage = (input: { url: string }) => Promise<WebFetchResponse>;
 
+const USER_FIXABLE_KINDS: ReadonlySet<string> = new Set(['not_configured', 'auth_failed', 'quota_exhausted']);
+
+/** Only user-fixable failures keep the provider's message; everything else stays message-free. */
+function detailFor(failure: FailureInfo, message: string | undefined): string | undefined {
+  return message && USER_FIXABLE_KINDS.has(failure.kind) ? message : undefined;
+}
+
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function retryDelay(deps: PolicyDeps): number {
@@ -29,18 +36,26 @@ function skipAttempt(backend: string, state: Exclude<ProviderHealthState, { stat
     outcome: 'skipped',
     failure: state.failure,
     skipReason: state.state,
-    ...(state.state === 'cooling_down' ? { cooldownUntil: state.until } : {})
+    ...(state.state === 'cooling_down' ? { cooldownUntil: state.until } : {}),
+    ...(state.detail ? { detail: state.detail } : {})
   };
 }
 
 function skipMessage(backend: string, state: Exclude<ProviderHealthState, { state: 'available' }>): string {
-  return state.state === 'cooling_down'
+  const base = state.state === 'cooling_down'
     ? `${backend} is cooling down after ${state.failure.kind} until ${new Date(state.until).toISOString()}.`
     : `${backend} is disabled for this session after ${state.failure.kind}.`;
+  return state.detail ? `${base} ${state.detail}` : base;
 }
 
-function failedAttempt(backend: string, failure: FailureInfo, state: ProviderHealthState): Attempt {
-  return { backend, outcome: 'failed', failure, ...(state.state === 'cooling_down' ? { cooldownUntil: state.until } : {}) };
+function failedAttempt(backend: string, failure: FailureInfo, state: ProviderHealthState, detail?: string): Attempt {
+  return {
+    backend,
+    outcome: 'failed',
+    failure,
+    ...(state.state === 'cooling_down' ? { cooldownUntil: state.until } : {}),
+    ...(detail ? { detail } : {})
+  };
 }
 
 /**
@@ -70,7 +85,8 @@ export function withSearchPolicy(name: SearchProviderName, search: Search, deps:
     }
 
     if (failure) {
-      attempts.push(failedAttempt(name, failure, deps.health.record(healthKey, failure)));
+      const detail = detailFor(failure, result.error?.message);
+      attempts.push(failedAttempt(name, failure, deps.health.record(healthKey, failure, detail), detail));
     } else {
       attempts.push({ backend: name, outcome: result.results.length > 0 ? 'results' : 'empty' });
     }
@@ -94,12 +110,39 @@ function unavailableMessage(attempts: Attempt[], messages: Map<string, string> =
       return `${attempt.backend} ${kind} (available again at ${new Date(attempt.cooldownUntil).toISOString()})`;
     }
     // Keep the provider's own hint for problems the user has to fix, e.g. a missing key or base URL.
-    const hint = attempt.outcome === 'failed' && ['not_configured', 'auth_failed', 'quota_exhausted'].includes(kind)
-      ? messages.get(attempt.backend)
+    const hint = USER_FIXABLE_KINDS.has(kind)
+      ? attempt.detail ?? (attempt.outcome === 'failed' ? messages.get(attempt.backend) : undefined)
       : undefined;
     return hint ? `${attempt.backend} ${kind} (${hint})` : `${attempt.backend} ${kind}`;
   });
   return `No search backend is available: ${parts.join(', ')}.`;
+}
+
+/**
+ * A failed link's unavailable providers, from its own attempts: the last failed or skipped
+ * attempt per backend with that attempt's kind. A fanout link reports each provider, not the
+ * aggregate. Falls back to the aggregate only when the link carries no failed or skipped attempts.
+ */
+function unavailableFor(result: WebSearchResponse, failure: FailureInfo): Array<{ provider: string; kind: FailureInfo['kind']; message: string }> {
+  const message = result.error?.message ?? failure.kind;
+  const byProvider = new Map<string, { provider: string; kind: FailureInfo['kind']; message: string }>();
+  for (const entry of result.metadata.coverage?.unavailable ?? []) {
+    byProvider.set(entry.provider, { ...entry, message });
+  }
+  const attempts = result.metadata.attempts ?? [];
+  const relevant = attempts.filter((a) => a.outcome === 'failed' || a.outcome === 'skipped');
+  if (relevant.length === 0) {
+    byProvider.set(result.metadata.backend, { provider: result.metadata.backend, kind: failure.kind, message });
+  }
+  for (const attempt of relevant) {
+    byProvider.delete(attempt.backend); // keep insertion order at the latest attempt
+    byProvider.set(attempt.backend, {
+      provider: attempt.backend,
+      kind: attempt.failure?.kind ?? failure.kind,
+      message: attempt.detail ?? message
+    });
+  }
+  return [...byProvider.values()];
 }
 
 /**
@@ -148,7 +191,11 @@ export function chainSearch(providers: Search[], deps: PolicyDeps): Search {
         return { ...stopped, presentation: buildSearchPresentation(stopped) };
       }
 
-      unavailable.push({ provider: result.metadata.backend, kind: failure.kind, message: result.error?.message ?? failure.kind });
+      for (const entry of unavailableFor(result, failure)) {
+        const existing = unavailable.findIndex((u) => u.provider === entry.provider);
+        if (existing >= 0) unavailable.splice(existing, 1);
+        unavailable.push(entry);
+      }
       lastFailure = failure;
     }
 
@@ -195,7 +242,10 @@ export function withFetchPolicy(primary: FetchPage, fallback: FetchPage | undefi
         first = await primary(input);
         failure = failureOf(first);
       }
-      if (failure) attempts.push(failedAttempt('firecrawl', failure, deps.health.record(healthKey, failure)));
+      if (failure) {
+        const detail = detailFor(failure, first.error?.message);
+        attempts.push(failedAttempt('firecrawl', failure, deps.health.record(healthKey, failure, detail), detail));
+      }
       else attempts.push({ backend: 'firecrawl', outcome: first.status === 'ok' ? 'results' : 'empty' });
     }
 

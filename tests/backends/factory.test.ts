@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBackendSet } from '../../src/backends/factory.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 import { createNetworkGuard } from '../../src/fetch/network-guard.js';
+import { createResearchWorkflow } from '../../src/orchestration/index.js';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { SearchProviderName } from '../../src/types.js';
 
 /**
@@ -1064,5 +1066,113 @@ describe('backend factory failure-aware fallback (#55)', () => {
     expect(result.error?.failure?.kind).toBe('guard_refused');
     expect(firecrawl).not.toHaveBeenCalled();
     expect(httpPage).not.toHaveBeenCalled();
+  });
+  it('retries a 200 whose body connection drops mid-read exactly once (Brave)', async () => {
+    const original = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    process.env.PI_WEB_AGENT_BRAVE_API_KEY = 'brave-key';
+    try {
+      const fetchImpl = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"type":"search","web":{"res'));
+              controller.error(new Error('ECONNRESET'));
+            }
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      );
+      vi.stubGlobal('fetch', fetchImpl);
+      const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave' } }, offlineNetworkDeps());
+      const result = await backends.search({ query: 'q' });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(result.metadata.attempts?.map((a) => a.outcome)).toEqual(['retried', 'failed']);
+      expect(result.metadata.attempts?.[0]?.failure?.kind).toBe('transient');
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+      else process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
+    }
+  });
+
+  it('retries a stalled fanout provider once through the policy', async () => {
+    const stalled = vi.fn(() => new Promise<any>(() => undefined));
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fanout: { mode: 'on', providers: ['brave', 'exa'] } } },
+      {
+        ...offlineNetworkDeps(),
+        fanoutTimeoutMs: 20,
+        createBraveSearch: () => ok('brave') as any,
+        createExaSearch: () => stalled as any
+      }
+    );
+    const result = await backends.search({ query: 'q' });
+    expect(stalled).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe('ok');
+    expect(result.results).toHaveLength(1);
+    expect(result.metadata.fanout?.outcomes?.[1]).toMatchObject({ provider: 'exa', outcome: 'failed', failure: { kind: 'transient' } });
+  });
+
+  it('carries search attempts into web_explore metadata and the verbose view only', async () => {
+    const brave = failing('brave', 'rate_limited');
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+      { ...offlineNetworkDeps(), createBraveSearch: () => brave as any, createDuckDuckGoSearch: () => ok('duckduckgo') as any }
+    );
+    await backends.search({ query: 'warm up the cooldown' });
+
+    const workflow = createResearchWorkflow({
+      search: backends.search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok',
+        url,
+        content: { title: 'Docs', text: 'Useful documentation text about the topic. '.repeat(20) },
+        metadata: { method: 'http', cacheHit: false }
+      }),
+      headlessFetch: async ({ url }) => ({ status: 'error', url, metadata: { method: 'headless', cacheHit: false } })
+    });
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'topic docs' });
+
+    expect(result.metadata?.attempts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ backend: 'brave', outcome: 'skipped', skipReason: 'cooling_down' })])
+    );
+    expect(result.presentation.views.verbose).toContain('brave: skipped [cooling_down] (rate_limited)');
+    expect(result.presentation.views.compact).not.toContain('cooling_down');
+    expect(result.presentation.views.preview ?? '').not.toContain('cooling_down');
+    const modelFacing = JSON.stringify({ findings: result.findings, sources: result.sources, caveat: result.caveat, error: result.error });
+    expect(modelFacing).not.toContain('cooling_down');
+    expect(modelFacing).not.toContain('skipped');
+  });
+
+  it('credits each failed fanout provider with its own kind when keyless Tavily answers', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'brave', 'exa'] } } },
+      {
+        ...offlineNetworkDeps(),
+        createDuckDuckGoSearch: () => failing('duckduckgo', 'blocked') as any,
+        createBraveSearch: () => failing('brave', 'rate_limited') as any,
+        createExaSearch: () => failing('exa', 'auth_failed') as any,
+        createTavilySearch: () => ok('tavily') as any
+      }
+    );
+    const result = await backends.search({ query: 'q' });
+    expect(result.status).toBe('ok');
+    expect(result.metadata.backend).toBe('tavily');
+    expect(result.metadata.coverage?.unavailable).toEqual(
+      expect.arrayContaining([
+        { provider: 'duckduckgo', kind: 'blocked' },
+        { provider: 'brave', kind: 'rate_limited' },
+        { provider: 'exa', kind: 'auth_failed' }
+      ])
+    );
+    expect(result.metadata.coverage?.unavailable).toHaveLength(3);
+  });
+
+  it('keeps the SearXNG base URL hint on a later, skipped call', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'searxng' } }, offlineNetworkDeps());
+    const first = await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+    expect(first.error?.message).toContain('requires backends.search.baseUrl');
+    expect(second.metadata.attempts?.[0]).toMatchObject({ outcome: 'skipped', detail: 'SearXNG search requires backends.search.baseUrl.' });
+    expect(second.error?.message).toContain('requires backends.search.baseUrl');
   });
 });
