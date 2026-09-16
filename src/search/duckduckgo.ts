@@ -40,32 +40,27 @@ export const DUCKDUCKGO_HEADERS = {
   'Accept-Language': 'en-US,en;q=0.9'
 } as const;
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export class DuckDuckGoHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly headers: Headers
+  ) {
+    super(`DuckDuckGo request failed with ${status}`);
+    this.name = 'DuckDuckGoHttpError';
+  }
+}
 
+/** One request. Retries belong to the fallback policy (#55), which only retries transient failures. */
 export async function fetchDuckDuckGoHtml(
   query: string,
-  {
-    fetchImpl = fetch,
-    retries = 1,
-    sleep = defaultSleep
-  }: { fetchImpl?: typeof fetch; retries?: number; sleep?: (ms: number) => Promise<void> } = {}
+  { fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {}
 ): Promise<string> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      const response = await fetchImpl(buildSearchUrl(query), { headers: { ...DUCKDUCKGO_HEADERS } });
-      if (!response.ok) {
-        throw new Error(`DuckDuckGo request failed with ${response.status}`);
-      }
-      return response.text();
-    } catch (error) {
-      lastError = error;
-      if (attempt < retries) {
-        await sleep(500);
-      }
-    }
+  const response = await fetchImpl(buildSearchUrl(query), { headers: { ...DUCKDUCKGO_HEADERS } });
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new DuckDuckGoHttpError(response.status, response.headers);
   }
-  throw lastError instanceof Error ? lastError : new Error('DuckDuckGo request failed');
+  return response.text();
 }
 
 export function parseDuckDuckGoResults(html: string): ParsedDuckDuckGoResults {

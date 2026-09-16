@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTavilySearchTool } from '../../src/search/tavily.js';
 
-function response(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-  return {
-    ok: init.ok ?? true,
+function response(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}) {
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
     status: init.status ?? 200,
-    json: vi.fn().mockResolvedValue(body)
-  } as unknown as Response;
+    headers: { 'content-type': 'application/json', ...init.headers }
+  });
 }
 
 describe('tavily search', () => {
@@ -73,11 +72,12 @@ describe('tavily search', () => {
     expect(result.metadata.backend).toBe('tavily');
     expect(result.error).toEqual({
       code: 'BACKEND_CONFIG_INVALID',
-      message: 'Tavily search requires TAVILY_API_KEY.'
+      message: 'Tavily search requires TAVILY_API_KEY.',
+      failure: { kind: 'not_configured' }
     });
   });
 
-  it('returns no results when Tavily has no usable results', async () => {
+  it('treats a body whose items all fail normalization as bad_response', async () => {
     const search = createTavilySearchTool({
       apiKey: 'key',
       fetchImpl: vi.fn().mockResolvedValue(response({ results: [{ title: 'No URL' }] }))
@@ -86,13 +86,13 @@ describe('tavily search', () => {
     const result = await search({ query: 'empty' });
 
     expect(result.status).toBe('error');
-    expect(result.error?.code).toBe('NO_RESULTS');
+    expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response', httpStatus: 200 } });
   });
 
   it('returns fetch failure for non-ok responses', async () => {
     const search = createTavilySearchTool({
       apiKey: 'key',
-      fetchImpl: vi.fn().mockResolvedValue(response({}, { ok: false, status: 401 }))
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 401 }))
     });
 
     const result = await search({ query: 'playwright' });
@@ -100,7 +100,8 @@ describe('tavily search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'Tavily search request failed: HTTP 401'
+      message: 'Tavily search request failed: HTTP 401',
+      failure: { kind: 'auth_failed', httpStatus: 401 }
     });
   });
 
@@ -115,7 +116,8 @@ describe('tavily search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'Tavily search request failed: network down'
+      message: 'Tavily search request failed: network down',
+      failure: { kind: 'transient' }
     });
   });
 
@@ -149,5 +151,37 @@ describe('tavily search', () => {
     const search = createTavilySearchTool({ fetchImpl: vi.fn() });
     const result = await search({ query: 'playwright' });
     expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+  });
+
+  it('returns ok with an empty list for a valid empty response', async () => {
+    const search = createTavilySearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ results: [] })) });
+    const result = await search({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('treats a malformed body as bad_response', async () => {
+    for (const body of ['not json', { results: 'nope' }]) {
+      const search = createTavilySearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
+      const result = await search({ query: 'q' });
+      expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response' } });
+    }
+  });
+
+  it('classifies a keyless 429 as rate_limited with Retry-After', async () => {
+    const search = createTavilySearchTool({
+      keyless: true,
+      fetchImpl: vi.fn().mockResolvedValue(response({ detail: { error: 'limit' } }, { status: 429, headers: { 'retry-after': '12' } }))
+    });
+    const result = await search({ query: 'q' });
+    expect(result.error).toMatchObject({ code: 'FETCH_FAILED', failure: { kind: 'rate_limited', httpStatus: 429, providerRetryAfterMs: 12_000 } });
+  });
+
+  it('keeps undocumented Tavily statuses on the defaults (UNVERIFIED)', async () => {
+    const result = await createTavilySearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 403 }))
+    })({ query: 'q' });
+    expect(result.error?.failure?.kind).toBe('blocked');
   });
 });

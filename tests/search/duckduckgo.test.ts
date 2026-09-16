@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { buildSearchUrl, fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../../src/search/duckduckgo.js';
+import { buildSearchUrl, DuckDuckGoHttpError, fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../../src/search/duckduckgo.js';
 
 describe('DuckDuckGo search parsing', () => {
   it('builds a deterministic search URL', () => {
@@ -133,30 +133,26 @@ describe('DuckDuckGo search parsing', () => {
     expect(init.headers['Accept-Language']).toMatch(/en/);
   });
 
-  it('retries once before giving up on a transient failure', async () => {
+  it('does not retry a 429 internally; the fallback policy owns retries (#55)', async () => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, status: 429, text: vi.fn() } as unknown as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: vi.fn().mockResolvedValue('<html>ok</html>')
-      } as unknown as Response);
+      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '9' } }))
+      .mockResolvedValueOnce(new Response('<html>ok</html>', { status: 200 }));
 
-    const html = await fetchDuckDuckGoHtml('playwright', { fetchImpl, sleep: async () => {} });
+    const error = await fetchDuckDuckGoHtml('playwright', { fetchImpl }).catch((e) => e);
 
-    expect(html).toBe('<html>ok</html>');
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(error).toBeInstanceOf(DuckDuckGoHttpError);
+    expect(error.message).toMatch(/429/);
+    expect(error.status).toBe(429);
+    expect(error.headers.get('retry-after')).toBe('9');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('gives up after the retry is exhausted', async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 429, text: vi.fn() } as unknown as Response);
-
-    await expect(
-      fetchDuckDuckGoHtml('playwright', { fetchImpl, sleep: async () => {} })
-    ).rejects.toThrow(/429/);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  it('fetchDuckDuckGoHtml makes one request and throws DuckDuckGoHttpError on a non-2xx', async () => {
+    const fetchImpl = vi.fn(async () => new Response('nope', { status: 503 }));
+    const error = await fetchDuckDuckGoHtml('q', { fetchImpl: fetchImpl as any }).catch((e) => e);
+    expect(error).toBeInstanceOf(DuckDuckGoHttpError);
+    expect(error.status).toBe(503);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
