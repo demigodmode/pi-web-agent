@@ -57,6 +57,20 @@ describe('decideNextResearchStep', () => {
     ).toBe('answer');
   });
 
+  it('does not let partial search coverage turn a strong answer into a caveated one (#55)', () => {
+    expect(
+      decideNextResearchStep({
+        evidence: [officialDocsEvidence, officialApiEvidence],
+        suggestedHeadlessUrls: [],
+        passIndex: 0,
+        maxPasses: 3,
+        headlessAttempts: 0,
+        maxHeadlessAttempts: 2,
+        quality: quality({ caveatReasons: ['low-diversity', 'partial-search-coverage'], flags: { hasLowDiversity: true } })
+      }).action
+    ).toBe('answer');
+  });
+
   it('continues when evidence is thin and budget remains', () => {
     expect(
       decideNextResearchStep({

@@ -120,4 +120,9 @@ describe('analyzeEvidenceQuality', () => {
 
     expect(report.caveatReasons).toContain('community-only');
   });
+
+  it('adds partial-search-coverage only when coverage was partial', () => {
+    expect(analyzeEvidenceQuality({ evidence: [], gaps: [], lowValueOutcomes: [], partialSearchCoverage: true }).caveatReasons).toContain('partial-search-coverage');
+    expect(analyzeEvidenceQuality({ evidence: [], gaps: [], lowValueOutcomes: [] }).caveatReasons).not.toContain('partial-search-coverage');
+  });
 });

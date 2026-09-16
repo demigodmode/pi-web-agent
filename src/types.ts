@@ -24,11 +24,57 @@ export type FanoutMetadata = {
   mode: Exclude<FanoutMode, 'off'>;
   providers: SearchProviderName[]; // providers that actually contributed results
   skipped?: SearchProviderName[];  // providers queried but errored or returned nothing
+  outcomes?: FanoutOutcome[];
+};
+
+export type FailureKind =
+  | 'rate_limited'
+  | 'quota_exhausted'
+  | 'auth_failed'
+  | 'not_configured'
+  | 'transient'
+  | 'blocked'
+  | 'bad_response'
+  | 'bad_request'
+  | 'config_global'
+  | 'guard_refused';
+
+export type FailureInfo = {
+  kind: FailureKind;
+  httpStatus?: number;
+  /** Documented provider body code or tag, e.g. Exa `NO_MORE_CREDITS`. */
+  providerCode?: string;
+  /** Exactly what the provider reported, uncapped. */
+  providerRetryAfterMs?: number;
+};
+
+export type Attempt = {
+  backend: string;
+  outcome: 'results' | 'empty' | 'failed' | 'skipped' | 'retried';
+  failure?: FailureInfo;
+  skipReason?: 'cooling_down' | 'disabled';
+  cooldownUntil?: number;
+  /** The provider's own message for a user-fixable failure, e.g. a missing key or base URL. */
+  detail?: string;
+};
+
+export type SearchCoverage = {
+  partial: true;
+  unavailable: Array<{ provider: string; kind: FailureKind }>;
+};
+
+export type FanoutOutcome = {
+  provider: SearchProviderName;
+  outcome: 'results' | 'empty' | 'failed' | 'skipped';
+  count?: number;
+  failure?: FailureInfo;
+  skipReason?: 'cooling_down' | 'disabled';
 };
 
 export type ToolError = {
   code: string;
   message: string;
+  failure?: FailureInfo;
 };
 
 export type SearchMetadata = {
@@ -37,6 +83,8 @@ export type SearchMetadata = {
   fallbackFrom?: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'duckduckgo';
   fallbackReason?: string;
   fanout?: FanoutMetadata;
+  attempts?: Attempt[];
+  coverage?: SearchCoverage;
 };
 
 export type FetchMethod = 'http' | 'headless' | 'firecrawl' | 'github' | 'pdf' | 'youtube';
@@ -52,6 +100,7 @@ export type FetchMetadata = {
   navigationMs?: number;
   /** Headless only: browser requests refused by the private-address guard (#53). */
   blockedSubresources?: number;
+  attempts?: Attempt[];
 };
 
 export type ExtractedContent = {
@@ -99,6 +148,7 @@ export type WebExploreResponse = {
     caveatReasons?: string[];
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];
+    attempts?: Attempt[];
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;

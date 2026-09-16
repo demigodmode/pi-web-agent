@@ -19,6 +19,8 @@ function sentenceForReason(reason: EvidenceCaveatReason): string {
       return 'readable sources include cautionary or possibly conflicting guidance';
     case 'bot-check':
       return 'some candidate sources showed bot-check or security verification pages';
+    case 'partial-search-coverage':
+      return 'some search backends were unavailable, so results may be incomplete';
   }
 }
 

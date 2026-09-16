@@ -37,7 +37,7 @@ export function createHttpFetcher({
         status: 'error',
         url,
         metadata: { method: 'http', cacheHit: false },
-        error: { code: blocked.code, message: blocked.message }
+        error: { code: blocked.code, message: blocked.message, failure: { kind: 'guard_refused' } }
       };
     }
     const contentType = response.headers.get('content-type') ?? '';

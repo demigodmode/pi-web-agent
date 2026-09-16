@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBackendSet } from '../../src/backends/factory.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 import { createNetworkGuard } from '../../src/fetch/network-guard.js';
+import { createResearchWorkflow } from '../../src/orchestration/index.js';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { SearchProviderName } from '../../src/types.js';
 
 /**
@@ -16,7 +18,8 @@ function offlineNetworkDeps() {
       ((input: Parameters<typeof fetch>[0], init?: RequestInit) => globalThis.fetch(input, init)) as typeof fetch,
     createGuardProxy: vi.fn(async () => {
       throw new Error('tests must not start a real guard proxy');
-    })
+    }),
+    policy: { sleep: async () => undefined, random: () => 0 }
   };
 }
 
@@ -60,10 +63,12 @@ describe('backend factory', () => {
       offlineNetworkDeps()
     );
 
+    // #55: a plain chain where every provider failed reports SEARCH_BACKENDS_UNAVAILABLE,
+    // with the missing base URL classified as not_configured (no silent DuckDuckGo fallback).
     await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
       status: 'error',
       metadata: { backend: 'searxng', cacheHit: false },
-      error: { code: 'BACKEND_CONFIG_INVALID' }
+      error: { code: 'SEARCH_BACKENDS_UNAVAILABLE', failure: { kind: 'not_configured' } }
     });
 
     await expect(backends.fetchPage({ url: 'https://example.com' })).resolves.toMatchObject({
@@ -361,6 +366,33 @@ describe('backend factory', () => {
     expect(createTavilySearch).toHaveBeenCalledWith(expect.objectContaining({ keyless: true }));
     expect(result.status).toBe('ok');
     expect(result.metadata.fallbackFrom).toBe('duckduckgo');
+  });
+
+  it('never reaches keyless Tavily after a bad_request inside an all-failed fanout (#55)', async () => {
+    const badRequestDdg = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'duckduckgo', cacheHit: false },
+      error: { code: 'INVALID_QUERY', message: 'bad', failure: { kind: 'bad_request' } }
+    });
+    const transientTavily = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'tavily', cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'down', failure: { kind: 'transient' } }
+    });
+    const keylessTavily = vi.fn();
+    const createTavilySearch = vi.fn((options: { keyless?: boolean }) => (options.keyless ? keylessTavily : transientTavily));
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'tavily'] } } },
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: vi.fn().mockReturnValue(badRequestDdg), createTavilySearch: createTavilySearch as any }
+    );
+
+    const result = await backends.search({ query: 'anything' });
+
+    expect(keylessTavily).not.toHaveBeenCalled();
+    expect(result.error?.failure?.kind).toBe('bad_request');
   });
 
   it('does not fall back to keyless Tavily when the opt-out env var is set', async () => {
@@ -951,5 +983,239 @@ describe('backend factory guard proxy wiring', () => {
     await backends.fetchPage({ url: 'https://example.com/' }).catch(() => undefined);
 
     expect(createGuardProxy).not.toHaveBeenCalled();
+  });
+});
+
+describe('backend factory failure-aware fallback (#55)', () => {
+  const ok = (backend: string) => async () => ({ status: 'ok' as const, results: [{ title: 't', url: 'https://r.test/', snippet: '' }], metadata: { backend, cacheHit: false } });
+  const failing = (backend: string, kind: string) =>
+    vi.fn(async () => ({ status: 'error' as const, results: [], metadata: { backend, cacheHit: false }, error: { code: 'X', message: `${backend} ${kind}`, failure: { kind } } }));
+
+  it('cools a rate-limited primary down across calls and uses the fallback meanwhile', async () => {
+    const brave = failing('brave', 'rate_limited');
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+      { ...offlineNetworkDeps(), createBraveSearch: () => brave as any, createDuckDuckGoSearch: () => ok('duckduckgo') as any }
+    );
+
+    await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+
+    expect(brave).toHaveBeenCalledTimes(1);
+    expect(second.status).toBe('ok');
+    expect(second.metadata.attempts?.[0]).toMatchObject({ backend: 'brave', outcome: 'skipped', skipReason: 'cooling_down', failure: { kind: 'rate_limited' } });
+  });
+
+  it('a new backend set starts with fresh provider health', async () => {
+    const make = () =>
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+        { ...offlineNetworkDeps(), createBraveSearch: () => failing('brave', 'auth_failed') as any, createDuckDuckGoSearch: () => ok('duckduckgo') as any }
+      );
+    await make().search({ query: 'a' });
+    const fresh = await make().search({ query: 'a' });
+    expect(fresh.metadata.attempts?.[0]).toMatchObject({ backend: 'brave', outcome: 'failed' });
+  });
+
+  it('gives keyless Tavily its own health key', async () => {
+    const tavilyCalls: string[] = [];
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      ...offlineNetworkDeps(),
+      createDuckDuckGoSearch: () => failing('duckduckgo', 'blocked') as any,
+      createTavilySearch: (options: any) => {
+        tavilyCalls.push(options.keyless ? 'keyless' : 'keyed');
+        return ok('tavily') as any;
+      }
+    });
+    const result = await backends.search({ query: 'q' });
+    expect(tavilyCalls).toEqual(['keyless']);
+    expect(result.metadata.coverage?.partial).toBe(true);
+  });
+
+  it('never falls back or retries when the shared proxy config is invalid (config_global)', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'htttp://bad' } }, offlineNetworkDeps());
+    const search = await backends.search({ query: 'q' });
+    const page = await backends.fetchPage({ url: 'https://example.com/' });
+    const headless = await backends.headlessFetch({ url: 'https://example.com/' });
+    for (const result of [search, page, headless]) {
+      expect(result.error?.failure?.kind).toBe('config_global');
+    }
+  });
+
+  it('marks a missing SearXNG base URL and Firecrawl base URL as not_configured', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'searxng' }, fetch: { provider: 'firecrawl' } },
+      offlineNetworkDeps()
+    );
+    const search = await backends.search({ query: 'q' });
+    expect(search.metadata.attempts?.[0]?.failure?.kind).toBe('not_configured');
+  });
+
+  it('never hands a guard-refused page to Firecrawl or the http fallback', async () => {
+    const firecrawl = vi.fn();
+    const httpPage = vi.fn();
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, fetch: { provider: 'firecrawl', baseUrl: 'http://127.0.0.1:3002', fallback: 'http' } },
+      {
+        ...offlineNetworkDeps(),
+        createFirecrawlFetch: vi.fn(() => firecrawl) as any,
+        createHttpFetch: vi.fn(() => httpPage) as any
+      }
+    );
+    const result = await backends.fetchPage({ url: 'http://169.254.169.254/' });
+    expect(result.error?.failure?.kind).toBe('guard_refused');
+    expect(firecrawl).not.toHaveBeenCalled();
+    expect(httpPage).not.toHaveBeenCalled();
+  });
+  it('retries a 200 whose body connection drops mid-read exactly once (Brave)', async () => {
+    const original = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+    process.env.PI_WEB_AGENT_BRAVE_API_KEY = 'brave-key';
+    try {
+      const fetchImpl = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"type":"search","web":{"res'));
+              controller.error(new Error('ECONNRESET'));
+            }
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      );
+      vi.stubGlobal('fetch', fetchImpl);
+      const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave' } }, offlineNetworkDeps());
+      const result = await backends.search({ query: 'q' });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(result.metadata.attempts?.map((a) => a.outcome)).toEqual(['retried', 'failed']);
+      expect(result.metadata.attempts?.[0]?.failure?.kind).toBe('transient');
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_BRAVE_API_KEY;
+      else process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
+    }
+  });
+
+  it('retries a stalled fanout provider once through the policy', async () => {
+    const stalled = vi.fn(() => new Promise<any>(() => undefined));
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fanout: { mode: 'on', providers: ['brave', 'exa'] } } },
+      {
+        ...offlineNetworkDeps(),
+        fanoutTimeoutMs: 20,
+        createBraveSearch: () => ok('brave') as any,
+        createExaSearch: () => stalled as any
+      }
+    );
+    const result = await backends.search({ query: 'q' });
+    expect(stalled).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe('ok');
+    expect(result.results).toHaveLength(1);
+    expect(result.metadata.fanout?.outcomes?.[1]).toMatchObject({ provider: 'exa', outcome: 'failed', failure: { kind: 'transient' } });
+  });
+
+  it('carries search attempts into web_explore metadata and the verbose view only', async () => {
+    const brave = failing('brave', 'rate_limited');
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
+      { ...offlineNetworkDeps(), createBraveSearch: () => brave as any, createDuckDuckGoSearch: () => ok('duckduckgo') as any }
+    );
+    await backends.search({ query: 'warm up the cooldown' });
+
+    const workflow = createResearchWorkflow({
+      search: backends.search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok',
+        url,
+        content: { title: 'Docs', text: 'Useful documentation text about the topic. '.repeat(20) },
+        metadata: { method: 'http', cacheHit: false }
+      }),
+      headlessFetch: async ({ url }) => ({ status: 'error', url, metadata: { method: 'headless', cacheHit: false } })
+    });
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'topic docs' });
+
+    expect(result.metadata?.attempts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ backend: 'brave', outcome: 'skipped', skipReason: 'cooling_down' })])
+    );
+    expect(result.presentation.views.verbose).toContain('brave: skipped [cooling_down] (rate_limited)');
+    expect(result.presentation.views.compact).not.toContain('cooling_down');
+    expect(result.presentation.views.preview ?? '').not.toContain('cooling_down');
+    const modelFacing = JSON.stringify({ findings: result.findings, sources: result.sources, caveat: result.caveat, error: result.error });
+    expect(modelFacing).not.toContain('cooling_down');
+    expect(modelFacing).not.toContain('skipped');
+  });
+
+  it('carries fetch attempts from search results and direct URLs into web_explore verbose only', async () => {
+    const page = '<html><head><title>Docs</title></head><body><article><p>' + 'Useful documentation text about the topic. '.repeat(20) + '</p></article></body></html>';
+    const firecrawl = vi.fn(async (url: string) => ({
+      status: 'error' as const,
+      url,
+      metadata: { method: 'firecrawl' as const, cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'Firecrawl scrape failed: HTTP 503', failure: { kind: 'transient' as const, httpStatus: 503 } }
+    }));
+    const make = () =>
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, fetch: { provider: 'firecrawl', baseUrl: 'http://127.0.0.1:3002', fallback: 'http' } },
+        {
+          ...offlineNetworkDeps(),
+          createModelFetch: () =>
+            (async () => new Response(page, { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch,
+          createFirecrawlFetch: vi.fn(() => firecrawl) as any,
+          createDuckDuckGoSearch: () => ok('duckduckgo') as any
+        }
+      );
+
+    for (const query of ['topic docs', 'read https://docs.example.test/page']) {
+      const backends = make();
+      const workflow = createResearchWorkflow({
+        search: backends.search,
+        fetchPage: backends.fetchPage,
+        headlessFetch: async ({ url }) => ({ status: 'error', url, metadata: { method: 'headless', cacheHit: false } })
+      });
+      const result = await createWebExploreTool({ explore: workflow })({ query });
+
+      expect(result.metadata?.attempts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ backend: 'firecrawl', outcome: 'retried' }),
+          expect.objectContaining({ backend: 'firecrawl', outcome: 'failed' }),
+          expect.objectContaining({ backend: 'http', outcome: 'results' })
+        ])
+      );
+      expect(result.presentation.views.verbose).toContain('firecrawl: retried (transient)');
+      const modelFacing = JSON.stringify({ findings: result.findings, sources: result.sources, caveat: result.caveat, error: result.error });
+      expect(modelFacing).not.toContain('retried');
+      expect(modelFacing).not.toContain('transient');
+    }
+  });
+
+  it('credits each failed fanout provider with its own kind when keyless Tavily answers', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'brave', 'exa'] } } },
+      {
+        ...offlineNetworkDeps(),
+        createDuckDuckGoSearch: () => failing('duckduckgo', 'blocked') as any,
+        createBraveSearch: () => failing('brave', 'rate_limited') as any,
+        createExaSearch: () => failing('exa', 'auth_failed') as any,
+        createTavilySearch: () => ok('tavily') as any
+      }
+    );
+    const result = await backends.search({ query: 'q' });
+    expect(result.status).toBe('ok');
+    expect(result.metadata.backend).toBe('tavily');
+    expect(result.metadata.coverage?.unavailable).toEqual(
+      expect.arrayContaining([
+        { provider: 'duckduckgo', kind: 'blocked' },
+        { provider: 'brave', kind: 'rate_limited' },
+        { provider: 'exa', kind: 'auth_failed' }
+      ])
+    );
+    expect(result.metadata.coverage?.unavailable).toHaveLength(3);
+  });
+
+  it('keeps the SearXNG base URL hint on a later, skipped call', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'searxng' } }, offlineNetworkDeps());
+    const first = await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+    expect(first.error?.message).toContain('requires backends.search.baseUrl');
+    expect(second.metadata.attempts?.[0]).toMatchObject({ outcome: 'skipped', detail: 'SearXNG search requires backends.search.baseUrl.' });
+    expect(second.error?.message).toContain('requires backends.search.baseUrl');
   });
 });

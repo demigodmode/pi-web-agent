@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createYouComSearchTool } from '../../src/search/youcom.js';
 
-function response(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-  return {
-    ok: init.ok ?? true,
+function response(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}) {
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
     status: init.status ?? 200,
-    json: vi.fn().mockResolvedValue(body)
-  } as unknown as Response;
+    headers: { 'content-type': 'application/json', ...init.headers }
+  });
 }
 
 describe('youcom search', () => {
@@ -73,11 +72,12 @@ describe('youcom search', () => {
     expect(result.metadata.backend).toBe('youcom');
     expect(result.error).toEqual({
       code: 'BACKEND_CONFIG_INVALID',
-      message: 'You.com search requires YDC_API_KEY.'
+      message: 'You.com search requires YDC_API_KEY.',
+      failure: { kind: 'not_configured' }
     });
   });
 
-  it('returns no results when You.com has no usable results', async () => {
+  it('treats a body whose items all fail normalization as bad_response', async () => {
     const search = createYouComSearchTool({
       apiKey: 'key',
       fetchImpl: vi.fn().mockResolvedValue(response({ results: [{ title: 'No URL' }] }))
@@ -86,13 +86,13 @@ describe('youcom search', () => {
     const result = await search({ query: 'empty' });
 
     expect(result.status).toBe('error');
-    expect(result.error?.code).toBe('NO_RESULTS');
+    expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response', httpStatus: 200 } });
   });
 
   it('returns fetch failure for non-ok responses', async () => {
     const search = createYouComSearchTool({
       apiKey: 'key',
-      fetchImpl: vi.fn().mockResolvedValue(response({}, { ok: false, status: 401 }))
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 401 }))
     });
 
     const result = await search({ query: 'playwright' });
@@ -100,7 +100,8 @@ describe('youcom search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'You.com search request failed: HTTP 401'
+      message: 'You.com search request failed: HTTP 401',
+      failure: { kind: 'auth_failed', httpStatus: 401 }
     });
   });
 
@@ -115,7 +116,8 @@ describe('youcom search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'You.com search request failed: network down'
+      message: 'You.com search request failed: network down',
+      failure: { kind: 'transient' }
     });
   });
 
@@ -129,5 +131,42 @@ describe('youcom search', () => {
 
     expect(result.status).toBe('ok');
     expect(result.results[0].snippet).toBe('');
+  });
+
+  it('returns ok with an empty list for a valid empty response', async () => {
+    const search = createYouComSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ results: [] })) });
+    const result = await search({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('treats a malformed body as bad_response', async () => {
+    for (const body of ['not json', { results: 'nope' }]) {
+      const search = createYouComSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
+      const result = await search({ query: 'q' });
+      expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response' } });
+    }
+  });
+
+  it('classifies documented You.com 402 and 403 as provider-wide', async () => {
+    const quota = await createYouComSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({ error: 'quota', upgrade_url: 'https://you.com' }, { status: 402 }))
+    })({ query: 'q' });
+    expect(quota.error?.failure).toEqual({ kind: 'quota_exhausted', httpStatus: 402 });
+
+    const scope = await createYouComSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 403 }))
+    })({ query: 'q' });
+    expect(scope.error?.failure).toEqual({ kind: 'auth_failed', httpStatus: 403 });
+  });
+
+  it('treats a You.com 429 as rate_limited (UNVERIFIED, default rule)', async () => {
+    const result = await createYouComSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 429 }))
+    })({ query: 'q' });
+    expect(result.error?.failure?.kind).toBe('rate_limited');
   });
 });

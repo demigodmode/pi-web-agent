@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DuckDuckGoHttpError } from '../../src/search/duckduckgo.js';
 import { createWebSearchTool } from '../../src/tools/web-search.js';
 
 describe('web_search tool', () => {
@@ -52,7 +53,7 @@ describe('web_search tool', () => {
     });
   });
 
-  it('returns NO_RESULTS when the backend page is valid but contains no usable results', async () => {
+  it('returns ok with no results when the backend page says there are no results', async () => {
     const search = createWebSearchTool({
       searchHtml: vi.fn().mockResolvedValue(`
         <html>
@@ -65,16 +66,12 @@ describe('web_search tool', () => {
       `)
     });
 
-    await expect(search({ query: 'missing thing' })).resolves.toMatchObject({
-      status: 'error',
-      error: {
-        code: 'NO_RESULTS',
-        message: 'DuckDuckGo returned no usable results for this query.'
-      }
-    });
+    const result = await search({ query: 'missing thing' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.error).toBeUndefined();
   });
 
-  it('returns PARSE_FAILED when the backend page cannot be understood as search results', async () => {
+  it('returns BLOCKED when the page has no result containers and no no-results text', async () => {
     const search = createWebSearchTool({
       searchHtml: vi.fn().mockResolvedValue(`
         <html>
@@ -90,22 +87,24 @@ describe('web_search tool', () => {
     await expect(search({ query: 'odd page' })).resolves.toMatchObject({
       status: 'error',
       error: {
-        code: 'PARSE_FAILED',
-        message: 'DuckDuckGo returned a page, but it did not match the expected results format.'
+        code: 'BLOCKED',
+        message: 'DuckDuckGo search appears to be blocked or rate limited.',
+        failure: { kind: 'blocked' }
       }
     });
   });
 
-  it('returns BLOCKED when the backend clearly looks blocked', async () => {
+  it('returns BLOCKED when the backend answers 403', async () => {
     const search = createWebSearchTool({
-      searchHtml: vi.fn().mockRejectedValue(new Error('DuckDuckGo blocked the request with 403'))
+      searchHtml: vi.fn().mockRejectedValue(new DuckDuckGoHttpError(403, new Headers()))
     });
 
     await expect(search({ query: 'blocked query' })).resolves.toMatchObject({
       status: 'error',
       error: {
         code: 'BLOCKED',
-        message: 'DuckDuckGo search appears to be blocked or rate limited.'
+        message: 'DuckDuckGo search appears to be blocked or rate limited.',
+        failure: { kind: 'blocked', httpStatus: 403 }
       }
     });
   });
@@ -142,7 +141,8 @@ describe('web_search tool', () => {
       status: 'error',
       error: {
         code: 'FETCH_FAILED',
-        message: 'DuckDuckGo search request failed: socket hang up'
+        message: 'DuckDuckGo search request failed: socket hang up',
+        failure: { kind: 'transient' }
       }
     });
   });
@@ -158,7 +158,7 @@ describe('web_search tool', () => {
     });
   });
 
-  it('retries once when the first page is a 200-OK bot-wall', async () => {
+  it('does not retry a 200-OK bot-wall; it is blocked and falls back (#55)', async () => {
     const searchHtml = vi.fn()
       .mockResolvedValueOnce(`
         <html>
@@ -179,14 +179,8 @@ describe('web_search tool', () => {
 
     const result = await search({ query: 'retry test' });
 
-    expect(result.status).toBe('ok');
-    expect(result.results).toHaveLength(1);
-    expect(result.results[0]).toMatchObject({
-      title: 'Example Result',
-      url: 'https://example.com',
-      snippet: 'This is a valid search result'
-    });
-    expect(searchHtml).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ status: 'error', error: { code: 'BLOCKED', failure: { kind: 'blocked' } } });
+    expect(searchHtml).toHaveBeenCalledTimes(1);
   });
 
   it('classifies a page with both no-results text and a bot-wall marker as BLOCKED', async () => {
@@ -205,7 +199,68 @@ describe('web_search tool', () => {
 
     expect(result.status).toBe('error');
     expect(result.error?.code).toBe('BLOCKED');
-    // The retry should have happened even though both markers are present
-    expect(searchHtml).toHaveBeenCalledTimes(2);
+    expect(result.error?.failure?.kind).toBe('blocked');
+    // One request only: retries belong to the fallback policy (#55)
+    expect(searchHtml).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('duckduckgo classification (#55)', () => {
+  const page = (body: string) => `<html><body>${body}</body></html>`;
+  const withResult = page('<div class="result"><a class="result__a" href="https://x.test/">X</a><a class="result__snippet">s</a></div>');
+
+  it('requests exactly once per call, with no internal retry', async () => {
+    const searchHtml = vi.fn(async () => page('<p>captcha: verify you are human</p>'));
+    await createWebSearchTool({ searchHtml })({ query: 'q' });
+    expect(searchHtml).toHaveBeenCalledTimes(1);
+  });
+
+  it('classifies a bot-wall page as blocked', async () => {
+    const result = await createWebSearchTool({ searchHtml: async () => page('<p>unusual traffic</p>') })({ query: 'q' });
+    expect(result).toMatchObject({ status: 'error', error: { code: 'BLOCKED', failure: { kind: 'blocked' } } });
+  });
+
+  it('classifies a page with no result containers and no no-results text as blocked', async () => {
+    const result = await createWebSearchTool({ searchHtml: async () => page('<p>hello</p>') })({ query: 'q' });
+    expect(result.error?.failure?.kind).toBe('blocked');
+  });
+
+  it('returns ok with an empty list when the page says there are no results', async () => {
+    const result = await createWebSearchTool({ searchHtml: async () => page('<p>No results found.</p>') })({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+  });
+
+  it('returns ok with an empty list when containers exist but every item was filtered', async () => {
+    const result = await createWebSearchTool({ searchHtml: async () => page('<div class="result"></div>') })({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+  });
+
+  it('classifies HTTP failures by status and network failures as transient', async () => {
+    const limited = await createWebSearchTool({
+      searchHtml: async () => {
+        throw new DuckDuckGoHttpError(429, new Headers({ 'retry-after': '7' }));
+      }
+    })({ query: 'q' });
+    expect(limited.error).toMatchObject({ code: 'BLOCKED', failure: { kind: 'rate_limited', httpStatus: 429, providerRetryAfterMs: 7000 } });
+
+    const walled = await createWebSearchTool({
+      searchHtml: async () => {
+        throw new DuckDuckGoHttpError(403, new Headers());
+      }
+    })({ query: 'q' });
+    expect(walled.error?.failure?.kind).toBe('blocked');
+
+    const network = await createWebSearchTool({
+      searchHtml: async () => {
+        throw new TypeError('fetch failed');
+      }
+    })({ query: 'q' });
+    expect(network.error).toMatchObject({ code: 'FETCH_FAILED', failure: { kind: 'transient' } });
+  });
+
+  it('still returns results', async () => {
+    const result = await createWebSearchTool({ searchHtml: async () => withResult })({ query: 'q' });
+    expect(result.status).toBe('ok');
+    expect(result.results).toHaveLength(1);
   });
 });

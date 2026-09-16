@@ -1,5 +1,6 @@
 import type { WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
+import { attemptLines } from './search-presentation.js';
 
 type FetchLike = WebFetchResponse | WebFetchHeadlessResponse;
 
@@ -35,18 +36,21 @@ export function buildFetchPresentation(result: FetchLike): PresentationEnvelope 
         ? `${result.content.title}\n${firstExcerpt(result.content.text) ?? ''}`.trim()
         : firstExcerpt(result.content?.text),
       verbose:
-        result.status === 'ok'
-          ? [
-              `URL: ${result.url}`,
-              result.content?.title ? `Title: ${result.content.title}` : undefined,
-              firstExcerpt(result.content?.text, 500),
-              result.metadata.blockedSubresources
-                ? `Blocked private-address requests: ${result.metadata.blockedSubresources}`
-                : undefined
-            ]
-              .filter(Boolean)
-              .join('\n')
-          : undefined
+        [
+          ...(result.status === 'ok'
+            ? [
+                `URL: ${result.url}`,
+                result.content?.title ? `Title: ${result.content.title}` : undefined,
+                firstExcerpt(result.content?.text, 500),
+                result.metadata.blockedSubresources
+                  ? `Blocked private-address requests: ${result.metadata.blockedSubresources}`
+                  : undefined
+              ]
+            : []),
+          attemptLines(result.metadata.attempts)
+        ]
+          .filter(Boolean)
+          .join('\n') || undefined
     },
     metrics: {
       wordCount,

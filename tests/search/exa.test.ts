@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createExaSearchTool } from '../../src/search/exa.js';
 
-function response(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-  return {
-    ok: init.ok ?? true,
+function response(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}) {
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
     status: init.status ?? 200,
-    json: vi.fn().mockResolvedValue(body)
-  } as unknown as Response;
+    headers: { 'content-type': 'application/json', ...init.headers }
+  });
 }
 
 describe('exa search', () => {
@@ -73,11 +72,12 @@ describe('exa search', () => {
     expect(result.metadata.backend).toBe('exa');
     expect(result.error).toEqual({
       code: 'BACKEND_CONFIG_INVALID',
-      message: 'Exa search requires EXA_API_KEY.'
+      message: 'Exa search requires EXA_API_KEY.',
+      failure: { kind: 'not_configured' }
     });
   });
 
-  it('returns no results when Exa has no usable results', async () => {
+  it('treats a body whose items all fail normalization as bad_response', async () => {
     const search = createExaSearchTool({
       apiKey: 'key',
       fetchImpl: vi.fn().mockResolvedValue(response({ results: [{ title: 'No URL' }] }))
@@ -86,13 +86,13 @@ describe('exa search', () => {
     const result = await search({ query: 'empty' });
 
     expect(result.status).toBe('error');
-    expect(result.error?.code).toBe('NO_RESULTS');
+    expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response', httpStatus: 200 } });
   });
 
   it('returns fetch failure for non-ok responses', async () => {
     const search = createExaSearchTool({
       apiKey: 'key',
-      fetchImpl: vi.fn().mockResolvedValue(response({}, { ok: false, status: 401 }))
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 401 }))
     });
 
     const result = await search({ query: 'playwright' });
@@ -100,7 +100,8 @@ describe('exa search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'Exa search request failed: HTTP 401'
+      message: 'Exa search request failed: HTTP 401',
+      failure: { kind: 'auth_failed', httpStatus: 401 }
     });
   });
 
@@ -115,7 +116,8 @@ describe('exa search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'Exa search request failed: network down'
+      message: 'Exa search request failed: network down',
+      failure: { kind: 'transient' }
     });
   });
 
@@ -129,5 +131,35 @@ describe('exa search', () => {
 
     expect(result.status).toBe('ok');
     expect(result.results[0].snippet).toBe('');
+  });
+
+  it('returns ok with an empty list for a valid empty response', async () => {
+    const search = createExaSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ results: [] })) });
+    const result = await search({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('treats a malformed body as bad_response', async () => {
+    for (const body of ['not json', { results: 'nope' }]) {
+      const search = createExaSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
+      const result = await search({ query: 'q' });
+      expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response' } });
+    }
+  });
+
+  it('classifies documented Exa tags ahead of the status', async () => {
+    const search = createExaSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({ tag: 'API_KEY_BUDGET_EXCEEDED', error: 'budget' }, { status: 402 }))
+    });
+    const result = await search({ query: 'q' });
+    expect(result.error).toMatchObject({ failure: { kind: 'quota_exhausted', httpStatus: 402, providerCode: 'API_KEY_BUDGET_EXCEEDED' } });
+
+    const filtered = await createExaSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({ tag: 'PROHIBITED_CONTENT' }, { status: 403 }))
+    })({ query: 'q' });
+    expect(filtered.error?.failure).toMatchObject({ kind: 'bad_request', providerCode: 'PROHIBITED_CONTENT' });
   });
 });

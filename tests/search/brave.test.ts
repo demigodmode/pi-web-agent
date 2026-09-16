@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBraveSearchTool } from '../../src/search/brave.js';
 
-function response(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-  return {
-    ok: init.ok ?? true,
+function response(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}) {
+  return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
     status: init.status ?? 200,
-    json: vi.fn().mockResolvedValue(body)
-  } as unknown as Response;
+    headers: { 'content-type': 'application/json', ...init.headers }
+  });
 }
 
 describe('brave search', () => {
@@ -69,11 +68,12 @@ describe('brave search', () => {
     expect(result.metadata.backend).toBe('brave');
     expect(result.error).toEqual({
       code: 'BACKEND_CONFIG_INVALID',
-      message: 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.'
+      message: 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.',
+      failure: { kind: 'not_configured' }
     });
   });
 
-  it('returns no results when Brave has no usable web results', async () => {
+  it('treats a body whose items all fail normalization as bad_response', async () => {
     const search = createBraveSearchTool({
       apiKey: 'key',
       fetchImpl: vi.fn().mockResolvedValue(response({ web: { results: [{ title: 'No URL' }] } }))
@@ -82,13 +82,13 @@ describe('brave search', () => {
     const result = await search({ query: 'empty' });
 
     expect(result.status).toBe('error');
-    expect(result.error?.code).toBe('NO_RESULTS');
+    expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response', httpStatus: 200 } });
   });
 
   it('returns fetch failure for non-ok responses', async () => {
     const search = createBraveSearchTool({
       apiKey: 'key',
-      fetchImpl: vi.fn().mockResolvedValue(response({}, { ok: false, status: 401 }))
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 401 }))
     });
 
     const result = await search({ query: 'playwright' });
@@ -96,7 +96,8 @@ describe('brave search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'Brave search request failed: HTTP 401'
+      message: 'Brave search request failed: HTTP 401',
+      failure: { kind: 'auth_failed', httpStatus: 401 }
     });
   });
 
@@ -111,7 +112,49 @@ describe('brave search', () => {
     expect(result.status).toBe('error');
     expect(result.error).toEqual({
       code: 'FETCH_FAILED',
-      message: 'Brave search request failed: network down'
+      message: 'Brave search request failed: network down',
+      failure: { kind: 'transient' }
     });
+  });
+
+  it('returns ok with an empty list for a valid empty response', async () => {
+    const search = createBraveSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ web: { results: [] } })) });
+    const result = await search({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('treats a malformed body as bad_response', async () => {
+    for (const body of ['not json', { web: { results: 'nope' } }]) {
+      const search = createBraveSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
+      const result = await search({ query: 'q' });
+      expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response' } });
+    }
+  });
+
+  it('treats a search response without a web block as a valid empty search', async () => {
+    const search = createBraveSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({ type: 'search', query: { original: 'q' } }))
+    });
+    const result = await search({ query: 'q' });
+    expect(result).toMatchObject({ status: 'ok', results: [] });
+  });
+
+  it('does not trust an error-shaped or partial 200 as a valid empty search', async () => {
+    for (const body of [{}, { type: 'ErrorResponse', error: { code: 'X' } }, { type: 'search', web: null }, { web: 'nope' }]) {
+      const search = createBraveSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
+      const result = await search({ query: 'q' });
+      expect(result.error?.failure?.kind).toBe('bad_response');
+    }
+  });
+
+  it('classifies a 429 as rate_limited with the retry time, never quota_exhausted', async () => {
+    const search = createBraveSearchTool({
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({}, { status: 429, headers: { 'retry-after': '3', 'x-ratelimit-remaining': '0, 0' } }))
+    });
+    const result = await search({ query: 'q' });
+    expect(result.error).toMatchObject({ code: 'FETCH_FAILED', failure: { kind: 'rate_limited', httpStatus: 429, providerRetryAfterMs: 3000 } });
   });
 });

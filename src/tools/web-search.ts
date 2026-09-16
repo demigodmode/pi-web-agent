@@ -1,31 +1,11 @@
 import { createCacheKey, createTtlCache } from '../cache/ttl-cache.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import { fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../search/duckduckgo.js';
+import { classifyHttpFailure } from '../backends/provider-failure.js';
+import { DuckDuckGoHttpError, fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../search/duckduckgo.js';
 import type { WebSearchResponse } from '../types.js';
 
-function classifySearchFailure(error: unknown) {
-  const rawMessage = error instanceof Error ? error.message : 'Unknown search failure.';
-  const normalized = rawMessage.toLowerCase();
-
-  if (
-    normalized.includes('blocked') ||
-    normalized.includes('rate limit') ||
-    normalized.includes('rate-limit') ||
-    normalized.includes('403') ||
-    normalized.includes('429') ||
-    normalized.includes('captcha') ||
-    normalized.includes('challenge')
-  ) {
-    return {
-      code: 'BLOCKED',
-      message: 'DuckDuckGo search appears to be blocked or rate limited.'
-    };
-  }
-
-  return {
-    code: 'FETCH_FAILED',
-    message: `DuckDuckGo search request failed: ${rawMessage}`
-  };
+function respond(result: WebSearchResponse): WebSearchResponse {
+  return { ...result, presentation: buildSearchPresentation(result) };
 }
 
 function htmlLooksBlocked(html: string) {
@@ -58,113 +38,67 @@ export function createWebSearchTool({
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
-      const result: WebSearchResponse = {
+      return respond({
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
-        error: { code: 'INVALID_QUERY', message: 'Query must not be empty.' }
-      };
-      return {
-        ...result,
-        presentation: buildSearchPresentation(result)
-      };
+        error: { code: 'INVALID_QUERY', message: 'Query must not be empty.', failure: { kind: 'bad_request' } }
+      });
     }
 
     const cacheKey = createCacheKey(['web_search', normalizedQuery]);
     const cached = cache.get(cacheKey);
     if (cached) {
-      const result: WebSearchResponse = {
-        ...cached,
-        metadata: { ...cached.metadata, cacheHit: true }
-      };
-      return {
-        ...result,
-        presentation: buildSearchPresentation(result)
-      };
+      return respond({ ...cached, metadata: { ...cached.metadata, cacheHit: true } });
     }
 
+    let html: string;
     try {
-      let html = await searchHtml(normalizedQuery);
-      let parsed = parseDuckDuckGoResults(html);
-
-      // A 200-OK bot-wall reads as a successful fetch, so the fetch-layer retry never sees it.
-      // Give a page that looks blocked one more shot here before we classify it.
-      if (parsed.results.length === 0 && htmlLooksBlocked(html)) {
-        html = await searchHtml(normalizedQuery);
-        parsed = parseDuckDuckGoResults(html);
-      }
-
-      if (parsed.results.length > 0) {
-        const result: WebSearchResponse = {
-          status: 'ok',
-          results: parsed.results,
-          metadata: { backend: 'duckduckgo', cacheHit: false }
-        };
-        cache.set(cacheKey, result);
-        return {
-          ...result,
-          presentation: buildSearchPresentation(result)
-        };
-      }
-
-      // Check for a bot-wall before "no results": a page can carry both markers, and BLOCKED is
-      // the honest call since it routes to the fallback instead of a dead end.
-      if (htmlLooksBlocked(html)) {
-        const result: WebSearchResponse = {
-          status: 'error',
-          results: [],
-          metadata: { backend: 'duckduckgo', cacheHit: false },
-          error: {
-            code: 'BLOCKED',
-            message: 'DuckDuckGo search appears to be blocked or rate limited.'
-          }
-        };
-        return {
-          ...result,
-          presentation: buildSearchPresentation(result)
-        };
-      }
-
-      if (parsed.noResults) {
-        const result: WebSearchResponse = {
-          status: 'error',
-          results: [],
-          metadata: { backend: 'duckduckgo', cacheHit: false },
-          error: {
-            code: 'NO_RESULTS',
-            message: 'DuckDuckGo returned no usable results for this query.'
-          }
-        };
-        return {
-          ...result,
-          presentation: buildSearchPresentation(result)
-        };
-      }
-
-      const result: WebSearchResponse = {
+      html = await searchHtml(normalizedQuery);
+    } catch (error) {
+      const failure =
+        error instanceof DuckDuckGoHttpError
+          ? classifyHttpFailure('duckduckgo', { status: error.status, headers: error.headers })
+          : { kind: 'transient' as const };
+      const blockedLike = failure.kind === 'blocked' || failure.kind === 'rate_limited';
+      return respond({
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
         error: {
-          code: 'PARSE_FAILED',
-          message: 'DuckDuckGo returned a page, but it did not match the expected results format.'
+          code: blockedLike ? 'BLOCKED' : 'FETCH_FAILED',
+          message: blockedLike
+            ? 'DuckDuckGo search appears to be blocked or rate limited.'
+            : `DuckDuckGo search request failed: ${error instanceof Error ? error.message : String(error)}`,
+          failure
         }
-      };
-      return {
-        ...result,
-        presentation: buildSearchPresentation(result)
-      };
-    } catch (error) {
-      const result: WebSearchResponse = {
+      });
+    }
+
+    const parsed = parseDuckDuckGoResults(html);
+
+    if (parsed.results.length > 0) {
+      const result: WebSearchResponse = { status: 'ok', results: parsed.results, metadata: { backend: 'duckduckgo', cacheHit: false } };
+      cache.set(cacheKey, result);
+      return respond(result);
+    }
+
+    // Bot-wall check first: a page can carry both markers, and blocked routes to fallback.
+    const walled = htmlLooksBlocked(html) || (!parsed.hasResultContainers && !parsed.noResults);
+    if (walled) {
+      return respond({
         status: 'error',
         results: [],
         metadata: { backend: 'duckduckgo', cacheHit: false },
-        error: classifySearchFailure(error)
-      };
-      return {
-        ...result,
-        presentation: buildSearchPresentation(result)
-      };
+        error: {
+          code: 'BLOCKED',
+          message: 'DuckDuckGo search appears to be blocked or rate limited.',
+          failure: { kind: 'blocked' }
+        }
+      });
     }
+
+    // DuckDuckGo said there are no results, or every result was filtered out: a valid empty search.
+    return respond({ status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false } });
   };
 }
