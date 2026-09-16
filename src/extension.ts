@@ -1,3 +1,5 @@
+// Keep first: re-applies the jsdom/jiti compat patch before jsdom loads (#34).
+import './jiti-compat-run.js';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { DEFAULT_BACKEND_CONFIG, type BackendConfig } from './backends/config.js';
 import { Type } from 'typebox';

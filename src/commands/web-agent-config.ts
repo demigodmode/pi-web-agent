@@ -39,6 +39,7 @@ import {
 } from '../presentation/config-store.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { createProxyFetch } from '../fetch/proxy-fetch.js';
+import { checkJitiCompat } from '../jiti-compat.js';
 import { getLatestChangelogEntry } from '../changelog-notice.js';
 import type {
   PresentationConfig,
@@ -55,6 +56,7 @@ type CommandDeps = {
   resolveBrowser?: () => Promise<BrowserResolutionResult>;
   runtime?: { nodeVersion: string; platform: string; arch: string };
   checkTypebox?: () => Promise<boolean>;
+  checkJitiCompat?: () => { pending: string[] };
   checkBackends?: (config: BackendConfig) => Promise<string[]>;
   getChangelog?: () => Promise<string | undefined>;
 };
@@ -121,6 +123,21 @@ export function validateBackendUrl(value: string): { ok: true; value: string } |
   } catch {
     return { ok: false, message: 'Invalid URL. Include http:// or https://.' };
   }
+}
+
+/**
+ * The extension re-applies this patch on load, so `pending` here means the
+ * patch could not be written (read-only install, permissions, or a dependency
+ * whose shape changed). Point at the manual script in that case: it is the
+ * same recovery step people have been finding by digging through issue #34.
+ */
+function formatJitiCompatLine(status: { pending: string[] }): string {
+  if (status.pending.length === 0) return 'jsdom compat patch: ok';
+  return [
+    `jsdom compat patch: needed (${status.pending.join(', ')})`,
+    'Run: node ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/scripts/patch-jiti-compat.mjs',
+    'then restart Pi.'
+  ].join('\n');
 }
 
 async function defaultCheckTypebox(): Promise<boolean> {
@@ -949,6 +966,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
     arch: process.arch
   };
   const checkTypebox = deps.checkTypebox ?? defaultCheckTypebox;
+  const checkCompat = deps.checkJitiCompat ?? checkJitiCompat;
   const checkBackends = deps.checkBackends ?? ((config: BackendConfig) =>
     checkBackendHealth(config, {
       // An invalid proxy url is reported by validateBackendConfig below; never
@@ -988,6 +1006,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           'pi-web-agent: loaded',
           `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
           `typebox: ${typeboxOk ? 'ok' : 'missing'}`,
+          formatJitiCompatLine(checkCompat()),
           formatBackendSummary(backendConfig),
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
           ...backendHealth
