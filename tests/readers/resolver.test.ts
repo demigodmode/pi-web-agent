@@ -13,7 +13,7 @@ function reader(name: string, handles: (u: string) => boolean, ct?: (c: string) 
 
 describe('createSpecialContentResolver', () => {
   it('routes a matching url to its reader', async () => {
-    const gh = reader('github', (u) => u.includes('github.com'));
+    const gh = reader('github', (u) => new URL(u).hostname === 'github.com');
     const fallback = vi.fn();
     const resolve = createSpecialContentResolver({ readers: [gh], fallback });
     const res = await resolve({ url: 'https://github.com/a/b' });
@@ -22,7 +22,7 @@ describe('createSpecialContentResolver', () => {
   });
 
   it('falls through to the fallback for a normal url', async () => {
-    const gh = reader('github', (u) => u.includes('github.com'));
+    const gh = reader('github', (u) => new URL(u).hostname === 'github.com');
     const fallback = vi.fn().mockResolvedValue({ status: 'ok', url: 'y', content: { title: 'html', text: 'html' }, metadata: { method: 'http', cacheHit: false } });
     const resolve = createSpecialContentResolver({ readers: [gh], fallback });
     const res = await resolve({ url: 'https://example.com/post' });
