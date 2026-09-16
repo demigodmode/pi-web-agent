@@ -1,5 +1,5 @@
 import { extractReadableContentSafely } from '../extract/readability.js';
-import { findBlockedAddressError } from './network-guard.js';
+import { findGuardError } from './network-guard.js';
 import type { WebFetchResponse } from '../types.js';
 
 function looksLikeScriptShell(html: string): boolean {
@@ -31,7 +31,7 @@ export function createHttpFetcher({
     try {
       response = await fetchImpl(url);
     } catch (error) {
-      const blocked = findBlockedAddressError(error);
+      const blocked = findGuardError(error);
       if (!blocked) throw error;
       return {
         status: 'error',

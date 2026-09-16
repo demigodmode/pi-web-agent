@@ -72,8 +72,44 @@ export default function extension(pi: ExtensionAPI) {
   registerWebAgentConfigCommands(pi);
 
   const injectedWebExplore = (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool;
+  type Workflow = ReturnType<typeof createResearchWorkflow>;
+
   let cachedBackendKey: string | undefined;
+  let cachedWorkflow: Workflow | undefined;
   let cachedWebExplore: ReturnType<typeof createWebExploreTool> | undefined;
+  // Runs in flight per workflow, so a replaced workflow is never closed mid-run.
+  const activeRuns = new Map<Workflow, number>();
+  const retiring = new Set<Workflow>();
+
+  const closeWorkflow = (workflow: Workflow) => {
+    retiring.delete(workflow);
+    void Promise.resolve((workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+  };
+
+  const retire = (workflow: Workflow) => {
+    if ((activeRuns.get(workflow) ?? 0) === 0) {
+      closeWorkflow(workflow);
+    } else {
+      retiring.add(workflow);
+    }
+  };
+
+  const leased = (workflow: Workflow) => ({
+    run: async (input: Parameters<Workflow['run']>[0]) => {
+      activeRuns.set(workflow, (activeRuns.get(workflow) ?? 0) + 1);
+      try {
+        return await workflow.run(input);
+      } finally {
+        const remaining = (activeRuns.get(workflow) ?? 1) - 1;
+        if (remaining > 0) {
+          activeRuns.set(workflow, remaining);
+        } else {
+          activeRuns.delete(workflow);
+          if (retiring.has(workflow)) closeWorkflow(workflow);
+        }
+      }
+    }
+  });
 
   async function getConfiguredWebExplore() {
     if (injectedWebExplore) return injectedWebExplore;
@@ -81,14 +117,22 @@ export default function extension(pi: ExtensionAPI) {
     const backendConfig = await getEffectiveBackendConfig(pi);
     const backendKey = JSON.stringify(backendConfig);
     if (!cachedWebExplore || cachedBackendKey !== backendKey) {
+      if (cachedWorkflow) retire(cachedWorkflow);
       cachedBackendKey = backendKey;
-      cachedWebExplore = createWebExploreTool({
-        explore: createResearchWorkflow({ backendConfig })
-      });
+      cachedWorkflow = createResearchWorkflow({ backendConfig });
+      cachedWebExplore = createWebExploreTool({ explore: leased(cachedWorkflow) });
     }
 
     return cachedWebExplore;
   }
+
+  pi.on('session_shutdown', async () => {
+    const workflow = cachedWorkflow;
+    cachedWorkflow = undefined;
+    cachedWebExplore = undefined;
+    cachedBackendKey = undefined;
+    if (workflow) retire(workflow);
+  });
 
   pi.on('session_start', async (_event, ctx) => {
     try {

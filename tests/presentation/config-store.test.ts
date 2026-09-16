@@ -305,4 +305,14 @@ describe('presentation config store', () => {
     const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
     expect(loaded.effectiveBackends.network).toEqual({ allowRanges: [] });
   });
+
+  it('persists trustProxyDns', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+
+    await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
+      network: { trustProxyDns: true }
+    });
+
+    expect(JSON.parse(readFileSync(projectPath, 'utf8')).backends).toEqual({ network: { trustProxyDns: true } });
+  });
 });

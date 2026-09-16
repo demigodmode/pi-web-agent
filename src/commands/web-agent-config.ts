@@ -106,7 +106,9 @@ function cloneBackendConfig(config: BackendConfig): BackendConfig {
     },
     headless: { ...config.headless },
     proxy: config.proxy ? { ...config.proxy } : undefined,
-    network: config.network ? { allowRanges: [...config.network.allowRanges] } : undefined
+    network: config.network
+      ? { ...config.network, ...(config.network.allowRanges ? { allowRanges: [...config.network.allowRanges] } : {}) }
+      : undefined
   };
 }
 
@@ -404,7 +406,7 @@ function buildBackendSettingsItems(
     {
       id: 'backend:network:allowRanges',
       label: 'Network allow list',
-      currentValue: backends.network?.allowRanges.length ? backends.network.allowRanges.join(', ') : 'not set',
+      currentValue: backends.network?.allowRanges?.length ? backends.network.allowRanges.join(', ') : 'not set',
       submenu: createBackendUrlEditor(
         theme,
         'Private ranges to allow, comma separated CIDRs, e.g. 198.18.0.0/15',
@@ -413,6 +415,12 @@ function buildBackendSettingsItems(
         onUrlEditorOpenChange,
         validateAllowRanges
       )
+    },
+    {
+      id: 'backend:network:trustProxyDns',
+      label: 'Trust the upstream proxy to enforce private-address restrictions',
+      currentValue: backends.network?.trustProxyDns ? 'on' : 'off',
+      values: ['off', 'on']
     }
   ];
 }
@@ -649,11 +657,21 @@ export function applySettingsValue(
 
   if (id === 'backend:network:allowRanges') {
     const ranges = splitRanges(newValue);
+    const next = { ...currentBackends.network };
     if (ranges.length > 0) {
-      currentBackends.network = { allowRanges: ranges };
+      next.allowRanges = ranges;
+    } else {
+      delete next.allowRanges;
+    }
+    if (Object.keys(next).length > 0) {
+      currentBackends.network = next;
     } else {
       delete currentBackends.network;
     }
+  }
+
+  if (id === 'backend:network:trustProxyDns') {
+    currentBackends.network = { ...currentBackends.network, trustProxyDns: newValue === 'on' };
   }
 
   nextDrafts[nextScope] = currentDraft;
@@ -753,10 +771,17 @@ export function collapseBackendConfigToOverride(
 
   if (!sameJson(config.network, inheritedConfig.network)) {
     if (config.network) {
-      override.network = { allowRanges: [...config.network.allowRanges] };
-    } else if (inheritedConfig.network) {
+      override.network = {
+        ...config.network,
+        ...(config.network.allowRanges ? { allowRanges: [...config.network.allowRanges] } : {})
+      };
       // Cleared at this scope: an explicit empty list overrides the parent's.
-      override.network = { allowRanges: [] };
+      if (!config.network.allowRanges && inheritedConfig.network?.allowRanges) override.network.allowRanges = [];
+    } else if (inheritedConfig.network) {
+      override.network = {
+        ...(inheritedConfig.network.allowRanges ? { allowRanges: [] } : {}),
+        ...(inheritedConfig.network.trustProxyDns ? { trustProxyDns: false } : {})
+      };
     }
   }
 
@@ -1058,7 +1083,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           `typebox: ${typeboxOk ? 'ok' : 'missing'}`,
           formatJitiCompatLine(checkCompat()),
           formatBackendSummary(backendConfig),
-          `network allow list: ${backendConfig.network?.allowRanges.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
+          `network allow list: ${backendConfig.network?.allowRanges?.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
+          `trust upstream proxy for private addresses: ${backendConfig.network?.trustProxyDns ? 'on' : 'off'}`,
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
           ...backendHealth
         ];

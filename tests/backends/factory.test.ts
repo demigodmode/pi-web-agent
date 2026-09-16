@@ -6,14 +6,17 @@ import type { SearchProviderName } from '../../src/types.js';
 
 /**
  * Keeps factory tests offline now that model-chosen fetches go through the
- * network guard (#53): no real DNS, and the pinned fetch defers to whatever
+ * network guard (#53): no real DNS, no real guard proxy, and the model fetch defers to whatever
  * global fetch the test stubbed.
  */
 function offlineNetworkDeps() {
   return {
     networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
-    createPinnedFetch: () =>
-      ((input: Parameters<typeof fetch>[0], init?: RequestInit) => globalThis.fetch(input, init)) as typeof fetch
+    createModelFetch: () =>
+      ((input: Parameters<typeof fetch>[0], init?: RequestInit) => globalThis.fetch(input, init)) as typeof fetch,
+    createGuardProxy: vi.fn(async () => {
+      throw new Error('tests must not start a real guard proxy');
+    })
   };
 }
 
@@ -560,7 +563,7 @@ describe('backend factory', () => {
 });
 
 describe('backend factory proxy support', () => {
-  it('routes search and fetch traffic through the configured proxy fetch', async () => {
+  it('routes search through the configured proxy fetch and model-chosen pages through the model fetch', async () => {
     const proxiedUrls: string[] = [];
     const proxyFetchMock = vi.fn((input: string | URL | Request) => {
       proxiedUrls.push(String(input));
@@ -574,7 +577,13 @@ describe('backend factory proxy support', () => {
         )
       );
     });
-    const createProxyFetch = vi.fn(() => proxyFetchMock as typeof fetch);
+    const searchUrls: string[] = [];
+    const searchFetchMock = vi.fn(async (input: string | URL | Request) => {
+      searchUrls.push(String(input));
+      return new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    });
+
+    const createProxyFetch = vi.fn(() => searchFetchMock as typeof fetch);
 
     let capturedSearchHtml: ((query: string) => Promise<string>) | undefined;
 
@@ -587,6 +596,8 @@ describe('backend factory proxy support', () => {
       },
       {
         ...offlineNetworkDeps(),
+        // Model-chosen urls go through the guard proxy, which chains to the upstream itself.
+        createModelFetch: () => proxyFetchMock as typeof fetch,
         createProxyFetch,
         createDuckDuckGoSearch: (options) => {
           capturedSearchHtml = options?.searchHtml;
@@ -600,10 +611,12 @@ describe('backend factory proxy support', () => {
     const page = await backends.fetchPage({ url: 'https://example.com/page' });
     expect(page.status).toBe('ok');
     expect(proxiedUrls).toContain('https://example.com/page');
+    expect(searchUrls).not.toContain('https://example.com/page');
 
     expect(capturedSearchHtml).toEqual(expect.any(Function));
     await capturedSearchHtml!('docs');
-    expect(proxiedUrls).toContain('https://html.duckduckgo.com/html/?q=docs');
+    expect(searchUrls).toContain('https://html.duckduckgo.com/html/?q=docs');
+    expect(proxiedUrls).not.toContain('https://html.duckduckgo.com/html/?q=docs');
   });
 
   it('does not build a proxy fetch when no proxy is configured', () => {
@@ -614,7 +627,7 @@ describe('backend factory proxy support', () => {
     expect(createProxyFetch).not.toHaveBeenCalled();
   });
 
-  it('routes YouTube reader traffic through the configured proxy fetch', async () => {
+  it('routes YouTube reader traffic through the model fetch, not the direct proxy fetch', async () => {
     const proxiedUrls: string[] = [];
     const INNERTUBE = 'https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false';
     const proxyFetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -644,7 +657,8 @@ describe('backend factory proxy support', () => {
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
     });
-    const createProxyFetch = vi.fn(() => proxyFetchMock as typeof fetch);
+    const directProxyFetch = vi.fn();
+    const createProxyFetch = vi.fn(() => directProxyFetch as unknown as typeof fetch);
 
     const backends = createBackendSet(
       {
@@ -653,7 +667,7 @@ describe('backend factory proxy support', () => {
         headless: { provider: 'local-browser' },
         proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
       },
-      { ...offlineNetworkDeps(), createProxyFetch }
+      { ...offlineNetworkDeps(), createProxyFetch, createModelFetch: () => proxyFetchMock as typeof fetch }
     );
 
     const page = await backends.fetchPage({ url: 'https://youtu.be/abc123' });
@@ -662,7 +676,8 @@ describe('backend factory proxy support', () => {
     expect(page.content?.title).toBe('My Talk');
     expect(page.content?.text).toContain('hello world');
 
-    // Both the InnerTube player call and the caption track call went through the proxy.
+    // Both the InnerTube player call and the caption track call went through the model fetch (guard proxy).
+    expect(directProxyFetch).not.toHaveBeenCalled();
     expect(proxiedUrls).toContain(INNERTUBE);
     expect(proxiedUrls.some((u) => u.startsWith('https://www.youtube.com/api/timedtext'))).toBe(true);
   });
@@ -791,10 +806,100 @@ describe('backend factory private address guard', () => {
 
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, network: { allowRanges: ['10.0.0.0/8'] } },
-      { createPinnedFetch: offlineNetworkDeps().createPinnedFetch }
+      { createModelFetch: offlineNetworkDeps().createModelFetch }
     );
     const result = await backends.fetchPage({ url: 'http://10.0.0.8/docs' });
 
     expect(result.error?.code).not.toBe('BLOCKED_PRIVATE_ADDRESS');
+  });
+});
+
+describe('backend factory guard proxy wiring', () => {
+  it('does not start the guard proxy until a model-chosen connection needs it', () => {
+    const deps = offlineNetworkDeps();
+    createBackendSet(DEFAULT_BACKEND_CONFIG, deps);
+    expect(deps.createGuardProxy).not.toHaveBeenCalled();
+  });
+
+  it('starts one guard proxy, once, with the upstream proxy and trust setting', async () => {
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: vi.fn(() => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' })),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close: async () => undefined
+    };
+    const createGuardProxy = vi.fn(async () => proxy);
+
+    const backends = createBackendSet(
+      {
+        ...DEFAULT_BACKEND_CONFIG,
+        proxy: { url: 'http://upstream.example:3128', username: 'user', password: 'secret' },
+        network: { trustProxyDns: true }
+      },
+      { networkGuard: offlineNetworkDeps().networkGuard, createGuardProxy }
+    );
+
+    // The fake proxy url refuses connections, so these fetches fail; only the proxy start matters here.
+    // Headless use of the same proxy is covered by the headless and real-browser tests.
+    await backends.fetchPage({ url: 'https://example.com/a' }).catch(() => undefined);
+    await backends.fetchPage({ url: 'https://example.com/b' }).catch(() => undefined);
+
+    expect(createGuardProxy).toHaveBeenCalledTimes(1);
+    expect(createGuardProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upstream: { url: 'http://upstream.example:3128', username: 'user', password: 'secret' },
+        trustProxyDns: true
+      })
+    );
+  });
+
+  it('closing a set that never used the guard proxy does not start it', async () => {
+    const deps = offlineNetworkDeps();
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, deps);
+
+    await backends.close();
+
+    expect(deps.createGuardProxy).not.toHaveBeenCalled();
+  });
+
+  it('closes the guard proxy it started exactly once, even if it was still starting', async () => {
+    const close = vi.fn(async () => undefined);
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: () => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' }),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close
+    };
+    let finishStart!: (value: typeof proxy) => void;
+    const createGuardProxy = vi.fn(() => new Promise<typeof proxy>((resolve) => (finishStart = resolve)));
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: offlineNetworkDeps().networkGuard,
+      createGuardProxy
+    });
+
+    const pendingFetch = backends.fetchPage({ url: 'https://example.com/' }).catch(() => undefined);
+    await vi.waitFor(() => expect(createGuardProxy).toHaveBeenCalledTimes(1));
+    const closing = backends.close();
+    finishStart(proxy);
+    await closing;
+    await backends.close();
+    await pendingFetch;
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to start a guard proxy after close', async () => {
+    const createGuardProxy = vi.fn();
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: offlineNetworkDeps().networkGuard,
+      createGuardProxy
+    });
+
+    await backends.close();
+    await backends.fetchPage({ url: 'https://example.com/' }).catch(() => undefined);
+
+    expect(createGuardProxy).not.toHaveBeenCalled();
   });
 });

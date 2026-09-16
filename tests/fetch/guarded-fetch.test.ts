@@ -1,9 +1,7 @@
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createGuardedFetch, createPinnedFetch, MAX_REDIRECTS } from '../../src/fetch/guarded-fetch.js';
-import { BlockedAddressError, createNetworkGuard, findBlockedAddressError } from '../../src/fetch/network-guard.js';
-import { callbackLookup, fakeLookup } from './fake-lookup.js';
+import { describe, expect, it, vi } from 'vitest';
+import { createGuardedFetch, MAX_REDIRECTS } from '../../src/fetch/guarded-fetch.js';
+import { BlockedAddressError, createNetworkGuard } from '../../src/fetch/network-guard.js';
+import { fakeLookup } from './fake-lookup.js';
 
 const lookup = fakeLookup({
   'example.com': ['93.184.216.34'],
@@ -166,68 +164,5 @@ describe('createGuardedFetch', () => {
 
     await expect(guarded('https://example.com/start')).rejects.toThrow(/Unsupported protocol/);
     expect(base).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('createPinnedFetch against a real local server', () => {
-  let server: Server;
-  let port: number;
-
-  beforeAll(async () => {
-    server = createServer((request, response) => {
-      if (request.url === '/redirect') {
-        response.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' });
-        response.end();
-        return;
-      }
-      response.writeHead(200, { 'content-type': 'text/plain' });
-      response.end('hello');
-    });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-    port = (server.address() as AddressInfo).port;
-  });
-
-  afterAll(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-
-  it('refuses to connect when the hostname resolves to a blocked address at connect time', async () => {
-    const pinned = createPinnedFetch(createNetworkGuard(), { lookup: callbackLookup({ 'rebind.test': '127.0.0.1' }) });
-
-    const error = await pinned(`http://rebind.test:${port}/`).catch((e) => e);
-
-    expect(findBlockedAddressError(error)).toBeInstanceOf(BlockedAddressError);
-  });
-
-  it('connects when the resolved address is on the allow list', async () => {
-    const pinned = createPinnedFetch(createNetworkGuard({ allowRanges: ['127.0.0.0/8'] }), {
-      lookup: callbackLookup({ 'rebind.test': '127.0.0.1' })
-    });
-
-    const response = await pinned(`http://rebind.test:${port}/`);
-
-    expect(await response.text()).toBe('hello');
-  });
-
-  it('stops a real redirect to cloud metadata', async () => {
-    // Proves undici hands back the real 3xx in manual mode, so the hop check actually runs.
-    const guard = createNetworkGuard(
-      { allowRanges: ['127.0.0.0/8'] },
-      { lookup: fakeLookup({ 'rebind.test': ['127.0.0.1'] }) }
-    );
-    const pinned = createPinnedFetch(guard, { lookup: callbackLookup({ 'rebind.test': '127.0.0.1' }) });
-    const guarded = createGuardedFetch(pinned, guard);
-
-    await expect(guarded(`http://rebind.test:${port}/redirect`)).rejects.toBeInstanceOf(BlockedAddressError);
-  });
-
-  it('treats an empty lookup result as a resolution failure instead of throwing uncaught', async () => {
-    const emptyLookup = (_hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void) => {
-      if (options?.all) callback(null, []);
-      else callback(Object.assign(new Error('getaddrinfo ENOTFOUND empty.test'), { code: 'ENOTFOUND' }));
-    };
-    const pinned = createPinnedFetch(createNetworkGuard(), { lookup: emptyLookup });
-
-    await expect(pinned(`http://empty.test:${port}/`)).rejects.toBeTruthy();
   });
 });

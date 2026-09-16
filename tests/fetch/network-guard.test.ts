@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createNetworkGuard, parseCidr } from '../../src/fetch/network-guard.js';
 import { vi } from 'vitest';
-import { BlockedAddressError, findBlockedAddressError } from '../../src/fetch/network-guard.js';
+import { BlockedAddressError, UnverifiedDestinationError, UpstreamProxyRefusedError, findBlockedAddressError, findGuardError } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
 
 const guard = createNetworkGuard();
@@ -239,5 +239,98 @@ describe('findBlockedAddressError', () => {
   it('returns undefined for unrelated errors', () => {
     expect(findBlockedAddressError(new Error('boom'))).toBeUndefined();
     expect(findBlockedAddressError(undefined)).toBeUndefined();
+  });
+});
+describe('resolveHost', () => {
+  it('returns every allowed address', async () => {
+    const hostGuard = createNetworkGuard(
+      {},
+      { lookup: fakeLookup({ 'example.com': ['93.184.216.34', '93.184.216.35'] }) }
+    );
+    await expect(hostGuard.resolveHost('example.com')).resolves.toEqual({
+      status: 'allowed',
+      host: 'example.com',
+      addresses: ['93.184.216.34', '93.184.216.35']
+    });
+  });
+
+  it('reports unresolved hosts, including empty answers', async () => {
+    await expect(createNetworkGuard({}, { lookup: fakeLookup({}) }).resolveHost('nope.test')).resolves.toEqual({
+      status: 'unresolved',
+      host: 'nope.test'
+    });
+    await expect(createNetworkGuard({}, { lookup: async () => [] }).resolveHost('empty.test')).resolves.toEqual({
+      status: 'unresolved',
+      host: 'empty.test'
+    });
+  });
+
+  it('blocks on any private answer', async () => {
+    const hostGuard = createNetworkGuard({}, { lookup: fakeLookup({ 'mixed.test': ['93.184.216.34', '10.0.0.5'] }) });
+    await expect(hostGuard.resolveHost('mixed.test')).resolves.toEqual({
+      status: 'blocked',
+      host: 'mixed.test',
+      address: '10.0.0.5'
+    });
+  });
+
+  it('treats localhost names as 127.0.0.1 and honors the allow list', async () => {
+    await expect(createNetworkGuard().resolveHost('LOCALHOST.')).resolves.toEqual({
+      status: 'blocked',
+      host: 'localhost',
+      address: '127.0.0.1'
+    });
+    await expect(createNetworkGuard({ allowRanges: ['127.0.0.0/8'] }).resolveHost('api.localhost')).resolves.toEqual({
+      status: 'allowed',
+      host: 'api.localhost',
+      addresses: ['127.0.0.1']
+    });
+  });
+
+  it('checks literal addresses without a lookup', async () => {
+    const lookup = vi.fn();
+    const hostGuard = createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup });
+    await expect(hostGuard.resolveHost('[::1]')).resolves.toEqual({ status: 'blocked', host: '::1', address: '::1' });
+    await expect(hostGuard.resolveHost('127.0.0.1')).resolves.toEqual({
+      status: 'allowed',
+      host: '127.0.0.1',
+      addresses: ['127.0.0.1']
+    });
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('keeps checkHost reporting unresolved hosts as allowed-but-unresolved', async () => {
+    await expect(createNetworkGuard({}, { lookup: fakeLookup({}) }).checkHost('nope.test')).resolves.toEqual({
+      allowed: true,
+      unresolved: true
+    });
+  });
+});
+
+describe('guard errors', () => {
+  it('describes an unverifiable destination', () => {
+    const error = new UnverifiedDestinationError('nope.test');
+    expect(error.code).toBe('BLOCKED_PRIVATE_ADDRESS');
+    expect(error.message).toBe('Blocked nope.test: could not verify its address before connecting.');
+  });
+
+  it('describes an upstream proxy refusal with the way out', () => {
+    const error = new UpstreamProxyRefusedError('ok.test', '93.184.216.34:443', 403);
+    expect(error.code).toBe('UPSTREAM_PROXY_REFUSED');
+    expect(error.message).toBe(
+      'Upstream proxy refused 93.184.216.34:443 for ok.test (HTTP 403). If it only accepts hostnames, set backends.network.trustProxyDns to trust it to enforce private-address restrictions.'
+    );
+  });
+
+  it('finds any guard error through a cause chain', () => {
+    const errors = [
+      new BlockedAddressError('a.test', '127.0.0.1'),
+      new UnverifiedDestinationError('b.test'),
+      new UpstreamProxyRefusedError('c.test', '1.2.3.4:443', 502)
+    ];
+    for (const error of errors) {
+      expect(findGuardError(new TypeError('fetch failed', { cause: error }))).toBe(error);
+    }
+    expect(findGuardError(new Error('boom'))).toBeUndefined();
   });
 });

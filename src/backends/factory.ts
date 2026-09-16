@@ -2,8 +2,10 @@ import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
 import { createHttpFetcher } from '../fetch/http-fetch.js';
 import { createProxyFetch, resolveProxyCredentials } from '../fetch/proxy-fetch.js';
 import { headlessFetch } from '../fetch/headless-fetch.js';
-import { createGuardedFetch, createPinnedFetch } from '../fetch/guarded-fetch.js';
-import { createNetworkGuard, findBlockedAddressError, type NetworkGuard } from '../fetch/network-guard.js';
+import { createGuardedFetch } from '../fetch/guarded-fetch.js';
+import { startGuardProxy, type GuardProxy, type GuardProxyOptions } from '../fetch/guard-proxy.js';
+import { createGuardProxyFetch, type GuardProxyFetch } from '../fetch/guard-proxy-fetch.js';
+import { createNetworkGuard, findGuardError, type NetworkGuard } from '../fetch/network-guard.js';
 import { createBraveSearchTool } from '../search/brave.js';
 import { createYouComSearchTool } from '../search/youcom.js';
 import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
@@ -27,6 +29,8 @@ export type BackendSet = {
   search: (input: { query: string }) => Promise<WebSearchResponse>;
   fetchPage: (input: { url: string }) => Promise<WebFetchResponse>;
   headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
+  /** Releases the guard proxy and its agents. Idempotent; never starts the proxy. */
+  close: () => Promise<void>;
 };
 
 export type BackendFactoryDeps = {
@@ -41,7 +45,9 @@ export type BackendFactoryDeps = {
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
   createProxyFetch?: (proxy: ProxyConfig) => typeof fetch;
   networkGuard?: NetworkGuard;
-  createPinnedFetch?: (guard: NetworkGuard) => typeof fetch;
+  /** Test seam: the fetch used for model-chosen URLs, before redirect handling. */
+  createModelFetch?: (guard: NetworkGuard) => typeof fetch;
+  createGuardProxy?: (options: GuardProxyOptions) => Promise<GuardProxy>;
 };
 
 function invalidSearxngSearch() {
@@ -114,7 +120,7 @@ function withTargetGuard(
     try {
       await guard.assertUrlAllowed(input.url);
     } catch (error) {
-      const blocked = findBlockedAddressError(error);
+      const blocked = findGuardError(error);
       if (!blocked) throw error;
       const result: WebFetchResponse = {
         status: 'error',
@@ -201,30 +207,58 @@ export function createBackendSet(
           error: { code: 'BACKEND_CONFIG_INVALID', message }
         };
         return { ...result, presentation: buildFetchPresentation(result) };
-      }
+      },
+      close: async () => undefined
     };
   }
 
-  // When a proxy is configured, every outbound HTTP request (search, fetch,
-  // readers, and doctor-style checks) goes through it; headless browser
-  // traffic gets the same proxy via Playwright launch options.
+  // When a proxy is configured, every outbound HTTP request goes through it.
+  // User-configured endpoints use fetchImpl directly; model-chosen fetches and
+  // the headless browser reach it through the guard proxy below.
   const fetchImpl: typeof fetch = proxy ? makeProxyFetch(proxy) : fetch;
   const proxyCredentials = proxy ? resolveProxyCredentials(proxy) : undefined;
-  const proxyBrowserOptions = proxy
-    ? {
-        server: stripProxyCredentials(proxy.url),
-        ...(proxyCredentials?.username !== undefined ? { username: proxyCredentials.username } : {}),
-        ...(proxyCredentials?.password !== undefined ? { password: proxyCredentials.password } : {})
-      }
-    : undefined;
 
   // Model-chosen URLs only. Search APIs and the configured SearXNG/Firecrawl
   // endpoints keep using fetchImpl: the user typed those (#53).
   const networkGuard = deps.networkGuard ?? createNetworkGuard({ allowRanges: config.network?.allowRanges ?? [] });
-  const makePinnedFetch = deps.createPinnedFetch ?? ((guard: NetworkGuard) => createPinnedFetch(guard));
-  // Behind a proxy the local connection is to the proxy itself, so the
-  // connect-time check would block everything; per-hop checks still apply.
-  const targetFetch = createGuardedFetch(proxy ? fetchImpl : makePinnedFetch(networkGuard), networkGuard);
+
+  // One guard proxy per backend set, started on first use. It is the single
+  // place the address policy is enforced, for Node fetches and the browser,
+  // and it chains to the user's upstream proxy itself.
+  let guardProxy: Promise<GuardProxy> | undefined;
+  let isClosed = false;
+  const getGuardProxy = () => {
+    if (isClosed) return Promise.reject(new Error('Backend set is closed.'));
+    return (guardProxy ??= (deps.createGuardProxy ?? startGuardProxy)({
+      guard: networkGuard,
+      ...(proxy
+        ? {
+            upstream: {
+              url: stripProxyCredentials(proxy.url),
+              ...(proxyCredentials?.username !== undefined ? { username: proxyCredentials.username } : {}),
+              ...(proxyCredentials?.password !== undefined ? { password: proxyCredentials.password } : {})
+            }
+          }
+        : {}),
+      trustProxyDns: config.network?.trustProxyDns === true
+    }));
+  };
+
+  const modelFetch: typeof fetch | GuardProxyFetch = deps.createModelFetch
+    ? deps.createModelFetch(networkGuard)
+    : createGuardProxyFetch(getGuardProxy);
+  const targetFetch = createGuardedFetch(modelFetch, networkGuard);
+
+  let closing: Promise<void> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      isClosed = true;
+      if ('close' in modelFetch) await (modelFetch as GuardProxyFetch).close();
+      if (guardProxy) {
+        const started = await guardProxy.catch(() => undefined);
+        await started?.close().catch(() => undefined);
+      }
+    })());
 
   const createDuckDuckGo = () =>
     createDuckDuckGoSearch({ searchHtml: (query) => fetchDuckDuckGoHtml(query, { fetchImpl }) });
@@ -340,12 +374,12 @@ export function createBackendSet(
     fallback: fetchPage
   });
 
-  const headlessPage = (url: string) =>
-    headlessFetch(url, { ...(proxyBrowserOptions ? { proxy: proxyBrowserOptions } : {}), guard: networkGuard });
+  const headlessPage = (url: string) => headlessFetch(url, { guard: networkGuard, guardProxy: getGuardProxy });
 
   return {
     search,
     fetchPage: withTargetGuard(fetchPageWithReaders, networkGuard),
-    headlessFetch: createHeadlessFetch({ fetchPage: headlessPage })
+    headlessFetch: createHeadlessFetch({ fetchPage: headlessPage }),
+    close
   };
 }

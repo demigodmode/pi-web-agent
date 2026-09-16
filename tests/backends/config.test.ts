@@ -514,4 +514,42 @@ describe('network config', () => {
     });
     expect(issues).toEqual(['backends.network.allowRanges entry "5" is not a valid CIDR range']);
   });
+
+  it('extracts trustProxyDns on its own or alongside the allow list', () => {
+    expect(extractNetworkConfig({ trustProxyDns: true })).toEqual({ trustProxyDns: true });
+    expect(extractNetworkConfig({ allowRanges: ['10.0.0.0/8'], trustProxyDns: false })).toEqual({
+      allowRanges: ['10.0.0.0/8'],
+      trustProxyDns: false
+    });
+    expect(extractNetworkConfig({ trustProxyDns: 'yes' })).toBeUndefined();
+  });
+
+  it('merges network fields independently across layers', () => {
+    const merged = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      { network: { allowRanges: ['198.18.0.0/15'], trustProxyDns: true } },
+      { network: { allowRanges: ['10.0.0.0/8'] } }
+    );
+    expect(merged.network).toEqual({ allowRanges: ['10.0.0.0/8'], trustProxyDns: true });
+
+    const trustOff = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      { network: { allowRanges: ['198.18.0.0/15'], trustProxyDns: true } },
+      { network: { trustProxyDns: false } }
+    );
+    expect(trustOff.network).toEqual({ allowRanges: ['198.18.0.0/15'], trustProxyDns: false });
+  });
+
+  it('flags trustProxyDns without an upstream proxy', () => {
+    expect(validateBackendConfig({ ...DEFAULT_BACKEND_CONFIG, network: { trustProxyDns: true } })).toContain(
+      'backends.network.trustProxyDns has no effect without backends.proxy'
+    );
+    expect(
+      validateBackendConfig({
+        ...DEFAULT_BACKEND_CONFIG,
+        proxy: { url: 'http://127.0.0.1:3128' },
+        network: { trustProxyDns: true }
+      })
+    ).not.toContain('backends.network.trustProxyDns has no effect without backends.proxy');
+  });
 });

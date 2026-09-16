@@ -23,8 +23,15 @@ export type GuardVerdict =
   | { allowed: true; unresolved?: true }
   | { allowed: false; host: string; address: string };
 
+export type HostResolution =
+  | { status: 'allowed'; host: string; addresses: string[] }
+  | { status: 'blocked'; host: string; address: string }
+  | { status: 'unresolved'; host: string };
+
 export type NetworkGuard = {
   isBlockedAddress(address: string): boolean;
+  /** Resolves once and checks every answer. The guard proxy connects to one of `addresses`, never re-resolving. */
+  resolveHost(host: string): Promise<HostResolution>;
   checkHost(host: string): Promise<GuardVerdict>;
   assertUrlAllowed(url: string): Promise<void>;
 };
@@ -44,6 +51,52 @@ export class BlockedAddressError extends Error {
     );
     this.name = 'BlockedAddressError';
   }
+}
+
+/** No address could be verified, so we refuse rather than let something else resolve it. */
+export class UnverifiedDestinationError extends Error {
+  readonly code = BLOCKED_PRIVATE_ADDRESS;
+
+  constructor(readonly host: string) {
+    super(`Blocked ${host}: could not verify its address before connecting.`);
+    this.name = 'UnverifiedDestinationError';
+  }
+}
+
+export const UPSTREAM_PROXY_REFUSED = 'UPSTREAM_PROXY_REFUSED';
+
+/** The user's upstream proxy would not accept the approved IP. We never retry by hostname. */
+export class UpstreamProxyRefusedError extends Error {
+  readonly code = UPSTREAM_PROXY_REFUSED;
+
+  constructor(
+    readonly host: string,
+    readonly target: string,
+    readonly status: number | string
+  ) {
+    super(
+      `Upstream proxy refused ${target} for ${host} (HTTP ${status}). ` +
+        'If it only accepts hostnames, set backends.network.trustProxyDns to trust it to enforce private-address restrictions.'
+    );
+    this.name = 'UpstreamProxyRefusedError';
+  }
+}
+
+export type GuardError = BlockedAddressError | UnverifiedDestinationError | UpstreamProxyRefusedError;
+
+export function findGuardError(error: unknown): GuardError | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current; depth += 1) {
+    if (
+      current instanceof BlockedAddressError ||
+      current instanceof UnverifiedDestinationError ||
+      current instanceof UpstreamProxyRefusedError
+    ) {
+      return current;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 /** undici wraps connect errors as `TypeError: fetch failed` with the real error in `cause`. */
@@ -210,31 +263,41 @@ export function createNetworkGuard(
     return BLOCKED_RANGES.some((cidr) => cidrContains(cidr, parsed));
   }
 
-  async function checkHost(rawHost: string): Promise<GuardVerdict> {
+  async function resolveHost(rawHost: string): Promise<HostResolution> {
     const host = stripBrackets(rawHost.toLowerCase()).replace(/\.+$/, '');
 
     if (host === 'localhost' || host.endsWith('.localhost')) {
-      // Loopback isn't ours to allow-list by name; judge it by the address it
-      // actually resolves to so an allowRanges entry for 127.0.0.0/8 works.
-      return isBlockedAddress('127.0.0.1') ? { allowed: false, host, address: '127.0.0.1' } : { allowed: true };
+      return isBlockedAddress('127.0.0.1')
+        ? { status: 'blocked', host, address: '127.0.0.1' }
+        : { status: 'allowed', host, addresses: ['127.0.0.1'] };
     }
 
     if (isIP(host)) {
-      return isBlockedAddress(host) ? { allowed: false, host, address: host } : { allowed: true };
+      return isBlockedAddress(host)
+        ? { status: 'blocked', host, address: host }
+        : { status: 'allowed', host, addresses: [host] };
     }
 
-    let addresses: Array<{ address: string }>;
+    let answers: Array<{ address: string }>;
     try {
-      addresses = await lookup(host);
+      answers = await lookup(host);
     } catch {
-      // Unresolvable here. The fetch itself will fail with its own error, and
-      // on the direct path the connect-time check still applies.
-      return { allowed: true, unresolved: true };
+      return { status: 'unresolved', host };
     }
+    if (!answers || answers.length === 0) return { status: 'unresolved', host };
 
-    // Any private answer blocks: which address a connection picks is not ours to control.
-    const blocked = addresses.find((entry) => isBlockedAddress(entry.address));
-    return blocked ? { allowed: false, host, address: blocked.address } : { allowed: true };
+    // Any private answer blocks: which address a connection would pick is not ours to control.
+    const blocked = answers.find((entry) => isBlockedAddress(entry.address));
+    if (blocked) return { status: 'blocked', host, address: blocked.address };
+    return { status: 'allowed', host, addresses: answers.map((entry) => entry.address) };
+  }
+
+  async function checkHost(rawHost: string): Promise<GuardVerdict> {
+    const resolution = await resolveHost(rawHost);
+    if (resolution.status === 'blocked') {
+      return { allowed: false, host: resolution.host, address: resolution.address };
+    }
+    return resolution.status === 'unresolved' ? { allowed: true, unresolved: true } : { allowed: true };
   }
 
   async function assertUrlAllowed(url: string): Promise<void> {
@@ -248,5 +311,5 @@ export function createNetworkGuard(
     if (!verdict.allowed) throw new BlockedAddressError(verdict.host, verdict.address);
   }
 
-  return { isBlockedAddress, checkHost, assertUrlAllowed };
+  return { isBlockedAddress, resolveHost, checkHost, assertUrlAllowed };
 }

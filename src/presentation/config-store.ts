@@ -122,7 +122,10 @@ function serializeBackendConfigOverride(config: BackendConfigOverride): BackendC
   }
 
   if (config.network) {
-    backends.network = { allowRanges: [...config.network.allowRanges] };
+    backends.network = {
+      ...config.network,
+      ...(config.network.allowRanges ? { allowRanges: [...config.network.allowRanges] } : {})
+    };
   }
 
   return { backends };

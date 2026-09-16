@@ -15,14 +15,21 @@ export function createResearchWorkflow({
   fetchPage?: (input: { url: string }) => Promise<WebFetchResponse>;
   headlessFetch?: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
 } = {}) {
-  const backends = createBackendSet(backendConfig);
-  const resolvedSearch = search ?? backends.search;
-  const resolvedFetchPage = fetchPage ?? backends.fetchPage;
-  const resolvedHeadlessFetch = headlessFetch ?? backends.headlessFetch;
+  // Only build (and own) a backend set when something wasn't injected.
+  const backends = search && fetchPage && headlessFetch ? undefined : createBackendSet(backendConfig);
+  const resolvedSearch = search ?? backends!.search;
+  const resolvedFetchPage = fetchPage ?? backends!.fetchPage;
+  const resolvedHeadlessFetch = headlessFetch ?? backends!.headlessFetch;
   const worker = createResearchWorker({ search: resolvedSearch, fetchPage: resolvedFetchPage });
-  return createResearchOrchestrator({
+  const orchestrator = createResearchOrchestrator({
     worker,
     fetchDirect: resolvedFetchPage,
     headlessFetch: resolvedHeadlessFetch
+  });
+  return Object.assign(orchestrator, {
+    /** Releases the backend set this workflow created. Injected capabilities are left alone. */
+    async close() {
+      await backends?.close?.();
+    }
   });
 }

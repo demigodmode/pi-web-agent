@@ -747,6 +747,7 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('runtime: node v24.0.0 linux x64');
     expect(notify.mock.calls[0][0]).toContain('typebox: ok');
     expect(notify.mock.calls[0][0]).toContain('browser: chromium /usr/bin/chromium');
+    expect(notify.mock.calls[0][0]).toContain('trust upstream proxy for private addresses: off');
     expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
     expect(notify.mock.calls[0][0]).toContain('fetch: http');
     expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
@@ -1461,5 +1462,25 @@ describe('network allow list settings', () => {
     expect(collapseBackendConfigToOverride({ ...base, network: { allowRanges: ['10.0.0.0/8'] } }, base)).toEqual({
       network: { allowRanges: ['10.0.0.0/8'] }
     });
+  });
+
+  it('toggles trusting the upstream proxy without touching the allow list', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+    const state = createSettingsDraftState(loaded, 'project');
+
+    const withRanges = applySettingsValue(state, 'backend:network:allowRanges', '10.0.0.0/8');
+    const trusted = applySettingsValue(withRanges, 'backend:network:trustProxyDns', 'on');
+    expect(trusted.backends.network).toEqual({ allowRanges: ['10.0.0.0/8'], trustProxyDns: true });
+
+    const untrusted = applySettingsValue(trusted, 'backend:network:trustProxyDns', 'off');
+    expect(untrusted.backends.network).toEqual({ allowRanges: ['10.0.0.0/8'], trustProxyDns: false });
+
+    const rangesCleared = applySettingsValue(untrusted, 'backend:network:allowRanges', '');
+    expect(rangesCleared.backends.network).toEqual({ trustProxyDns: false });
   });
 });

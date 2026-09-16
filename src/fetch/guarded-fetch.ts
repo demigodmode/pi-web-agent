@@ -1,7 +1,4 @@
-import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
-import type { LookupFunction } from 'node:net';
-import { Agent, fetch as undiciFetch } from 'undici';
-import { BlockedAddressError, type NetworkGuard } from './network-guard.js';
+import { type NetworkGuard } from './network-guard.js';
 
 export const MAX_REDIRECTS = 5;
 
@@ -87,53 +84,4 @@ export function createGuardedFetch(baseFetch: typeof fetch, guard: NetworkGuard)
 
     throw new Error(`Too many redirects (more than ${MAX_REDIRECTS}).`);
   }) as typeof fetch;
-}
-
-type CallbackLookup = (
-  hostname: string,
-  options: { all?: boolean; family?: number },
-  callback: (...args: any[]) => void
-) => void;
-
-/**
- * Direct (no proxy) path only. Checks the addresses actually used to connect,
- * so a DNS server that answers public for the pre-check and private for the
- * connect (rebinding) is still stopped. Not usable behind a proxy: the local
- * connection goes to the proxy, which is usually 127.0.0.1.
- *
- * IP literals never reach this lookup: net.connect skips DNS resolution for
- * them entirely. So this must always sit behind createGuardedFetch, whose
- * assertUrlAllowed catches literals before a connection is attempted.
- */
-export function createPinnedFetch(
-  guard: NetworkGuard,
-  { lookup = dnsLookup as unknown as CallbackLookup }: { lookup?: CallbackLookup } = {}
-): typeof fetch {
-  const pinnedLookup: CallbackLookup = (hostname, options, callback) => {
-    lookup(hostname, { ...options, all: true }, (error: Error | null, addresses: LookupAddress[]) => {
-      if (error) {
-        callback(error);
-        return;
-      }
-      if (!addresses || addresses.length === 0) {
-        callback(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' }));
-        return;
-      }
-      const blocked = addresses.find((entry) => guard.isBlockedAddress(entry.address));
-      if (blocked) {
-        callback(new BlockedAddressError(hostname, blocked.address));
-        return;
-      }
-      if (options?.all) callback(null, addresses);
-      else callback(null, addresses[0].address, addresses[0].family);
-    });
-  };
-
-  const agent = new Agent({ connect: { lookup: pinnedLookup as unknown as LookupFunction } });
-
-  return ((input: unknown, init?: unknown) =>
-    undiciFetch(
-      input as Parameters<typeof undiciFetch>[0],
-      { ...(init as Record<string, unknown> | undefined), dispatcher: agent } as unknown as Parameters<typeof undiciFetch>[1]
-    )) as unknown as typeof fetch;
 }
