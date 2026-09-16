@@ -7,13 +7,13 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Optional proxy support. Point web_explore at an HTTP/HTTPS proxy and everything outbound goes through it: search, fetch, Firecrawl, the GitHub/PDF/YouTube readers, doctor health checks, and the headless browser. Off unless you set it, and nothing changes if you don't. Set it in Settings → Backends, and keep credentials in `PI_WEB_AGENT_PROXY_USERNAME` / `PI_WEB_AGENT_PROXY_PASSWORD` rather than in the URL. Thanks to @lo-tp for building this. (#50)
 
 ### Changed
-- None.
+- `/web-agent doctor` reports whether the jsdom compat patch is in place, and prints the command to reapply it if it isn't.
 
 ### Fixed
-- None.
+- Pi failing to start with `Cannot find module 'punycode/'` or `Set operation called on non-Set object`. The patch for this was only applied at install time, but every pi extension shares one node_modules tree, so installing or updating anything else quietly reverted it. It now reapplies every time the extension loads. Also fixes it picking the wrong copy of the dependency when the shared tree holds more than one. (#34)
 
 ### Breaking
 - None.
