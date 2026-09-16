@@ -126,6 +126,10 @@ To reapply it by hand:
 node ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/scripts/patch-jiti-compat.mjs
 ```
 
+Then restart Pi.
+
+`/web-agent doctor` reports the current state. A healthy install prints `jsdom compat patch: ok`. If the patch could not be applied it prints `jsdom compat patch: needed (...)` along with the command above.
+
 ## Fetches fail with a private address error
 
 web_explore refuses to fetch pages on private, loopback, or link-local addresses when the link came from the model or from a page it read. That stops a web page from steering it at things like cloud metadata endpoints, services on localhost, or devices on your network.
@@ -173,10 +177,6 @@ If you trust that proxy to keep requests away from private addresses itself, tur
 ```
 
 That hands the address decision to your proxy. pi-web-agent still refuses literal private addresses, localhost, and any private address it can see locally. The same setting helps when names only resolve inside the proxy's network. Even with this turned on, a name that resolves on your machine to a private address is still refused before it reaches the proxy.
-
-Then restart Pi.
-
-`/web-agent doctor` reports the current state. A healthy install prints `jsdom compat patch: ok`. If the patch could not be applied it prints `jsdom compat patch: needed (...)` along with the command above.
 
 ## Search says no backend is available
 

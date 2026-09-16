@@ -151,8 +151,11 @@ export function createFanoutSearch({
         return withPresentation({ status: 'ok', results: [], metadata: { backend: primary.name, cacheHit: false, fanout, attempts, ...coverage } });
       }
 
-      // 4. all failed or skipped: non-terminal, so an outer fallback may still run
-      const lastFailure = [...outcomes].reverse().find((o) => o.failure)?.failure ?? { kind: 'bad_response' as const };
+      // 4. all failed or skipped: non-terminal. A bad_request anywhere wins so an outer
+      // chain never falls back on it, whatever order the providers ran in.
+      const badRequest = outcomes.find((o) => o.failure?.kind === 'bad_request')?.failure;
+      const lastFailure =
+        badRequest ?? [...outcomes].reverse().find((o) => o.failure)?.failure ?? { kind: 'bad_response' as const };
       return withPresentation({
         status: 'error',
         results: [],

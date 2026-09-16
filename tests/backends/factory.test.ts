@@ -366,6 +366,33 @@ describe('backend factory', () => {
     expect(result.metadata.fallbackFrom).toBe('duckduckgo');
   });
 
+  it('never reaches keyless Tavily after a bad_request inside an all-failed fanout (#55)', async () => {
+    const badRequestDdg = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'duckduckgo', cacheHit: false },
+      error: { code: 'INVALID_QUERY', message: 'bad', failure: { kind: 'bad_request' } }
+    });
+    const transientTavily = vi.fn().mockResolvedValue({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'tavily', cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'down', failure: { kind: 'transient' } }
+    });
+    const keylessTavily = vi.fn();
+    const createTavilySearch = vi.fn((options: { keyless?: boolean }) => (options.keyless ? keylessTavily : transientTavily));
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'tavily'] } } },
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: vi.fn().mockReturnValue(badRequestDdg), createTavilySearch: createTavilySearch as any }
+    );
+
+    const result = await backends.search({ query: 'anything' });
+
+    expect(keylessTavily).not.toHaveBeenCalled();
+    expect(result.error?.failure?.kind).toBe('bad_request');
+  });
+
   it('does not fall back to keyless Tavily when the opt-out env var is set', async () => {
     const original = process.env.PI_WEB_AGENT_DISABLE_KEYLESS_FALLBACK;
     process.env.PI_WEB_AGENT_DISABLE_KEYLESS_FALLBACK = '1';

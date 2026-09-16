@@ -198,6 +198,16 @@ describe('fanout outcomes and precedence (#55)', () => {
     ]);
   });
 
+  it('reports bad_request for an all-failed fanout regardless of provider order', async () => {
+    for (const providers of [
+      [failP('duckduckgo', 'bad_request'), failP('tavily', 'transient')],
+      [failP('tavily', 'transient'), failP('duckduckgo', 'bad_request')]
+    ]) {
+      const result = await createFanoutSearch({ providers, mode: 'on' })({ query: 'q' });
+      expect(result.error).toMatchObject({ code: 'FANOUT_ALL_FAILED', failure: { kind: 'bad_request' } });
+    }
+  });
+
   it('a provider timeout is a transient failure outcome', async () => {
     const slow = { name: 'exa' as const, search: () => new Promise<any>(() => undefined) };
     const result = await createFanoutSearch({ providers: [okP('brave'), slow], mode: 'on', timeoutMs: 20 })({ query: 'q' });
