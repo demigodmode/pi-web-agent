@@ -9,6 +9,7 @@ import {
   type BackendConfigOverride
 } from '../backends/config.js';
 import { checkBackendHealth } from '../backends/doctor.js';
+import { parseCidr } from '../fetch/network-guard.js';
 import type { SearchProviderName } from '../types.js';
 import {
   DynamicBorder,
@@ -104,7 +105,10 @@ function cloneBackendConfig(config: BackendConfig): BackendConfig {
       options: config.fetch.options ? { ...config.fetch.options } : undefined
     },
     headless: { ...config.headless },
-    proxy: config.proxy ? { ...config.proxy } : undefined
+    proxy: config.proxy ? { ...config.proxy } : undefined,
+    network: config.network
+      ? { ...config.network, ...(config.network.allowRanges ? { allowRanges: [...config.network.allowRanges] } : {}) }
+      : undefined
   };
 }
 
@@ -123,6 +127,22 @@ export function validateBackendUrl(value: string): { ok: true; value: string } |
   } catch {
     return { ok: false, message: 'Invalid URL. Include http:// or https://.' };
   }
+}
+
+function splitRanges(value: string): string[] {
+  return value
+    .split(',')
+    .map((range) => range.trim())
+    .filter(Boolean);
+}
+
+export function validateAllowRanges(value: string): { ok: true; value: string } | { ok: false; message: string } {
+  for (const range of splitRanges(value)) {
+    const cidr = parseCidr(range);
+    if (!cidr) return { ok: false, message: `Not a valid CIDR range: ${range}` };
+    if (cidr.prefix === 0) return { ok: false, message: `${range} allows every address. List specific ranges instead.` };
+  }
+  return { ok: true, value: splitRanges(value).join(', ') };
 }
 
 /**
@@ -228,7 +248,8 @@ export function createBackendUrlEditor(
   theme: any,
   label: string,
   placeholderUrl: string,
-  onOpenChange?: (open: boolean) => void
+  onOpenChange?: (open: boolean) => void,
+  validate: (value: string) => { ok: true; value: string } | { ok: false; message: string } = validateBackendUrl
 ) {
   return (currentValue: string, done: (selectedValue?: string) => void): Component => {
     onOpenChange?.(true);
@@ -258,7 +279,7 @@ export function createBackendUrlEditor(
         return;
       }
 
-      const validated = validateBackendUrl(value);
+      const validated = validate(value);
       if (!validated.ok) {
         showError(validated.message);
         return;
@@ -381,6 +402,25 @@ function buildBackendSettingsItems(
       label: 'Proxy URL',
       currentValue: backends.proxy ? stripProxyCredentials(backends.proxy.url) : 'not set',
       submenu: createBackendUrlEditor(theme, 'HTTP proxy URL', 'http://127.0.0.1:7890', onUrlEditorOpenChange)
+    },
+    {
+      id: 'backend:network:allowRanges',
+      label: 'Network allow list',
+      currentValue: backends.network?.allowRanges?.length ? backends.network.allowRanges.join(', ') : 'not set',
+      submenu: createBackendUrlEditor(
+        theme,
+        'Private ranges to allow, comma separated CIDRs, e.g. 198.18.0.0/15',
+        // No prefilled example: pressing enter on an empty list must not quietly add an exception.
+        '',
+        onUrlEditorOpenChange,
+        validateAllowRanges
+      )
+    },
+    {
+      id: 'backend:network:trustProxyDns',
+      label: 'Trust the upstream proxy to enforce private-address restrictions',
+      currentValue: backends.network?.trustProxyDns ? 'on' : 'off',
+      values: ['off', 'on']
     }
   ];
 }
@@ -615,6 +655,25 @@ export function applySettingsValue(
     }
   }
 
+  if (id === 'backend:network:allowRanges') {
+    const ranges = splitRanges(newValue);
+    const next = { ...currentBackends.network };
+    if (ranges.length > 0) {
+      next.allowRanges = ranges;
+    } else {
+      delete next.allowRanges;
+    }
+    if (Object.keys(next).length > 0) {
+      currentBackends.network = next;
+    } else {
+      delete currentBackends.network;
+    }
+  }
+
+  if (id === 'backend:network:trustProxyDns') {
+    currentBackends.network = { ...currentBackends.network, trustProxyDns: newValue === 'on' };
+  }
+
   nextDrafts[nextScope] = currentDraft;
   nextBackendDrafts[nextScope] = currentBackends;
 
@@ -707,6 +766,22 @@ export function collapseBackendConfigToOverride(
       // The proxy was cleared at this scope; record an explicit disable so it
       // overrides a proxy set in a lower (e.g. global) layer.
       override.proxy = { url: '' };
+    }
+  }
+
+  if (!sameJson(config.network, inheritedConfig.network)) {
+    if (config.network) {
+      override.network = {
+        ...config.network,
+        ...(config.network.allowRanges ? { allowRanges: [...config.network.allowRanges] } : {})
+      };
+      // Cleared at this scope: an explicit empty list overrides the parent's.
+      if (!config.network.allowRanges && inheritedConfig.network?.allowRanges) override.network.allowRanges = [];
+    } else if (inheritedConfig.network) {
+      override.network = {
+        ...(inheritedConfig.network.allowRanges ? { allowRanges: [] } : {}),
+        ...(inheritedConfig.network.trustProxyDns ? { trustProxyDns: false } : {})
+      };
     }
   }
 
@@ -1008,6 +1083,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           `typebox: ${typeboxOk ? 'ok' : 'missing'}`,
           formatJitiCompatLine(checkCompat()),
           formatBackendSummary(backendConfig),
+          `network allow list: ${backendConfig.network?.allowRanges?.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
+          `trust upstream proxy for private addresses: ${backendConfig.network?.trustProxyDns ? 'on' : 'off'}`,
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
           ...backendHealth
         ];

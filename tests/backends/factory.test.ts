@@ -1,7 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBackendSet } from '../../src/backends/factory.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
+import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import type { SearchProviderName } from '../../src/types.js';
+
+/**
+ * Keeps factory tests offline now that model-chosen fetches go through the
+ * network guard (#53): no real DNS, no real guard proxy, and the model fetch defers to whatever
+ * global fetch the test stubbed.
+ */
+function offlineNetworkDeps() {
+  return {
+    networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+    createModelFetch: () =>
+      ((input: Parameters<typeof fetch>[0], init?: RequestInit) => globalThis.fetch(input, init)) as typeof fetch,
+    createGuardProxy: vi.fn(async () => {
+      throw new Error('tests must not start a real guard proxy');
+    })
+  };
+}
 
 describe('backend factory', () => {
   beforeEach(() => {
@@ -12,7 +29,7 @@ describe('backend factory', () => {
     vi.unstubAllGlobals();
   });
   it('creates the existing search/fetch/headless tools by default', () => {
-    const backends = createBackendSet();
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
 
     expect(backends.search).toEqual(expect.any(Function));
     expect(backends.fetchPage).toEqual(expect.any(Function));
@@ -20,22 +37,28 @@ describe('backend factory', () => {
   });
 
   it('creates self-hosted search and fetch backends', () => {
-    const backends = createBackendSet({
-      search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
-      fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002' },
-      headless: { provider: 'local-browser' }
-    });
+    const backends = createBackendSet(
+      {
+        search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
+        fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002' },
+        headless: { provider: 'local-browser' }
+      },
+      offlineNetworkDeps()
+    );
 
     expect(backends.search).toEqual(expect.any(Function));
     expect(backends.fetchPage).toEqual(expect.any(Function));
   });
 
   it('returns clear backend config errors instead of silently falling back', async () => {
-    const backends = createBackendSet({
-      search: { provider: 'searxng' },
-      fetch: { provider: 'firecrawl' },
-      headless: { provider: 'local-browser' }
-    });
+    const backends = createBackendSet(
+      {
+        search: { provider: 'searxng' },
+        fetch: { provider: 'firecrawl' },
+        headless: { provider: 'local-browser' }
+      },
+      offlineNetworkDeps()
+    );
 
     await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
       status: 'error',
@@ -65,7 +88,7 @@ describe('backend factory', () => {
 
     const backends = createBackendSet(
       { search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
-      { createSearxngSearch: () => searxng, createDuckDuckGoSearch: () => duckduckgo }
+      { ...offlineNetworkDeps(), createSearxngSearch: () => searxng, createDuckDuckGoSearch: () => duckduckgo }
     );
 
     await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
@@ -88,7 +111,7 @@ describe('backend factory', () => {
 
     const backends = createBackendSet(
       { search: { provider: 'searxng', baseUrl: 'http://localhost:8080' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
-      { createSearxngSearch: () => searxng }
+      { ...offlineNetworkDeps(), createSearxngSearch: () => searxng }
     );
 
     await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
@@ -105,7 +128,7 @@ describe('backend factory', () => {
     try {
       createBackendSet(
         { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave' } },
-        { createBraveSearch }
+        { ...offlineNetworkDeps(), createBraveSearch }
       );
 
       expect(createBraveSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'brave-key' }));
@@ -131,6 +154,7 @@ describe('backend factory', () => {
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'brave', fallback: 'duckduckgo' } },
       {
+        ...offlineNetworkDeps(),
         createBraveSearch: vi.fn().mockReturnValue(primary),
         createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
       }
@@ -151,7 +175,7 @@ describe('backend factory', () => {
     try {
       createBackendSet(
         { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom' } },
-        { createYouComSearch }
+        { ...offlineNetworkDeps(), createYouComSearch }
       );
 
       expect(createYouComSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'ydc-key' }));
@@ -177,6 +201,7 @@ describe('backend factory', () => {
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom', fallback: 'duckduckgo' } },
       {
+        ...offlineNetworkDeps(),
         createYouComSearch: vi.fn().mockReturnValue(primary),
         createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
       }
@@ -209,7 +234,7 @@ describe('backend factory', () => {
 
     const backends = createBackendSet(
       { search: { provider: 'duckduckgo' }, fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }, headless: { provider: 'local-browser' } },
-      { createFirecrawlFetch: () => firecrawl, createHttpFetch: createHttpFetch as never }
+      { ...offlineNetworkDeps(), createFirecrawlFetch: () => firecrawl, createHttpFetch: createHttpFetch as never }
     );
 
     await expect(backends.fetchPage({ url: 'https://example.com' })).resolves.toMatchObject({
@@ -226,7 +251,7 @@ describe('backend factory', () => {
     try {
       createBackendSet(
         { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'exa' } },
-        { createExaSearch }
+        { ...offlineNetworkDeps(), createExaSearch }
       );
 
       expect(createExaSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'exa-key' }));
@@ -252,6 +277,7 @@ describe('backend factory', () => {
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'exa', fallback: 'duckduckgo' } },
       {
+        ...offlineNetworkDeps(),
         createExaSearch: vi.fn().mockReturnValue(primary),
         createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
       }
@@ -272,7 +298,7 @@ describe('backend factory', () => {
     try {
       createBackendSet(
         { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'tavily' } },
-        { createTavilySearch }
+        { ...offlineNetworkDeps(), createTavilySearch }
       );
 
       expect(createTavilySearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'tavily-key' }));
@@ -298,6 +324,7 @@ describe('backend factory', () => {
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'tavily', fallback: 'duckduckgo' } },
       {
+        ...offlineNetworkDeps(),
         createTavilySearch: vi.fn().mockReturnValue(primary),
         createDuckDuckGoSearch: vi.fn().mockReturnValue(fallback)
       }
@@ -326,7 +353,7 @@ describe('backend factory', () => {
     const createTavilySearch = vi.fn().mockReturnValue(tavilyOk);
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo' } },
-      { createDuckDuckGoSearch: vi.fn().mockReturnValue(failingDdg), createTavilySearch }
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: vi.fn().mockReturnValue(failingDdg), createTavilySearch }
     );
 
     const result = await backends.search({ query: 'anything' });
@@ -351,7 +378,7 @@ describe('backend factory', () => {
 
       const backends = createBackendSet(
         { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo' } },
-        { createDuckDuckGoSearch: vi.fn().mockReturnValue(failingDdg), createTavilySearch }
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: vi.fn().mockReturnValue(failingDdg), createTavilySearch }
       );
 
       const result = await backends.search({ query: 'anything' });
@@ -377,7 +404,7 @@ describe('backend factory', () => {
       headers: new Headers()
     }));
 
-    const backends = createBackendSet();
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
     const res = await backends.fetchPage({ url: 'https://github.com/owner/repo/blob/main/does-not-exist-xyz.ts' });
     expect(res.metadata.method).toBe('github');
   });
@@ -390,7 +417,7 @@ describe('backend factory', () => {
     });
     const backends = createBackendSet(
       { search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo'] } }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
-      { createDuckDuckGoSearch: () => duck }
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
     );
     const res = await backends.search({ query: 'q' });
     expect(res.status).toBe('ok');
@@ -413,7 +440,7 @@ describe('backend factory', () => {
 
     const backends = createBackendSet(
       { search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo'] } }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
-      { createDuckDuckGoSearch: () => failingDuck, createTavilySearch }
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => failingDuck, createTavilySearch }
     );
 
     const res = await backends.search({ query: 'q' });
@@ -443,7 +470,7 @@ describe('backend factory', () => {
 
     const backends = createBackendSet(
       { search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo'] } }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
-      { createDuckDuckGoSearch: () => failingDuck, createTavilySearch }
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => failingDuck, createTavilySearch }
     );
 
     const res = await backends.search({ query: 'q' });
@@ -458,7 +485,7 @@ describe('backend factory', () => {
     const brave = async () => ({ status: 'ok' as const, results: [{ title: 'b', url: 'https://b.com/1', snippet: 's' }], metadata: { backend: 'brave' as const, cacheHit: false } });
     const backends = createBackendSet(
       { search: { provider: 'brave', fallback: 'duckduckgo', fanout: { mode: 'on', providers: ['brave'] } }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
-      { createDuckDuckGoSearch: () => duck, createBraveSearch: () => brave }
+      { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck, createBraveSearch: () => brave }
     );
     await backends.search({ query: 'q' });
     expect(duck).toHaveBeenCalled();
@@ -482,6 +509,7 @@ describe('backend factory', () => {
         headless: { provider: 'local-browser' }
       },
       {
+        ...offlineNetworkDeps(),
         createDuckDuckGoSearch: () => duckMock,
         createBraveSearch: () => braveMock
       }
@@ -519,6 +547,7 @@ describe('backend factory', () => {
         headless: { provider: 'local-browser' }
       },
       {
+        ...offlineNetworkDeps(),
         createDuckDuckGoSearch: () => duckMock,
         createSearxngSearch: () => searxngMock
       }
@@ -534,7 +563,7 @@ describe('backend factory', () => {
 });
 
 describe('backend factory proxy support', () => {
-  it('routes search and fetch traffic through the configured proxy fetch', async () => {
+  it('routes search through the configured proxy fetch and model-chosen pages through the model fetch', async () => {
     const proxiedUrls: string[] = [];
     const proxyFetchMock = vi.fn((input: string | URL | Request) => {
       proxiedUrls.push(String(input));
@@ -548,7 +577,13 @@ describe('backend factory proxy support', () => {
         )
       );
     });
-    const createProxyFetch = vi.fn(() => proxyFetchMock as typeof fetch);
+    const searchUrls: string[] = [];
+    const searchFetchMock = vi.fn(async (input: string | URL | Request) => {
+      searchUrls.push(String(input));
+      return new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    });
+
+    const createProxyFetch = vi.fn(() => searchFetchMock as typeof fetch);
 
     let capturedSearchHtml: ((query: string) => Promise<string>) | undefined;
 
@@ -560,6 +595,9 @@ describe('backend factory proxy support', () => {
         proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
       },
       {
+        ...offlineNetworkDeps(),
+        // Model-chosen urls go through the guard proxy, which chains to the upstream itself.
+        createModelFetch: () => proxyFetchMock as typeof fetch,
         createProxyFetch,
         createDuckDuckGoSearch: (options) => {
           capturedSearchHtml = options?.searchHtml;
@@ -573,21 +611,23 @@ describe('backend factory proxy support', () => {
     const page = await backends.fetchPage({ url: 'https://example.com/page' });
     expect(page.status).toBe('ok');
     expect(proxiedUrls).toContain('https://example.com/page');
+    expect(searchUrls).not.toContain('https://example.com/page');
 
     expect(capturedSearchHtml).toEqual(expect.any(Function));
     await capturedSearchHtml!('docs');
-    expect(proxiedUrls).toContain('https://html.duckduckgo.com/html/?q=docs');
+    expect(searchUrls).toContain('https://html.duckduckgo.com/html/?q=docs');
+    expect(proxiedUrls).not.toContain('https://html.duckduckgo.com/html/?q=docs');
   });
 
   it('does not build a proxy fetch when no proxy is configured', () => {
     const createProxyFetch = vi.fn();
 
-    createBackendSet(DEFAULT_BACKEND_CONFIG, { createProxyFetch });
+    createBackendSet(DEFAULT_BACKEND_CONFIG, { ...offlineNetworkDeps(), createProxyFetch });
 
     expect(createProxyFetch).not.toHaveBeenCalled();
   });
 
-  it('routes YouTube reader traffic through the configured proxy fetch', async () => {
+  it('routes YouTube reader traffic through the model fetch, not the direct proxy fetch', async () => {
     const proxiedUrls: string[] = [];
     const INNERTUBE = 'https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false';
     const proxyFetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -617,7 +657,8 @@ describe('backend factory proxy support', () => {
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
     });
-    const createProxyFetch = vi.fn(() => proxyFetchMock as typeof fetch);
+    const directProxyFetch = vi.fn();
+    const createProxyFetch = vi.fn(() => directProxyFetch as unknown as typeof fetch);
 
     const backends = createBackendSet(
       {
@@ -626,7 +667,7 @@ describe('backend factory proxy support', () => {
         headless: { provider: 'local-browser' },
         proxy: { url: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
       },
-      { createProxyFetch }
+      { ...offlineNetworkDeps(), createProxyFetch, createModelFetch: () => proxyFetchMock as typeof fetch }
     );
 
     const page = await backends.fetchPage({ url: 'https://youtu.be/abc123' });
@@ -635,7 +676,8 @@ describe('backend factory proxy support', () => {
     expect(page.content?.title).toBe('My Talk');
     expect(page.content?.text).toContain('hello world');
 
-    // Both the InnerTube player call and the caption track call went through the proxy.
+    // Both the InnerTube player call and the caption track call went through the model fetch (guard proxy).
+    expect(directProxyFetch).not.toHaveBeenCalled();
     expect(proxiedUrls).toContain(INNERTUBE);
     expect(proxiedUrls.some((u) => u.startsWith('https://www.youtube.com/api/timedtext'))).toBe(true);
   });
@@ -652,7 +694,7 @@ describe('backend factory proxy support', () => {
         headless: { provider: 'local-browser' },
         proxy: { url: 'htttp://proxy:8080' }
       },
-      { createProxyFetch }
+      { ...offlineNetworkDeps(), createProxyFetch }
     );
 
     const search = await backends.search({ query: 'docs' });
@@ -693,12 +735,221 @@ describe('backend factory proxy support', () => {
         headless: { provider: 'local-browser' },
         proxy: { url: '' }
       },
-      { createProxyFetch }
+      { ...offlineNetworkDeps(), createProxyFetch }
     );
 
     expect(createProxyFetch).not.toHaveBeenCalled();
     const page = await backends.fetchPage({ url: 'https://example.com/page' });
     expect(page.status).toBe('ok');
     expect(directFetch).toHaveBeenCalled();
+  });
+});
+
+describe('backend factory private address guard', () => {
+  it('blocks a private page url before any fetch happens', async () => {
+    const directFetch = vi.fn();
+    vi.stubGlobal('fetch', directFetch);
+
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+    const result = await backends.fetchPage({ url: 'http://169.254.169.254/latest/meta-data/' });
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'BLOCKED_PRIVATE_ADDRESS' } });
+    expect(result.presentation).toBeDefined();
+    expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it('never hands a private url to Firecrawl or its http fallback', async () => {
+    const firecrawlFetch = vi.fn();
+    const backends = createBackendSet(
+      {
+        ...DEFAULT_BACKEND_CONFIG,
+        fetch: { provider: 'firecrawl', baseUrl: 'http://127.0.0.1:3002', fallback: 'http' }
+      },
+      { ...offlineNetworkDeps(), createFirecrawlFetch: vi.fn(() => firecrawlFetch) }
+    );
+
+    const result = await backends.fetchPage({ url: 'http://10.0.0.8/admin' });
+
+    expect(result.error?.code).toBe('BLOCKED_PRIVATE_ADDRESS');
+    expect(result.metadata.method).toBe('firecrawl');
+    expect(firecrawlFetch).not.toHaveBeenCalled();
+  });
+
+  it('still reaches a SearXNG instance configured on localhost', async () => {
+    const searxngFetch = vi.fn(async (_input: Parameters<typeof fetch>[0]) =>
+      new Response(JSON.stringify({ results: [{ title: 'Docs', url: 'https://example.com/docs', content: 'hi' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+    vi.stubGlobal('fetch', searxngFetch);
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'searxng', baseUrl: 'http://127.0.0.1:8080' } },
+      offlineNetworkDeps()
+    );
+    const result = await backends.search({ query: 'docs' });
+
+    expect(result.status).toBe('ok');
+    expect(String(searxngFetch.mock.calls[0][0])).toContain('127.0.0.1:8080');
+  });
+
+  it('builds the guard from the configured allow list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response('<html><body><article><p>' + 'Internal docs page with enough readable text. '.repeat(5) + '</p></article></body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' }
+        })
+      )
+    );
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, network: { allowRanges: ['10.0.0.0/8'] } },
+      { createModelFetch: offlineNetworkDeps().createModelFetch }
+    );
+    const result = await backends.fetchPage({ url: 'http://10.0.0.8/docs' });
+
+    expect(result.error?.code).not.toBe('BLOCKED_PRIVATE_ADDRESS');
+  });
+});
+
+describe('backend factory guard proxy wiring', () => {
+  it('does not start the guard proxy until a model-chosen connection needs it', () => {
+    const deps = offlineNetworkDeps();
+    createBackendSet(DEFAULT_BACKEND_CONFIG, deps);
+    expect(deps.createGuardProxy).not.toHaveBeenCalled();
+  });
+
+  it('starts one guard proxy, once, with the upstream proxy and trust setting', async () => {
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: vi.fn(() => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' })),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close: async () => undefined
+    };
+    const createGuardProxy = vi.fn(async () => proxy);
+
+    const backends = createBackendSet(
+      {
+        ...DEFAULT_BACKEND_CONFIG,
+        proxy: { url: 'http://upstream.example:3128', username: 'user', password: 'secret' },
+        network: { trustProxyDns: true }
+      },
+      { networkGuard: offlineNetworkDeps().networkGuard, createGuardProxy }
+    );
+
+    // The fake proxy url refuses connections, so these fetches fail; only the proxy start matters here.
+    // Headless use of the same proxy is covered by the headless and real-browser tests.
+    await backends.fetchPage({ url: 'https://example.com/a' }).catch(() => undefined);
+    await backends.fetchPage({ url: 'https://example.com/b' }).catch(() => undefined);
+
+    expect(createGuardProxy).toHaveBeenCalledTimes(1);
+    expect(createGuardProxy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        upstream: { url: 'http://upstream.example:3128', username: 'user', password: 'secret' },
+        trustProxyDns: true
+      })
+    );
+  });
+
+  it('does not hang page fetch on a DNS pre-check that never settles', async () => {
+    const createGuardProxy = vi.fn(async () => {
+      throw new Error('fake guard proxy: not started');
+    });
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: createNetworkGuard({}, { lookup: () => new Promise(() => undefined), lookupTimeoutMs: 50 }),
+      createGuardProxy
+    });
+
+    const outcome = await Promise.race([
+      backends.fetchPage({ url: 'https://slow-dns.example/' }).then(
+        () => 'settled',
+        () => 'settled'
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('still pending'), 2000))
+    ]);
+
+    expect(outcome).toBe('settled');
+    expect(createGuardProxy).toHaveBeenCalled();
+  });
+
+  it('closing a set that never used the guard proxy does not start it', async () => {
+    const deps = offlineNetworkDeps();
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, deps);
+
+    await backends.close();
+
+    expect(deps.createGuardProxy).not.toHaveBeenCalled();
+  });
+
+  it('closes the guard proxy it started exactly once, even if it was still starting', async () => {
+    const close = vi.fn(async () => undefined);
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: () => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' }),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close
+    };
+    let finishStart!: (value: typeof proxy) => void;
+    const createGuardProxy = vi.fn(() => new Promise<typeof proxy>((resolve) => (finishStart = resolve)));
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: offlineNetworkDeps().networkGuard,
+      createGuardProxy
+    });
+
+    const pendingFetch = backends.fetchPage({ url: 'https://example.com/' }).catch(() => undefined);
+    await vi.waitFor(() => expect(createGuardProxy).toHaveBeenCalledTimes(1));
+    const closing = backends.close();
+    finishStart(proxy);
+    await closing;
+    await backends.close();
+    await pendingFetch;
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries starting the guard proxy after a failed attempt instead of caching the rejection', async () => {
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: vi.fn(() => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' })),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close: vi.fn(async () => undefined)
+    };
+    const createGuardProxy = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('listen EADDRINUSE'))
+      .mockResolvedValueOnce(proxy);
+
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: offlineNetworkDeps().networkGuard,
+      createGuardProxy
+    });
+
+    await expect(backends.fetchPage({ url: 'https://example.com/a' })).rejects.toThrow('listen EADDRINUSE');
+    expect(createGuardProxy).toHaveBeenCalledTimes(1);
+
+    await backends.fetchPage({ url: 'https://example.com/b' }).catch(() => undefined);
+    expect(createGuardProxy).toHaveBeenCalledTimes(2);
+
+    await backends.close();
+    expect(createGuardProxy).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses to start a guard proxy after close', async () => {
+    const createGuardProxy = vi.fn();
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: offlineNetworkDeps().networkGuard,
+      createGuardProxy
+    });
+
+    await backends.close();
+    await backends.fetchPage({ url: 'https://example.com/' }).catch(() => undefined);
+
+    expect(createGuardProxy).not.toHaveBeenCalled();
   });
 });

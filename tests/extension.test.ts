@@ -288,4 +288,88 @@ describe('Pi extension entrypoint', () => {
     expect(result.content[0].text).toContain('A concise finding.');
     expect(result.details.terminalText).toContain('Reviewed');
   }, 15000);
+
+  const answer = {
+    decision: { action: 'answer' },
+    evidence: [],
+    workerPass: {},
+    metadata: { searchPasses: 0, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false }
+  };
+
+  function configStore(getBackends: () => unknown) {
+    return {
+      load: vi.fn(async () => ({
+        effectiveConfig: { defaultMode: 'compact', tools: {} },
+        effectiveBackends: getBackends()
+      }))
+    };
+  }
+
+  it('closes a replaced workflow only after its in-flight run finishes', async () => {
+    vi.resetModules();
+    let releaseRun!: () => void;
+    const first = {
+      run: vi.fn(() => new Promise((resolve) => (releaseRun = () => resolve(answer)))),
+      close: vi.fn(async () => undefined)
+    };
+    const second = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    const createResearchWorkflow = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+
+    const configs = [
+      { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
+      { search: { provider: 'brave' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+    ];
+    let current = 0;
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __presentationConfigStore: configStore(() => configs[current])
+    };
+
+    dynamicExtension(pi as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+
+    const inFlight = webExplore.execute('call-1', { query: 'first' });
+    await vi.waitFor(() => expect(first.run).toHaveBeenCalled());
+    current = 1;
+    await webExplore.execute('call-2', { query: 'second' });
+
+    expect(first.close).not.toHaveBeenCalled();
+    releaseRun();
+    await inFlight;
+    await vi.waitFor(() => expect(first.close).toHaveBeenCalledTimes(1));
+    expect(second.close).not.toHaveBeenCalled();
+  });
+
+  it('closes the current workflow on session shutdown', async () => {
+    vi.resetModules();
+    const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow: vi.fn(() => workflow) }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+
+    const handlers: Record<string, (event: unknown) => unknown> = {};
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => unknown) => {
+        handlers[event] = handler;
+      }),
+      __presentationConfigStore: configStore(() => ({
+        search: { provider: 'duckduckgo' },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' }
+      }))
+    };
+
+    dynamicExtension(pi as never);
+    await tools.find((tool) => tool.name === 'web_explore').execute('call-1', { query: 'x' });
+    await handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+
+    await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+  });
 });

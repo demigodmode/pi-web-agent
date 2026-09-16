@@ -50,6 +50,8 @@ export type FetchMetadata = {
   truncated?: boolean;
   browser?: 'configured' | 'chrome' | 'edge' | 'brave' | 'chromium';
   navigationMs?: number;
+  /** Headless only: browser requests refused by the private-address guard (#53). */
+  blockedSubresources?: number;
 };
 
 export type ExtractedContent = {

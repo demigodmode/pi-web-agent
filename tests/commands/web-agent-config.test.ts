@@ -7,6 +7,7 @@ import {
   createSettingsDraftState,
   handleSettingsShortcut,
   registerWebAgentConfigCommands,
+  validateAllowRanges,
   validateBackendUrl
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
@@ -746,12 +747,14 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('runtime: node v24.0.0 linux x64');
     expect(notify.mock.calls[0][0]).toContain('typebox: ok');
     expect(notify.mock.calls[0][0]).toContain('browser: chromium /usr/bin/chromium');
+    expect(notify.mock.calls[0][0]).toContain('trust upstream proxy for private addresses: off');
     expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
     expect(notify.mock.calls[0][0]).toContain('fetch: http');
     expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
     expect(notify.mock.calls[0][0]).toContain('search backend: duckduckgo');
     expect(notify.mock.calls[0][0]).toContain('fetch backend: http');
     expect(notify.mock.calls[0][0]).toContain('jsdom compat patch: ok');
+    expect(notify.mock.calls[0][0]).toContain('network allow list: none');
   });
 
   it('reports a needed jsdom compat patch and the recovery command in doctor output', async () => {
@@ -1414,5 +1417,70 @@ describe('web-agent config commands', () => {
     expect(save).toHaveBeenCalledWith('project', {
       tools: {}
     });
+  });
+});
+
+describe('network allow list settings', () => {
+  const base = {
+    search: { provider: 'duckduckgo' as const },
+    fetch: { provider: 'http' as const },
+    headless: { provider: 'local-browser' as const }
+  };
+
+  it('validates comma separated CIDR ranges', () => {
+    expect(validateAllowRanges('198.18.0.0/15, fd00::/8')).toEqual({ ok: true, value: '198.18.0.0/15, fd00::/8' });
+    expect(validateAllowRanges('nonsense')).toEqual({ ok: false, message: 'Not a valid CIDR range: nonsense' });
+    expect(validateAllowRanges('0.0.0.0/0')).toEqual({
+      ok: false,
+      message: '0.0.0.0/0 allows every address. List specific ranges instead.'
+    });
+  });
+
+  it('applies and clears the allow list', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+    const state = createSettingsDraftState(loaded, 'project');
+
+    const set = applySettingsValue(state, 'backend:network:allowRanges', '198.18.0.0/15, 10.0.0.0/8');
+    expect(set.backends.network).toEqual({ allowRanges: ['198.18.0.0/15', '10.0.0.0/8'] });
+
+    const cleared = applySettingsValue(set, 'backend:network:allowRanges', '');
+    expect(cleared.backends.network).toBeUndefined();
+  });
+
+  it('records an explicit empty list when clearing one inherited from the parent scope', () => {
+    expect(
+      collapseBackendConfigToOverride(base, { ...base, network: { allowRanges: ['198.18.0.0/15'] } })
+    ).toEqual({ network: { allowRanges: [] } });
+  });
+
+  it('writes the allow list when it differs from the parent', () => {
+    expect(collapseBackendConfigToOverride({ ...base, network: { allowRanges: ['10.0.0.0/8'] } }, base)).toEqual({
+      network: { allowRanges: ['10.0.0.0/8'] }
+    });
+  });
+
+  it('toggles trusting the upstream proxy without touching the allow list', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+    const state = createSettingsDraftState(loaded, 'project');
+
+    const withRanges = applySettingsValue(state, 'backend:network:allowRanges', '10.0.0.0/8');
+    const trusted = applySettingsValue(withRanges, 'backend:network:trustProxyDns', 'on');
+    expect(trusted.backends.network).toEqual({ allowRanges: ['10.0.0.0/8'], trustProxyDns: true });
+
+    const untrusted = applySettingsValue(trusted, 'backend:network:trustProxyDns', 'off');
+    expect(untrusted.backends.network).toEqual({ allowRanges: ['10.0.0.0/8'], trustProxyDns: false });
+
+    const rangesCleared = applySettingsValue(untrusted, 'backend:network:allowRanges', '');
+    expect(rangesCleared.backends.network).toEqual({ trustProxyDns: false });
   });
 });

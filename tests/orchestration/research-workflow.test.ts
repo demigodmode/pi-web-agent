@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 
 describe('research workflow composition', () => {
@@ -227,5 +227,36 @@ describe('research workflow composition', () => {
     expect(result.evidence[0]?.summary).toBe(fullPdfText);
     expect(result.metadata?.caveatReasons).toHaveLength(0);
     expect(search).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe('research workflow ownership', () => {
+  afterEach(() => {
+    vi.doUnmock('../../src/backends/factory.js');
+    vi.resetModules();
+  });
+
+  it('closes the backend set it created', async () => {
+    vi.resetModules();
+    const close = vi.fn(async () => undefined);
+    const createBackendSet = vi.fn(() => ({ search: vi.fn(), fetchPage: vi.fn(), headlessFetch: vi.fn(), close }));
+    vi.doMock('../../src/backends/factory.js', () => ({ createBackendSet }));
+    const { createResearchWorkflow: createWorkflow } = await import('../../src/orchestration/index.js');
+
+    await createWorkflow({}).close();
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a backend set when every capability is injected', async () => {
+    vi.resetModules();
+    const createBackendSet = vi.fn();
+    vi.doMock('../../src/backends/factory.js', () => ({ createBackendSet }));
+    const { createResearchWorkflow: createWorkflow } = await import('../../src/orchestration/index.js');
+
+    const workflow = createWorkflow({ search: vi.fn(), fetchPage: vi.fn(), headlessFetch: vi.fn() });
+    await workflow.close();
+
+    expect(createBackendSet).not.toHaveBeenCalled();
   });
 });

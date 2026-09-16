@@ -302,6 +302,8 @@ Supported Firecrawl options can stay in config:
 
 These are sent in the Firecrawl scrape request body. The supported set is intentionally small for now.
 
+pi-web-agent checks the page URL before sending it to Firecrawl and refuses private addresses. What a Firecrawl server fetches on its own side, such as redirects it follows, is outside that check.
+
 ## Search fanout
 
 Search fanout queries several configured search providers at once, dedupes the merged results by URL, and reranks so URLs multiple providers agree on rank higher. Then the normal research loop continues.
@@ -387,6 +389,8 @@ When a proxy is configured it applies to every outbound request: search backends
 The proxy URL is editable from **Settings → Backends**. The settings UI does not edit proxy credentials; like other secrets, keep credentials in environment variables rather than committed config files.
 
 A proxy that is unreachable makes requests fail with a clear proxy error instead of silently bypassing the proxy.
+
+Page fetches and the headless browser connect through a local guard proxy that checks addresses before connecting, then chains to your proxy by IP. If your proxy only accepts hostnames, see "Fetches fail with an upstream proxy refused error" in the troubleshooting guide.
 
 ## Full self-hosted example
 

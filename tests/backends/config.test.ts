@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BACKEND_CONFIG,
   extractBackendConfigOverride,
+  extractNetworkConfig,
   extractProxyConfig,
   mergeBackendConfigLayers,
   stripProxyCredentials,
@@ -450,5 +451,105 @@ describe('proxy config', () => {
     expect(stripProxyCredentials('https://user@proxy.example:8443')).toBe('https://proxy.example:8443');
     expect(stripProxyCredentials('http://127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
     expect(stripProxyCredentials('not a url')).toBe('not a url');
+  });
+});
+
+describe('network config', () => {
+  it('extracts the allow list from the config file', () => {
+    const override = extractBackendConfigOverride({
+      backends: { network: { allowRanges: ['198.18.0.0/15', 'fd00::/8'] } }
+    });
+    expect(override.network).toEqual({ allowRanges: ['198.18.0.0/15', 'fd00::/8'] });
+  });
+
+  it('keeps an explicitly empty allow list so a layer can clear a lower one', () => {
+    expect(extractNetworkConfig({ allowRanges: [] })).toEqual({ allowRanges: [] });
+  });
+
+  it('drops network entries without an array, but keeps non-string entries coerced to strings', () => {
+    expect(extractNetworkConfig({})).toBeUndefined();
+    expect(extractNetworkConfig({ allowRanges: '10.0.0.0/8' })).toBeUndefined();
+    // Non-string entries are coerced rather than dropped, so validateBackendConfig can flag them.
+    expect(extractNetworkConfig({ allowRanges: [42] })).toEqual({ allowRanges: ['42'] });
+  });
+
+  it('keeps invalid ranges so validation can flag them', () => {
+    expect(extractNetworkConfig({ allowRanges: ['nonsense'] })).toEqual({ allowRanges: ['nonsense'] });
+  });
+
+  it('replaces the allow list from a higher layer instead of merging entries', () => {
+    const merged = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      { network: { allowRanges: ['198.18.0.0/15'] } },
+      { network: { allowRanges: ['10.0.0.0/8'] } }
+    );
+    expect(merged.network).toEqual({ allowRanges: ['10.0.0.0/8'] });
+
+    const cleared = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      { network: { allowRanges: ['198.18.0.0/15'] } },
+      { network: { allowRanges: [] } }
+    );
+    expect(cleared.network).toEqual({ allowRanges: [] });
+  });
+
+  it('flags invalid and all-address ranges', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      network: { allowRanges: ['nonsense', '0.0.0.0/0', '::/0', '198.18.0.0/15'] }
+    });
+    expect(issues).toEqual([
+      'backends.network.allowRanges entry "nonsense" is not a valid CIDR range',
+      'backends.network.allowRanges entry "0.0.0.0/0" allows every address, which turns the guard off; list specific ranges instead',
+      'backends.network.allowRanges entry "::/0" allows every address, which turns the guard off; list specific ranges instead'
+    ]);
+  });
+
+  it('coerces non-string allow list entries so validation can flag them instead of dropping the whole list', () => {
+    expect(extractNetworkConfig({ allowRanges: ['10.0.0.0/8', 5] })).toEqual({ allowRanges: ['10.0.0.0/8', '5'] });
+
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      network: { allowRanges: ['10.0.0.0/8', '5'] }
+    });
+    expect(issues).toEqual(['backends.network.allowRanges entry "5" is not a valid CIDR range']);
+  });
+
+  it('extracts trustProxyDns on its own or alongside the allow list', () => {
+    expect(extractNetworkConfig({ trustProxyDns: true })).toEqual({ trustProxyDns: true });
+    expect(extractNetworkConfig({ allowRanges: ['10.0.0.0/8'], trustProxyDns: false })).toEqual({
+      allowRanges: ['10.0.0.0/8'],
+      trustProxyDns: false
+    });
+    expect(extractNetworkConfig({ trustProxyDns: 'yes' })).toBeUndefined();
+  });
+
+  it('merges network fields independently across layers', () => {
+    const merged = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      { network: { allowRanges: ['198.18.0.0/15'], trustProxyDns: true } },
+      { network: { allowRanges: ['10.0.0.0/8'] } }
+    );
+    expect(merged.network).toEqual({ allowRanges: ['10.0.0.0/8'], trustProxyDns: true });
+
+    const trustOff = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      { network: { allowRanges: ['198.18.0.0/15'], trustProxyDns: true } },
+      { network: { trustProxyDns: false } }
+    );
+    expect(trustOff.network).toEqual({ allowRanges: ['198.18.0.0/15'], trustProxyDns: false });
+  });
+
+  it('flags trustProxyDns without an upstream proxy', () => {
+    expect(validateBackendConfig({ ...DEFAULT_BACKEND_CONFIG, network: { trustProxyDns: true } })).toContain(
+      'backends.network.trustProxyDns has no effect without backends.proxy'
+    );
+    expect(
+      validateBackendConfig({
+        ...DEFAULT_BACKEND_CONFIG,
+        proxy: { url: 'http://127.0.0.1:3128' },
+        network: { trustProxyDns: true }
+      })
+    ).not.toContain('backends.network.trustProxyDns has no effect without backends.proxy');
   });
 });

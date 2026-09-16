@@ -39,7 +39,10 @@ export function buildFetchPresentation(result: FetchLike): PresentationEnvelope 
           ? [
               `URL: ${result.url}`,
               result.content?.title ? `Title: ${result.content.title}` : undefined,
-              firstExcerpt(result.content?.text, 500)
+              firstExcerpt(result.content?.text, 500),
+              result.metadata.blockedSubresources
+                ? `Blocked private-address requests: ${result.metadata.blockedSubresources}`
+                : undefined
             ]
               .filter(Boolean)
               .join('\n')

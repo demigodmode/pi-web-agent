@@ -1,4 +1,5 @@
 import type { FanoutMode, SearchProviderName } from '../types.js';
+import { parseCidr } from '../fetch/network-guard.js';
 
 export type SearxngOptions = {
   categories?: string[];
@@ -39,11 +40,19 @@ export type FetchBackendConfig = {
 };
 export type HeadlessBackendConfig = { provider: 'local-browser' };
 
+export type NetworkConfig = {
+  /** CIDR ranges exempted from the private-address guard (#53). */
+  allowRanges?: string[];
+  /** Trust the upstream proxy to enforce private-address restrictions. */
+  trustProxyDns?: boolean;
+};
+
 export type BackendConfig = {
   search: SearchBackendConfig;
   fetch: FetchBackendConfig;
   headless: HeadlessBackendConfig;
   proxy?: ProxyConfig;
+  network?: NetworkConfig;
 };
 
 export type BackendConfigOverride = {
@@ -51,6 +60,7 @@ export type BackendConfigOverride = {
   fetch?: Partial<FetchBackendConfig>;
   headless?: Partial<HeadlessBackendConfig>;
   proxy?: ProxyConfig;
+  network?: NetworkConfig;
 };
 
 export type BackendConfigFile = {
@@ -59,6 +69,7 @@ export type BackendConfigFile = {
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
     headless?: { provider?: unknown };
     proxy?: { url?: unknown; username?: unknown; password?: unknown };
+    network?: { allowRanges?: unknown; trustProxyDns?: unknown };
   };
 };
 
@@ -140,6 +151,18 @@ export function extractProxyConfig(value: unknown): ProxyConfig | undefined {
   if (typeof raw.username === 'string' && raw.username.trim()) config.username = raw.username;
   if (typeof raw.password === 'string') config.password = raw.password;
   return config;
+}
+
+export function extractNetworkConfig(value: unknown): NetworkConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as { allowRanges?: unknown; trustProxyDns?: unknown };
+  const config: NetworkConfig = {};
+  if (Array.isArray(raw.allowRanges)) {
+    // Coerce non-string entries so validation flags them instead of dropping the list.
+    config.allowRanges = raw.allowRanges.map((entry) => (typeof entry === 'string' ? entry : String(entry)));
+  }
+  if (typeof raw.trustProxyDns === 'boolean') config.trustProxyDns = raw.trustProxyDns;
+  return Object.keys(config).length > 0 ? config : undefined;
 }
 
 function extractSearxngOptions(value: unknown): SearxngOptions | undefined {
@@ -254,6 +277,11 @@ export function extractBackendConfigOverride(
     override.proxy = proxy;
   }
 
+  const network = extractNetworkConfig(backends?.network);
+  if (network) {
+    override.network = network;
+  }
+
   return override;
 }
 
@@ -284,6 +312,21 @@ export function validateBackendConfig(config: BackendConfig): string[] {
 
   if (config.fetch.provider === 'firecrawl' && !config.fetch.baseUrl) {
     issues.push('fetch provider firecrawl requires backends.fetch.baseUrl');
+  }
+
+  for (const range of config.network?.allowRanges ?? []) {
+    const cidr = parseCidr(range);
+    if (!cidr) {
+      issues.push(`backends.network.allowRanges entry "${range}" is not a valid CIDR range`);
+    } else if (cidr.prefix === 0) {
+      issues.push(
+        `backends.network.allowRanges entry "${range}" allows every address, which turns the guard off; list specific ranges instead`
+      );
+    }
+  }
+
+  if (config.network?.trustProxyDns && !config.proxy?.url?.trim()) {
+    issues.push('backends.network.trustProxyDns has no effect without backends.proxy');
   }
 
   if (config.search.fallback === 'duckduckgo' && config.search.provider !== 'searxng' && config.search.provider !== 'brave' && config.search.provider !== 'youcom' && config.search.provider !== 'exa' && config.search.provider !== 'tavily') {
@@ -348,6 +391,15 @@ function mergeFetchConfig(
   return { ...current, ...override };
 }
 
+function mergeNetworkConfig(base: NetworkConfig | undefined, layer: NetworkConfig | undefined): NetworkConfig | undefined {
+  if (!layer) return base;
+  const next: NetworkConfig = { ...base };
+  // A layer's allow list replaces the lower one outright; trust is set independently.
+  if (layer.allowRanges) next.allowRanges = [...layer.allowRanges];
+  if (layer.trustProxyDns !== undefined) next.trustProxyDns = layer.trustProxyDns;
+  return next;
+}
+
 export function mergeBackendConfigLayers(
   ...layers: Array<BackendConfig | BackendConfigOverride | undefined>
 ): BackendConfig {
@@ -360,7 +412,9 @@ export function mergeBackendConfigLayers(
         ? layer.proxy.url === ''
           ? undefined // explicit disable overrides any proxy from lower layers
           : { ...merged.proxy, ...layer.proxy }
-        : merged.proxy
+        : merged.proxy,
+      // Replace, don't union: a project list is the whole list for that project.
+      network: mergeNetworkConfig(merged.network, layer?.network)
     }),
     DEFAULT_BACKEND_CONFIG
   );

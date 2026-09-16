@@ -126,6 +126,54 @@ To reapply it by hand:
 node ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent/scripts/patch-jiti-compat.mjs
 ```
 
+## Fetches fail with a private address error
+
+web_explore refuses to fetch pages on private, loopback, or link-local addresses when the link came from the model or from a page it read. That stops a web page from steering it at things like cloud metadata endpoints, services on localhost, or devices on your network.
+
+The error names the host and the address it resolved to:
+
+```
+Blocked example.internal: resolves to private address 10.0.0.12. Add it to backends.network.allowRanges if this is intended.
+```
+
+If you meant to reach that address, add its range under Settings → Backends → Network allow list, or in your config:
+
+```json
+{
+  "backends": {
+    "network": { "allowRanges": ["10.0.0.0/24"] }
+  }
+}
+```
+
+If every fetch fails this way, check whether you run a proxy app in fake-IP (TUN) mode. Those make every website resolve to an address in `198.18.0.0/15`. Add `198.18.0.0/15` to the allow list.
+
+You may instead see `Blocked example.internal: could not verify its address before connecting.` That means the address could not be looked up from this machine, so pi-web-agent refused rather than let something else resolve it. It usually points to a DNS problem on the machine running Pi.
+
+This does not affect search backends or the SearXNG, Firecrawl, and proxy addresses you configured yourself. Those are always allowed.
+
+The check applies to connections that go through pi-web-agent's local guard proxy, which is how it handles page fetches and everything the headless browser loads. It is not a full network sandbox for the browser. If you need that guarantee, restrict outbound traffic at the OS or container level.
+
+## Fetches fail with an upstream proxy refused error
+
+With `backends.proxy` set, pi-web-agent looks up each address itself and asks your proxy to connect to that IP, so the proxy can't quietly send the request somewhere else. Some proxies only accept hostnames and reject that:
+
+```
+Upstream proxy refused 93.184.216.34:443 for example.com (HTTP 403). If it only accepts hostnames, set backends.network.trustProxyDns to trust it to enforce private-address restrictions.
+```
+
+If you trust that proxy to keep requests away from private addresses itself, turn on Settings → Backends → Trust the upstream proxy to enforce private-address restrictions, or set:
+
+```json
+{
+  "backends": {
+    "network": { "trustProxyDns": true }
+  }
+}
+```
+
+That hands the address decision to your proxy. pi-web-agent still refuses literal private addresses, localhost, and any private address it can see locally. The same setting helps when names only resolve inside the proxy's network. Even with this turned on, a name that resolves on your machine to a private address is still refused before it reaches the proxy.
+
 Then restart Pi.
 
 `/web-agent doctor` reports the current state. A healthy install prints `jsdom compat patch: ok`. If the patch could not be applied it prints `jsdom compat patch: needed (...)` along with the command above.

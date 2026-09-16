@@ -20,5 +20,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npx playwright install --with-deps chromium
       - run: npm test
+        env:
+          PI_WEB_AGENT_REQUIRE_BROWSER_TESTS: '1'
       - run: npm run build

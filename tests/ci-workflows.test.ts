@@ -14,4 +14,12 @@ describe('CI workflows', () => {
       expect(text).not.toContain('npm install --no-save @rollup/rollup-linux-x64-gnu');
     }
   });
+
+  it('installs Chromium and requires the browser acceptance tests wherever the suite runs', () => {
+    for (const name of ['ci.yml', 'publish.yml']) {
+      const text = workflow(name);
+      expect(text).toContain('npx playwright install --with-deps chromium');
+      expect(text).toContain("PI_WEB_AGENT_REQUIRE_BROWSER_TESTS: '1'");
+    }
+  });
 });
