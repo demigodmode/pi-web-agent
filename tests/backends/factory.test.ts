@@ -1143,6 +1143,49 @@ describe('backend factory failure-aware fallback (#55)', () => {
     expect(modelFacing).not.toContain('skipped');
   });
 
+  it('carries fetch attempts from search results and direct URLs into web_explore verbose only', async () => {
+    const page = '<html><head><title>Docs</title></head><body><article><p>' + 'Useful documentation text about the topic. '.repeat(20) + '</p></article></body></html>';
+    const firecrawl = vi.fn(async (url: string) => ({
+      status: 'error' as const,
+      url,
+      metadata: { method: 'firecrawl' as const, cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'Firecrawl scrape failed: HTTP 503', failure: { kind: 'transient' as const, httpStatus: 503 } }
+    }));
+    const make = () =>
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, fetch: { provider: 'firecrawl', baseUrl: 'http://127.0.0.1:3002', fallback: 'http' } },
+        {
+          ...offlineNetworkDeps(),
+          createModelFetch: () =>
+            (async () => new Response(page, { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch,
+          createFirecrawlFetch: vi.fn(() => firecrawl) as any,
+          createDuckDuckGoSearch: () => ok('duckduckgo') as any
+        }
+      );
+
+    for (const query of ['topic docs', 'read https://docs.example.test/page']) {
+      const backends = make();
+      const workflow = createResearchWorkflow({
+        search: backends.search,
+        fetchPage: backends.fetchPage,
+        headlessFetch: async ({ url }) => ({ status: 'error', url, metadata: { method: 'headless', cacheHit: false } })
+      });
+      const result = await createWebExploreTool({ explore: workflow })({ query });
+
+      expect(result.metadata?.attempts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ backend: 'firecrawl', outcome: 'retried' }),
+          expect.objectContaining({ backend: 'firecrawl', outcome: 'failed' }),
+          expect.objectContaining({ backend: 'http', outcome: 'results' })
+        ])
+      );
+      expect(result.presentation.views.verbose).toContain('firecrawl: retried (transient)');
+      const modelFacing = JSON.stringify({ findings: result.findings, sources: result.sources, caveat: result.caveat, error: result.error });
+      expect(modelFacing).not.toContain('retried');
+      expect(modelFacing).not.toContain('transient');
+    }
+  });
+
   it('credits each failed fanout provider with its own kind when keyless Tavily answers', async () => {
     const backends = createBackendSet(
       { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'brave', 'exa'] } } },

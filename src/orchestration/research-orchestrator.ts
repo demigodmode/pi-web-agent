@@ -198,17 +198,19 @@ export function createResearchOrchestrator({
       let searchCoveragePartial = false;
       const fanoutProvidersSeen = new Set<SearchProviderName>();
       const fanoutSkippedSeen = new Set<SearchProviderName>();
-      const searchAttempts: Attempt[] = [];
+      // Search and fetch attempts from every pass and direct URL, for verbose provenance.
+      const runAttempts: Attempt[] = [];
 
       function fanoutSnapshot() {
         const providers = fanoutProvidersSeen.size ? [...fanoutProvidersSeen] : undefined;
         const skipped = [...fanoutSkippedSeen].filter((p) => !fanoutProvidersSeen.has(p));
-        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...searchAttempts] };
+        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts] };
       }
 
       if (fetchDirect) {
         for (const url of extractDirectUrls(query).slice(0, 3)) {
           const directResult = await fetchDirect({ url });
+          if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
           const directEvidence = evidenceFromFetch(directResult);
           if (directEvidence) {
             allEvidence.push(directEvidence);
@@ -295,7 +297,8 @@ export function createResearchOrchestrator({
           });
 
           lastPass = pass;
-          if (pass.searchAttempts) searchAttempts.push(...pass.searchAttempts);
+          if (pass.searchAttempts) runAttempts.push(...pass.searchAttempts);
+          if (pass.fetchAttempts) runAttempts.push(...pass.fetchAttempts);
           if (pass.searchCoveragePartial) searchCoveragePartial = true;
           if (pass.terminalFailure) {
             return {

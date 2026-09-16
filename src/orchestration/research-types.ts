@@ -43,6 +43,7 @@ export type ResearchWorkerResult = {
   fanoutSkipped?: SearchProviderName[];
   searchCoveragePartial?: boolean;
   searchAttempts?: Attempt[];
+  fetchAttempts?: Attempt[];
   terminalFailure?: { code: string; message: string };
 };
 

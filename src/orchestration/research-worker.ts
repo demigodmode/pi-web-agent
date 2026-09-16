@@ -1,5 +1,5 @@
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
-import type { WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { Attempt, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
 import type {
@@ -181,8 +181,10 @@ export function createResearchWorker({
         maxCandidates: maxFetches
       });
 
+      const fetchAttempts: Attempt[] = [];
       for (const candidate of candidates) {
         const fetched = await fetchPage({ url: candidate.url });
+        if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
 
         if (fetched.status === 'ok') {
           const parsedEvidence = evidenceFromFetch(fetched, candidate.title);
@@ -231,7 +233,8 @@ export function createResearchWorker({
         fanoutProviders,
         fanoutSkipped,
         searchCoveragePartial,
-        searchAttempts
+        searchAttempts,
+        fetchAttempts
       };
     }
   };
