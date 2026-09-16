@@ -1,3 +1,4 @@
+import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import type { WebFetchResponse, WebSearchResponse } from '../types.js';
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
@@ -115,6 +116,20 @@ export function createResearchWorker({
       }
 
       const searchResult = await search({ query });
+      const searchCoveragePartial = searchResult.metadata.coverage?.partial === true;
+      if (isTerminalFailure(failureOf(searchResult))) {
+        return {
+          searchQueries,
+          evidence,
+          gaps: [],
+          lowValueOutcomes,
+          exhaustedBudget: false,
+          terminalFailure: {
+            code: searchResult.error?.code ?? 'SEARCH_FAILED',
+            message: `${searchResult.error?.message ?? 'Search failed.'} (${searchResult.error?.failure?.kind})`
+          }
+        };
+      }
       const fanoutProviders = searchResult.metadata.fanout?.providers;
       const fanoutSkipped = searchResult.metadata.fanout?.skipped;
       if (searchResult.status !== 'ok') {
@@ -131,7 +146,8 @@ export function createResearchWorker({
           suggestedHeadlessUrl,
           exhaustedBudget: false,
           fanoutProviders,
-          fanoutSkipped
+          fanoutSkipped,
+          searchCoveragePartial
         };
       }
 
@@ -149,7 +165,8 @@ export function createResearchWorker({
           suggestedHeadlessUrl,
           exhaustedBudget: false,
           fanoutProviders,
-          fanoutSkipped
+          fanoutSkipped,
+          searchCoveragePartial
         };
       }
 
@@ -177,6 +194,15 @@ export function createResearchWorker({
           continue;
         }
 
+        // guard_refused and friends are final; never hand them to headless.
+        if (isTerminalFailure(failureOf(fetched))) {
+          gaps.push({
+            kind: 'fetch-failed',
+            message: fetched.error?.message ?? `Fetch failed for ${candidate.url}`
+          });
+          continue;
+        }
+
         if (fetched.status === 'needs_headless') {
           if (!suggestedHeadlessUrl) {
             suggestedHeadlessUrl = fetched.url;
@@ -199,7 +225,8 @@ export function createResearchWorker({
         suggestedHeadlessUrl,
         exhaustedBudget: false,
         fanoutProviders,
-        fanoutSkipped
+        fanoutSkipped,
+        searchCoveragePartial
       };
     }
   };

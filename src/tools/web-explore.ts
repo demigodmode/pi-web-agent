@@ -15,6 +15,7 @@ export function createWebExploreTool({
           evidence: ResearchEvidence[];
           workerPass: unknown;
           metadata?: WebExploreResponse['metadata'];
+          terminalFailure?: { code: string; message: string };
         }>;
       }
     | ((input: { query: string }) => Promise<{
@@ -22,6 +23,7 @@ export function createWebExploreTool({
         evidence: ResearchEvidence[];
         workerPass: unknown;
         metadata?: WebExploreResponse['metadata'];
+        terminalFailure?: { code: string; message: string };
       }>);
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
@@ -44,15 +46,30 @@ export function createWebExploreTool({
     }
 
     const result = await runExplore({ query: normalizedQuery });
+    if (result.terminalFailure) {
+      const failed: WebExploreResponse = {
+        status: 'error',
+        findings: [],
+        sources: [],
+        error: result.terminalFailure,
+        metadata: result.metadata
+      };
+      return { ...failed, presentation: buildExplorePresentation(failed) };
+    }
+
     const sources = result.evidence.slice(0, 4).map((item) => ({
       title: item.title,
       url: item.url,
       method: item.method
     }));
+    const reasons = (result.metadata?.caveatReasons ?? []) as EvidenceCaveatReason[];
+    const decisionPartial = result.decision.action !== 'answer';
+    const coveragePartial = reasons.includes('partial-search-coverage');
     const synthesized = synthesizeAnswer({
       evidence: result.evidence,
-      partial: result.decision.action !== 'answer',
-      caveatReasons: result.metadata?.caveatReasons as EvidenceCaveatReason[] | undefined
+      partial: decisionPartial || coveragePartial,
+      // A confident answer with partial coverage mentions only the coverage, not unrelated quality notes.
+      caveatReasons: decisionPartial ? reasons : ['partial-search-coverage']
     });
 
     const shaped: WebExploreResponse = {

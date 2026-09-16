@@ -178,6 +178,20 @@ Then restart Pi.
 
 `/web-agent doctor` reports the current state. A healthy install prints `jsdom compat patch: ok`. If the patch could not be applied it prints `jsdom compat patch: needed (...)` along with the command above.
 
+## Search says no backend is available
+
+When a search backend fails, pi-web-agent looks at why before moving on. A rate limit makes it skip that backend for a while (the time the provider asked for, capped at 15 minutes, or a minute if it didn't say). An exhausted quota, a rejected API key, or a missing key makes it skip that backend until the settings change or Pi restarts. A timeout or server error gets one quick retry first.
+
+If every configured backend is being skipped, searches fail with a message like:
+
+```
+No search backend is available: brave rate_limited (available again at 2026-09-16T12:05:00.000Z), exa quota_exhausted.
+```
+
+A rate limit clears on its own. For a quota or key problem, fix the key or plan, and the next change to your settings resets it. Verbose output shows each backend that was tried, retried, or skipped and why.
+
+When some backends failed but another one answered, the answer notes that results may be incomplete.
+
 ## The model used shell commands for web research
 
 That is not the intended path.

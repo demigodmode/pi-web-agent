@@ -6,7 +6,8 @@ export type EvidenceCaveatReason =
   | 'unreadable-direct-source'
   | 'unreadable-thread-source'
   | 'possible-conflict'
-  | 'bot-check';
+  | 'bot-check'
+  | 'partial-search-coverage';
 
 export type EvidenceQualityReport = {
   counts: {
@@ -56,11 +57,13 @@ function addReason(reasons: EvidenceCaveatReason[], reason: EvidenceCaveatReason
 export function analyzeEvidenceQuality({
   evidence,
   gaps,
-  lowValueOutcomes
+  lowValueOutcomes,
+  partialSearchCoverage = false
 }: {
   evidence: ResearchEvidence[];
   gaps: ResearchGap[];
   lowValueOutcomes: ResearchLowValueOutcome[];
+  partialSearchCoverage?: boolean;
 }): EvidenceQualityReport {
   const official = evidence.filter((item) => item.sourceKind === 'official-docs' || item.sourceKind === 'official-api').length;
   const community = evidence.filter((item) => item.sourceKind === 'community').length;
@@ -84,6 +87,7 @@ export function analyzeEvidenceQuality({
   addReason(caveatReasons, 'unreadable-thread-source', hasUnreadableThreadSource);
   addReason(caveatReasons, 'possible-conflict', hasPossibleConflict);
   addReason(caveatReasons, 'bot-check', hasBotCheck);
+  addReason(caveatReasons, 'partial-search-coverage', partialSearchCoverage);
 
   return {
     counts: {

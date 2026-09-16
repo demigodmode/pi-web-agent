@@ -10,7 +10,7 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Changed
-- None.
+- Search and fetch fallback now act on why a backend failed. Rate limits pause that backend for the time the provider asks (capped at 15 minutes), exhausted quotas and bad API keys skip it until settings change, and timeouts or server errors get one retry. An empty result is treated as a real answer instead of a failure, a private-address refusal or an invalid shared proxy setting never falls back to another backend, and answers say when some search backends were unavailable. DuckDuckGo no longer retries on its own. (#55)
 
 ### Fixed
 - web_explore no longer fetches private, loopback, or link-local addresses when the link came from the model or a page it read. The check happens where connections are opened, through a local guard proxy, so it also covers redirects, DNS changes, and everything a headless page loads. A web page could previously steer it at cloud metadata endpoints or services on your network. Addresses you configured yourself (search backends, SearXNG, Firecrawl, the proxy) are unaffected. If you do need to reach a private range, add it under Settings → Backends → Network allow list. With an upstream proxy that only accepts hostnames, turn on "Trust the upstream proxy to enforce private-address restrictions". (#53)

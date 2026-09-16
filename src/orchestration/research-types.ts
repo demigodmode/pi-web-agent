@@ -41,6 +41,8 @@ export type ResearchWorkerResult = {
   exhaustedBudget: boolean;
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
+  searchCoveragePartial?: boolean;
+  terminalFailure?: { code: string; message: string };
 };
 
 export type ResearchRunMetadata = {
@@ -50,6 +52,8 @@ export type ResearchRunMetadata = {
   exhaustedBudget: boolean;
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
+  searchCoveragePartial?: boolean;
+  terminalFailure?: { code: string; message: string };
 };
 
 export type ResearchOrchestratorDecision =
