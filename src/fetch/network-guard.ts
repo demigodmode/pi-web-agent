@@ -244,6 +244,8 @@ export function usableAllowRanges(allowRanges: string[] = []): Cidr[] {
     .filter((cidr): cidr is Cidr => cidr !== undefined && cidr.prefix > 0);
 }
 
+const DEFAULT_LOOKUP_TIMEOUT_MS = 10_000;
+
 const defaultLookup: LookupFn = (host) => dnsLookup(host, { all: true, verbatim: true });
 
 function stripBrackets(host: string): string {
@@ -252,7 +254,14 @@ function stripBrackets(host: string): string {
 
 export function createNetworkGuard(
   config: NetworkGuardConfig = {},
-  { lookup = defaultLookup }: { lookup?: LookupFn } = {}
+  {
+    lookup = defaultLookup,
+    lookupTimeoutMs = DEFAULT_LOOKUP_TIMEOUT_MS
+  }: {
+    lookup?: LookupFn;
+    /** A lookup that hasn't answered by then counts as unresolved, so no caller waits on DNS forever. */
+    lookupTimeoutMs?: number;
+  } = {}
 ): NetworkGuard {
   const allow = usableAllowRanges(config.allowRanges);
 
@@ -278,11 +287,20 @@ export function createNetworkGuard(
         : { status: 'allowed', host, addresses: [host] };
     }
 
-    let answers: Array<{ address: string }>;
+    let answers: Array<{ address: string }> | undefined;
+    let timer: NodeJS.Timeout | undefined;
     try {
-      answers = await lookup(host);
+      answers = await Promise.race([
+        lookup(host),
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => resolve(undefined), lookupTimeoutMs);
+          timer.unref?.();
+        })
+      ]);
     } catch {
       return { status: 'unresolved', host };
+    } finally {
+      clearTimeout(timer);
     }
     if (!answers || answers.length === 0) return { status: 'unresolved', host };
 

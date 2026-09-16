@@ -175,6 +175,37 @@ describe.skipIf(!browserAvailable || process.platform !== 'linux')('guard proxy 
     expect(refusedHosts()).toContain('flip.test');
   }, 60_000);
 
+  it('counts a same-host subresource refused after DNS changes, while the page itself loads', async () => {
+    const pair = await startServerPair({
+      okHandler: (request, response) => {
+        if (request.url === '/pixel.png') {
+          response.writeHead(200, { 'content-type': 'image/png', 'content-length': '0' });
+          response.end();
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(READABLE_PAGE.replace('</article>', `</article><img src="http://flip.test:${pair.port}/pixel.png">`));
+      }
+    });
+    cleanups.push(() => pair.close());
+    // Call 1 is headless's pre-launch check, call 2 the proxy resolving the page
+    // navigation. Every later call (the image's own forwarded request) sees 127.0.0.2.
+    const lookup = vi
+      .fn<LookupFn>()
+      .mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }])
+      .mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }])
+      .mockResolvedValue([{ address: '127.0.0.2', family: 4 }]);
+
+    const { result, refusedHosts } = await fetchInBrowser(`http://flip.test:${pair.port}/`, { lookup });
+
+    expect(lookup.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(lookup.mock.calls.every(([host]) => host === 'flip.test')).toBe(true);
+    expect(result.status).toBe('ok');
+    expect(result.metadata.blockedSubresources).toBeGreaterThanOrEqual(1);
+    expect(pair.evil.connections).toBe(0);
+    expect(refusedHosts()).toContain('flip.test');
+  }, 60_000);
+
   it('sends loopback traffic through the guard proxy despite the browser default bypass', async () => {
     // Page on 127.0.0.2 (allowed here), victim on 127.0.0.1 (not allowed).
     const pair = await startServerPair({

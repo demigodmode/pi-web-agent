@@ -258,21 +258,56 @@ describe('headless private address guard', () => {
     return { launchBrowser, newContext };
   }
 
-  /** `goto` receives `emit`, which fires a passive 'request' event like Playwright does for each navigation hop. */
-  function page(goto: (emit: (url: string, navigation?: boolean) => void) => Promise<unknown>) {
-    const listeners: Array<(request: unknown) => void> = [];
+  type PageEvents = {
+    /** A request that went out and came back (optionally carrying headers such as the blocked header). */
+    response(url: string, options?: { navigation?: boolean; headers?: Record<string, string> }): { headers: () => Record<string, string> };
+    /** A request that failed, like Playwright's 'requestfailed'. */
+    failed(url: string, navigation?: boolean): void;
+    /** A WebSocket; the returned emitter fires its 'socketerror' / 'framereceived' / 'close' events. */
+    websocket(url: string): (event: string) => void;
+  };
+
+  /** `goto` receives passive page events shaped like Playwright's: request, response, requestfailed, websocket. */
+  function page(goto: (events: PageEvents) => Promise<unknown>) {
+    const listeners = new Map<string, Array<(payload: unknown) => void>>();
+    const fire = (event: string, payload: unknown) => {
+      for (const listener of listeners.get(event) ?? []) listener(payload);
+    };
     const mainFrame = {};
-    const emit = (url: string, navigation = true) => {
-      for (const listener of listeners) {
-        listener({ url: () => url, isNavigationRequest: () => navigation, frame: () => mainFrame });
+    const request = (url: string, navigation: boolean) => {
+      const req = { url: () => url, isNavigationRequest: () => navigation, frame: () => mainFrame };
+      fire('request', req);
+      return req;
+    };
+    const events: PageEvents = {
+      response(url, { navigation = true, headers = {} } = {}) {
+        const req = request(url, navigation);
+        const res = { headers: () => headers, request: () => req, url: () => url };
+        fire('response', res);
+        return res;
+      },
+      failed(url, navigation = true) {
+        fire('requestfailed', request(url, navigation));
+      },
+      websocket(url) {
+        const wsListeners = new Map<string, Array<(payload?: unknown) => void>>();
+        fire('websocket', {
+          url: () => url,
+          on: (event: string, listener: (payload?: unknown) => void) => {
+            wsListeners.set(event, [...(wsListeners.get(event) ?? []), listener]);
+          }
+        });
+        return (event: string) => {
+          for (const listener of wsListeners.get(event) ?? []) listener();
+        };
       }
     };
     return {
-      on: vi.fn((event: string, listener: (request: unknown) => void) => {
-        if (event === 'request') listeners.push(listener);
+      on: vi.fn((event: string, listener: (payload: unknown) => void) => {
+        listeners.set(event, [...(listeners.get(event) ?? []), listener]);
       }),
       mainFrame: () => mainFrame,
-      goto: vi.fn(() => goto(emit)),
+      goto: vi.fn(() => goto(events)),
       waitForLoadState: vi.fn(async () => undefined),
       content: vi.fn(async () => readable),
       close: vi.fn(async () => undefined)
@@ -299,10 +334,7 @@ describe('headless private address guard', () => {
 
   it('launches the browser against the guard proxy with no loopback bypass and service workers blocked', async () => {
     const { launchBrowser, newContext } = fakeBrowser(
-      page(async (emit) => {
-        emit('https://example.com/');
-        return { headers: () => ({}) };
-      })
+      page(async (events) => events.response('https://example.com/'))
     );
 
     const result = await headlessFetch('https://example.com/', {
@@ -324,9 +356,9 @@ describe('headless private address guard', () => {
   it('reports a refused redirect hop of the navigation as the cause', async () => {
     const blocked = refusal('evil.example');
     const { launchBrowser } = fakeBrowser(
-      page(async (emit) => {
-        emit('https://example.com/');
-        emit('https://evil.example/steal');
+      page(async (events) => {
+        events.response('https://example.com/', { headers: { location: 'https://evil.example/steal' } });
+        events.failed('https://evil.example/steal');
         throw new Error('net::ERR_TUNNEL_CONNECTION_FAILED at https://evil.example/steal');
       })
     );
@@ -344,10 +376,9 @@ describe('headless private address guard', () => {
   it('reports a navigation response carrying the blocked header as blocked', async () => {
     const blocked = refusal('nope.example', new UnverifiedDestinationError('nope.example'));
     const { launchBrowser } = fakeBrowser(
-      page(async (emit) => {
-        emit('https://example.com/');
-        emit('http://nope.example/');
-        return { headers: () => ({ 'x-pi-web-agent-blocked': 'BLOCKED_PRIVATE_ADDRESS x' }) };
+      page(async (events) => {
+        events.response('https://example.com/', { headers: { location: 'http://nope.example/' } });
+        return events.response('http://nope.example/', { headers: { 'x-pi-web-agent-blocked': 'BLOCKED_PRIVATE_ADDRESS x' } });
       })
     );
 
@@ -363,9 +394,9 @@ describe('headless private address guard', () => {
 
   it('keeps the original navigation error when only a subresource was refused', async () => {
     const { launchBrowser } = fakeBrowser(
-      page(async (emit) => {
-        emit('https://example.com/');
-        emit('https://img.example/pixel.png', false);
+      page(async (events) => {
+        events.response('https://example.com/', { headers: { 'content-type': 'text/html' } });
+        events.failed('https://img.example/pixel.png', false);
         throw new Error('net::ERR_CONNECTION_RESET at https://example.com/');
       })
     );
@@ -385,9 +416,11 @@ describe('headless private address guard', () => {
 
   it('counts refused subresources on a page that loaded', async () => {
     const { launchBrowser } = fakeBrowser(
-      page(async (emit) => {
-        emit('https://example.com/');
-        return { headers: () => ({}) };
+      page(async (events) => {
+        const response = events.response('https://example.com/');
+        events.failed('https://evil.example/a.js', false);
+        events.failed('https://evil.example/b.png', false);
+        return response;
       })
     );
 
@@ -400,6 +433,68 @@ describe('headless private address guard', () => {
 
     expect(result.status).toBe('ok');
     expect(result.metadata.blockedSubresources).toBe(2);
+  });
+
+  it('counts a refused subresource on the same host as the page that loaded', async () => {
+    const { launchBrowser } = fakeBrowser(
+      page(async (events) => {
+        const response = events.response('https://example.com/');
+        events.failed('https://example.com/pixel.png', false);
+        return response;
+      })
+    );
+
+    const result = await headlessFetch('https://example.com/', {
+      resolveBrowser,
+      launchBrowser,
+      guard,
+      guardProxy: async () => fakeProxy([refusal('example.com')])
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.blockedSubresources).toBe(1);
+  });
+
+  it('counts a header-blocked subresource and a websocket that errored, once per request', async () => {
+    const { launchBrowser } = fakeBrowser(
+      page(async (events) => {
+        const response = events.response('https://example.com/');
+        events.response('http://evil.example/frame.html', {
+          navigation: false,
+          headers: { 'x-pi-web-agent-blocked': 'BLOCKED_PRIVATE_ADDRESS 1 x' }
+        });
+        const ws = events.websocket('wss://evil.example/socket');
+        ws('socketerror');
+        ws('close');
+        // Not refused, so not counted.
+        events.failed('https://cdn.example/lib.js', false);
+        return response;
+      })
+    );
+
+    const result = await headlessFetch('https://example.com/', {
+      resolveBrowser,
+      launchBrowser,
+      guard,
+      guardProxy: async () => fakeProxy([refusal('evil.example'), refusal('evil.example'), refusal('evil.example')])
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.metadata.blockedSubresources).toBe(2);
+  });
+
+  it('gets past the pre-launch check when the lookup never settles', async () => {
+    const getProxy = vi.fn(async () => fakeProxy());
+    const { launchBrowser } = fakeBrowser(page(async () => ({ headers: () => ({}) })));
+    const hanging = createNetworkGuard({}, { lookup: () => new Promise(() => undefined), lookupTimeoutMs: 50 });
+
+    const outcome = await Promise.race([
+      headlessFetch('https://slow-dns.example/', { resolveBrowser, launchBrowser, guard: hanging, guardProxy: getProxy }),
+      new Promise((resolve) => setTimeout(() => resolve('still pending'), 2000))
+    ]);
+
+    expect(outcome).not.toBe('still pending');
+    expect(getProxy).toHaveBeenCalled();
   });
 
   it('refuses to run with a guard but no guard proxy', async () => {

@@ -855,6 +855,27 @@ describe('backend factory guard proxy wiring', () => {
     );
   });
 
+  it('does not hang page fetch on a DNS pre-check that never settles', async () => {
+    const createGuardProxy = vi.fn(async () => {
+      throw new Error('fake guard proxy: not started');
+    });
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      networkGuard: createNetworkGuard({}, { lookup: () => new Promise(() => undefined), lookupTimeoutMs: 50 }),
+      createGuardProxy
+    });
+
+    const outcome = await Promise.race([
+      backends.fetchPage({ url: 'https://slow-dns.example/' }).then(
+        () => 'settled',
+        () => 'settled'
+      ),
+      new Promise((resolve) => setTimeout(() => resolve('still pending'), 2000))
+    ]);
+
+    expect(outcome).toBe('settled');
+    expect(createGuardProxy).toHaveBeenCalled();
+  });
+
   it('closing a set that never used the guard proxy does not start it', async () => {
     const deps = offlineNetworkDeps();
     const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, deps);

@@ -470,6 +470,16 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
 
     outbound.on('response', (upstreamResponse) => {
       response.writeHead(upstreamResponse.statusCode ?? 502, stripHopByHop({ ...upstreamResponse.headers }));
+      // pipe() doesn't carry an aborted body over: the client would wait forever
+      // for the rest. Cut it off the same way the destination did.
+      const abort = () => {
+        response.destroy();
+        socket.destroy();
+      };
+      upstreamResponse.on('error', abort);
+      upstreamResponse.on('close', () => {
+        if (!upstreamResponse.complete) abort();
+      });
       upstreamResponse.pipe(response);
     });
     // Drop the client connection like the destination did, rather than inventing a 502

@@ -133,14 +133,18 @@ export async function headlessFetch(
     ? { executablePath: resolved.executablePath, headless: true as const, ...(effectiveProxy ? { proxy: effectiveProxy } : {}) }
     : { headless: true as const, ...(effectiveProxy ? { proxy: effectiveProxy } : {}) };
 
-  // Hostnames of every main-frame navigation request, redirect hops included,
-  // collected from passive page events. A refusal is only treated as the
-  // navigation's cause when its host is one of these; otherwise it is a
-  // blocked subresource and the original navigation error stands.
-  const navigationHosts = new Set<string>();
+  // Browser requests that failed or were refused by the proxy, from passive
+  // page events only. Navigation hosts decide whether a refusal caused the
+  // navigation error; subresource failures are counted one per request.
+  const failedNavigationHosts = new Set<string>();
+  const failedSubresourceHosts: string[] = [];
+  const seenRequests = new WeakSet<object>();
   const refusals = () => (enforcement ? enforcement.proxy.refusalsSince(enforcement.username, enforcement.since) : []);
-  const navigationRefusal = () => refusals().find((entry) => navigationHosts.has(entry.host));
-  const subresourceRefusals = () => refusals().filter((entry) => !navigationHosts.has(entry.host)).length;
+  const navigationRefusal = () => refusals().find((entry) => failedNavigationHosts.has(entry.host));
+  const subresourceRefusals = () => {
+    const refusedHosts = new Set(refusals().map((entry) => entry.host));
+    return failedSubresourceHosts.filter((host) => refusedHosts.has(host)).length;
+  };
 
   let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
   let context: Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newContext']>> | undefined;
@@ -154,20 +158,66 @@ export async function headlessFetch(
 
     if (enforcement) {
       const activePage = page;
-      activePage.on?.('request', (request: any) => {
+      const recordRequest = (request: any) => {
         try {
+          if (!request || seenRequests.has(request)) return;
+          seenRequests.add(request);
+          const host = normalizeHost(new URL(request.url()).hostname);
           if (request.isNavigationRequest() && request.frame() === activePage.mainFrame()) {
-            navigationHosts.add(normalizeHost(new URL(request.url()).hostname));
+            failedNavigationHosts.add(host);
+          } else {
+            failedSubresourceHosts.push(host);
           }
         } catch {
-          // Unparseable URL: nothing to attribute.
+          // Unparseable URL or a detached frame: nothing to attribute.
         }
+      };
+      activePage.on?.('requestfailed', recordRequest);
+      activePage.on?.('response', (response: any) => {
+        try {
+          if (response.headers()[BLOCKED_HEADER]) recordRequest(response.request());
+        } catch {
+          // ignore
+        }
+      });
+      // Best effort: Playwright doesn't say why a WebSocket died, so an error or a
+      // close before any frame counts as failed. Only refused hosts get counted.
+      activePage.on?.('websocket', (ws: any) => {
+        let host: string;
+        try {
+          host = normalizeHost(new URL(ws.url()).hostname);
+        } catch {
+          return;
+        }
+        let framed = false;
+        let recorded = false;
+        const fail = () => {
+          if (recorded) return;
+          recorded = true;
+          failedSubresourceHosts.push(host);
+        };
+        ws.on?.('framereceived', () => (framed = true));
+        ws.on?.('framesent', () => (framed = true));
+        ws.on?.('socketerror', fail);
+        ws.on?.('close', () => {
+          if (!framed) fail();
+        });
       });
     }
 
     const startedAt = now();
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
     if (enforcement && response?.headers?.()[BLOCKED_HEADER]) {
+      // Normally already recorded by the 'response' event; this covers it if not.
+      try {
+        const request = response.request?.();
+        if (request && !seenRequests.has(request)) {
+          seenRequests.add(request);
+          failedNavigationHosts.add(normalizeHost(new URL(request.url()).hostname));
+        }
+      } catch {
+        // ignore
+      }
       const cause = navigationRefusal();
       if (cause) return errorResult(url, cause.error.code, cause.error.message);
     }

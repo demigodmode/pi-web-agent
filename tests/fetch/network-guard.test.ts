@@ -254,6 +254,20 @@ describe('resolveHost', () => {
     });
   });
 
+  it('treats a lookup that never settles as unresolved once lookupTimeoutMs passes', async () => {
+    const hanging = createNetworkGuard({}, { lookup: () => new Promise(() => undefined), lookupTimeoutMs: 50 });
+    const started = Date.now();
+    const resolution = await Promise.race([
+      hanging.resolveHost('slow.test'),
+      new Promise((resolve) => setTimeout(() => resolve('still pending'), 1000))
+    ]);
+    const elapsed = Date.now() - started;
+
+    expect(resolution).toEqual({ status: 'unresolved', host: 'slow.test' });
+    expect(elapsed).toBeGreaterThanOrEqual(45);
+    expect(elapsed).toBeLessThan(300);
+  });
+
   it('reports unresolved hosts, including empty answers', async () => {
     await expect(createNetworkGuard({}, { lookup: fakeLookup({}) }).resolveHost('nope.test')).resolves.toEqual({
       status: 'unresolved',

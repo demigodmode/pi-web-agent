@@ -180,6 +180,76 @@ describe.skipIf(process.platform !== 'linux')('guard proxy fetch', () => {
     expect(getProxy).toHaveBeenCalledTimes(2);
   });
 
+  describe('interrupted forwarded responses', () => {
+    async function within2s<T>(work: Promise<T>): Promise<T> {
+      let timer: NodeJS.Timeout | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('still pending after 2s')), 2000);
+      });
+      try {
+        return await Promise.race([work, timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    it('rejects the body when the origin drops the socket mid content-length body', async () => {
+      const pair = await startServerPair({
+        okHandler: (request, response) => {
+          response.writeHead(200, { 'content-type': 'text/html', 'content-length': '1000' });
+          response.write('x'.repeat(100), () => setTimeout(() => response.socket?.destroy(), 20));
+        }
+      });
+      cleanups.push(() => pair.close());
+      const { proxyFetch } = await setup();
+
+      const outcome = await within2s(
+        (async () => (await proxyFetch(`http://ok.test:${pair.port}/`)).text())().then(
+          () => 'resolved',
+          (error) => (error instanceof Error && error.message === 'still pending after 2s' ? Promise.reject(error) : 'rejected')
+        )
+      );
+
+      expect(outcome).toBe('rejected');
+    });
+
+    it('rejects the body when the origin drops the socket mid chunked body', async () => {
+      const pair = await startServerPair({
+        okHandler: (request, response) => {
+          response.writeHead(200, { 'content-type': 'text/html' });
+          response.write('<html><body>partial', () => setTimeout(() => response.socket?.destroy(), 20));
+        }
+      });
+      cleanups.push(() => pair.close());
+      const { proxyFetch } = await setup();
+
+      const outcome = await within2s(
+        (async () => (await proxyFetch(`http://ok.test:${pair.port}/`)).text())().then(
+          () => 'resolved',
+          (error) => (error instanceof Error && error.message === 'still pending after 2s' ? Promise.reject(error) : 'rejected')
+        )
+      );
+
+      expect(outcome).toBe('rejected');
+    });
+
+    it('still delivers a large complete body intact', async () => {
+      const body = Array.from({ length: 200_000 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+      const pair = await startServerPair({
+        okHandler: (request, response) => {
+          response.writeHead(200, { 'content-type': 'text/plain', 'content-length': String(body.length) });
+          response.end(body);
+        }
+      });
+      cleanups.push(() => pair.close());
+      const { proxyFetch } = await setup();
+
+      const text = await within2s((async () => (await proxyFetch(`http://ok.test:${pair.port}/`)).text())());
+
+      expect(text).toBe(body);
+    });
+  });
+
   describe('through an upstream proxy', () => {
     it('sends the approved IP upstream while the destination sees the original Host and SNI', async () => {
       const pair = await startServerPair({ tls: true });
