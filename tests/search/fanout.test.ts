@@ -24,7 +24,7 @@ describe('createFanoutSearch', () => {
     expect(providers[0].search).toHaveBeenCalled();
     expect(providers[1].search).toHaveBeenCalled();
     const urls = res.results.map((r) => r.url);
-    expect(urls.filter((u) => u.includes('a.com')).length).toBe(1);
+    expect(urls.filter((u) => new URL(u).hostname === 'a.com').length).toBe(1);
     expect(res.results.length).toBe(3);
     expect(res.metadata.fanout?.mode).toBe('on');
   });
@@ -108,7 +108,7 @@ describe('createFanoutSearch', () => {
     // w.com is agreed by TWO distinct providers; u.com only appeared twice from ONE provider.
     expect(res.results[0].url).toContain('w.com');
     // u.com deduped to a single result
-    expect(res.results.filter((r) => r.url.includes('u.com')).length).toBe(1);
+    expect(res.results.filter((r) => new URL(r.url).hostname === 'u.com').length).toBe(1);
   });
 
   it('on: skips a provider that does not respond within the timeout', async () => {
