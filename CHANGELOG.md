@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.11.0] - 2026-09-16
+### Added
 - Optional proxy support. Point web_explore at an HTTP/HTTPS proxy and everything outbound goes through it: search, fetch, Firecrawl, the GitHub/PDF/YouTube readers, doctor health checks, and the headless browser. Off unless you set it, and nothing changes if you don't. Set it in Settings → Backends, and keep credentials in `PI_WEB_AGENT_PROXY_USERNAME` / `PI_WEB_AGENT_PROXY_PASSWORD` rather than in the URL. Thanks to @lo-tp for building this. (#50)
 
 ### Changed
