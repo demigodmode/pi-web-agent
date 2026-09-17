@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.12.0] - 2026-09-17
+### Added
 - A network allow list, under Settings → Backends → Network allow list. web_explore now refuses private and local addresses when the link came from the model or a page it read, so if you genuinely want it to read something on your own network (an internal docs site, a service on localhost), add that range here as a CIDR like `10.0.0.0/24`. Entries are checked when you save, and ones that would allow everything (`0.0.0.0/0`, `::/0`) are rejected, since that would quietly turn the protection off. It is also the fix if every fetch suddenly fails: some proxy apps run in fake-IP mode and make every site look like it lives in `198.18.0.0/15`, and adding that range gets you going again. (#53)
 - A "Trust the upstream proxy to enforce private-address restrictions" setting (`backends.network.trustProxyDns`). With a proxy configured, pi-web-agent normally looks each address up itself and asks the proxy to connect to that exact IP, so the proxy can't send a request somewhere else. Some proxies only accept hostnames, and some networks only resolve names inside the proxy. Turning this on hands the hostname to the proxy instead. It is off by default because it moves the address decision to your proxy, and even when it is on, localhost, private IPs typed straight into a link, and anything your own machine resolves to a private address are still refused. `/web-agent doctor` shows the allow list and this setting. (#53)
 
