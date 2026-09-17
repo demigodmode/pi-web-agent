@@ -10,7 +10,8 @@ That is partly for code health, but mostly because this package gets worse fast 
 - `src/tools/` contains tool adapters and internal tool-shaped helpers
 - `src/search/` holds search backend logic for DuckDuckGo, SearXNG, Brave, You.com, Exa, and Tavily
 - `src/readers/` handles special-content URLs (GitHub, PDF, YouTube) in front of the plain fetcher
-- `src/fetch/` handles HTTP and headless fetch logic
+- `src/fetch/` handles HTTP and headless fetch logic, including the network guard and the local guard proxy that every model-chosen connection goes through
+- `src/backends/` holds backend config, the factory that wires providers together, provider failure classification, and the fallback policy (cooldowns, one retry, when to fall back)
 - `src/extract/` handles readable-content extraction
 - `src/orchestration/` handles the bounded research flow
 - `src/cache/` holds small cache helpers

@@ -51,7 +51,7 @@ That path does not require SearXNG or Firecrawl.
 
 ## Keyless default
 
-With no configuration, search uses DuckDuckGo. We send normal browser headers and retry once if a request looks blocked, so it holds up better than a raw scrape. If DuckDuckGo still walls the request (common on datacenter IPs), search quietly falls back to Tavily's keyless endpoint (no account, no API key). Only the query that failed is sent, and only on failure.
+With no configuration, search uses DuckDuckGo. We send normal browser headers, so it holds up better than a raw scrape. If DuckDuckGo walls the request (common on datacenter IPs), search falls back to Tavily's keyless endpoint (no account, no API key) straight away, without retrying the blocked page. Only the query that failed is sent, and only on failure. If DuckDuckGo answers but simply found nothing, that empty result is returned as is and Tavily is not asked.
 
 Don't want the Tavily fallback? Set `PI_WEB_AGENT_DISABLE_KEYLESS_FALLBACK=1` and a blocked DuckDuckGo request will just return an error instead.
 
@@ -364,6 +364,17 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 
 When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, and Firecrawl failures stay visible instead of silently switching to external/default backends.
 
+Fallback also looks at why a backend failed before moving on:
+
+- A rate limit falls back and skips that backend for a while: as long as the provider asked, capped at 15 minutes, or a minute if it didn't say.
+- An exhausted quota, a rejected API key, or a missing key or base URL falls back and skips that backend until your settings change.
+- A timeout, server error, or dropped connection gets one retry first.
+- A blocked or garbled response falls back without a retry.
+- An empty result is a real answer, so it does not fall back. Neither does a bad request (like an empty query).
+- A private-address refusal or an invalid shared proxy setting never falls back to another backend.
+
+Verbose output lists every backend that was tried, retried, or skipped and why. When some backends failed but another one answered, the answer notes that results may be incomplete. If every backend is being skipped, see "Search says no backend is available" in the troubleshooting guide.
+
 ## Proxy
 
 Route all outbound `web_explore` traffic through an HTTP proxy:
@@ -384,13 +395,37 @@ Route all outbound `web_explore` traffic through an HTTP proxy:
 - `username` and `password` are optional. When present, credentials are sent to the proxy as a `Proxy-Authorization` header (never to the target site).
 - Credentials can instead come from the environment variables `PI_WEB_AGENT_PROXY_USERNAME` and `PI_WEB_AGENT_PROXY_PASSWORD`. Config values win when both are set. If you set credentials in the URL, `/web-agent doctor` and config validation tell you to move them to these variables.
 
-When a proxy is configured it applies to every outbound request: search backends, plain HTTP fetches, Firecrawl, the GitHub and YouTube readers, PDF downloads, and `/web-agent doctor` health checks. HTTPS targets are tunneled with `CONNECT`, so the proxy sees the target hostname but not the request contents. The headless browser is also launched with the proxy configured.
+When a proxy is configured it applies to every outbound request: search backends, plain HTTP fetches, Firecrawl, the GitHub and YouTube readers, PDF downloads, the headless browser, and `/web-agent doctor` health checks. HTTPS targets are tunneled with `CONNECT`, so the proxy never sees the request contents.
 
 The proxy URL is editable from **Settings → Backends**. The settings UI does not edit proxy credentials; like other secrets, keep credentials in environment variables rather than committed config files.
 
 A proxy that is unreachable makes requests fail with a clear proxy error instead of silently bypassing the proxy.
 
-Page fetches and the headless browser connect through a local guard proxy that checks addresses before connecting, then chains to your proxy by IP. If your proxy only accepts hostnames, see "Fetches fail with an upstream proxy refused error" in the troubleshooting guide.
+Page fetches, the readers, and the headless browser don't talk to your proxy directly. They go through a small local guard proxy that looks up each address, refuses private ones, and then asks your proxy to connect to the IP it checked. So for those requests your proxy sees an IP address rather than the hostname; search backends and Firecrawl still reach it by hostname. If your proxy only accepts hostnames, see `trustProxyDns` below and "Fetches fail with an upstream proxy refused error" in the troubleshooting guide.
+
+## Private addresses, allow list, and proxy trust
+
+`web_explore` refuses to connect to private, loopback, and link-local addresses (your LAN, `localhost`, cloud metadata like `169.254.169.254`) when the link came from the model or from a page it read. It checks every address a name resolves to, including redirects and everything a headless page loads, and connects to the address it checked so a DNS change can't move the request. Addresses you configured yourself are not affected: search backends, SearXNG, Firecrawl, and the proxy.
+
+Two settings adjust this, both under **Settings → Backends**:
+
+```json
+{
+  "backends": {
+    "network": {
+      "allowRanges": ["10.0.0.0/24"],
+      "trustProxyDns": false
+    }
+  }
+}
+```
+
+- `allowRanges` lists CIDR ranges `web_explore` may reach anyway, for example an internal docs site. Invalid entries and ranges that allow everything (`0.0.0.0/0`, `::/0`) are rejected. If you run a proxy app in fake-IP mode, every site resolves inside `198.18.0.0/15`; add that range or every fetch will be refused.
+- `trustProxyDns` hands hostnames to your upstream proxy instead of checked IPs. Turn it on for proxies that only accept hostnames, or networks where names only resolve inside the proxy. It trusts your proxy to keep requests away from private addresses, so it is off by default, and localhost, private IPs written into a link, and names your own machine resolves to a private address are still refused. It has no effect without `backends.proxy`.
+
+A project config's allow list replaces the global one rather than adding to it. `/web-agent doctor` shows both settings.
+
+The protection covers connections that go through the guard proxy. It is not a full network sandbox for the browser; if you need that, restrict outbound traffic at the OS or container level.
 
 ## Full self-hosted example
 

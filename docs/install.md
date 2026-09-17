@@ -95,7 +95,7 @@ PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 
 The settings UI does not write API keys. For local-only configs you can still add `"apiKey": "..."` to the `fetch` config manually.
 
-Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values, warns when a hosted search provider is selected without its key, checks hosted backends when a key is present, and checks configured SearXNG/Firecrawl endpoints with a short timeout.
+Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values, warns when a hosted search provider is selected without its key, checks hosted backends when a key is present, checks configured SearXNG/Firecrawl endpoints with a short timeout, and shows the network allow list and whether the upstream proxy is trusted to resolve names.
 
 Backend config also supports explicit fallback and a small set of provider options. See [Backends](/self-hosted-backends) for the full shape, including all the hosted search providers.
 
