@@ -31,7 +31,7 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 
 - **One tool.** `web_explore` handles direct links, discovery, HTTP reads, targeted headless rendering, source ranking, source-quality checks, and caveats internally.
 - **Reads the real content behind links.** Paste a GitHub, PDF, or YouTube URL and it pulls the actual thing (GitHub files/issues/PRs from the API, PDF text, YouTube transcripts), keyless. So "summarize this PDF" or "what does this repo do" works off the source, not the page shell.
-- **Six search backends.** DuckDuckGo (keyless default), SearXNG, Brave, You.com, Exa, Tavily.
+- **Seven search backends.** DuckDuckGo (keyless default), SearXNG, Brave, You.com, Exa, Tavily, and any Google SERP endpoint you point it at.
 - **Optional search fanout.** Query several backends at once, dedupe, and rank pages that more than one provider agreed on to the top. Off by default; flip it to `on` or `auto`.
 - **Honest by default.** Weak, narrow, blocked, or cautionary evidence gets flagged instead of dressed up as confidence.
 - **Safe with untrusted pages.** Links the model picks, or finds on a page it read, can't reach localhost, your LAN, or cloud metadata endpoints. That includes redirects and everything a headless page loads. Addresses you configure yourself aren't affected, and an allow list covers the private ranges you do want.
@@ -90,6 +90,7 @@ Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Sw
 | You.com | search (hosted) | `YDC_API_KEY` |
 | Exa | search (hosted) | `EXA_API_KEY` |
 | Tavily | search (hosted) | `TAVILY_API_KEY` |
+| Google SERP | search (hosted) | base URL + `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` |
 | Firecrawl | fetch (self-hosted) | base URL + `PI_WEB_AGENT_FIRECRAWL_API_KEY` |
 | GitHub reader | content | `GITHUB_TOKEN` (optional, raises the rate limit) |
 

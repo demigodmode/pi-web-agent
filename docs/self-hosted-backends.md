@@ -65,15 +65,15 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, and Tavily
-- edit the SearXNG base URL
+- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, and Google SERP
+- edit the search endpoint URL (SearXNG or Google SERP)
 - enable a hosted/SearXNG → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
 - edit the Firecrawl base URL
 - enable Firecrawl → HTTP fallback
 - set the outbound proxy URL
 
-Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
+Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
 
 ## Config file locations
 
@@ -139,6 +139,66 @@ Supported SearXNG options can stay in config:
 ```
 
 These map to SearXNG search query params. Unsupported or malformed values show up as config warnings in `/web-agent doctor`.
+
+## Google SERP endpoint
+
+`google-serp` is a vendor-neutral wrapper around any hosted service that front-ends Google results (Serper, SerpBase, and similar). Nothing in it is tied to one vendor: you set the endpoint and the key, and switching vendors is a base-URL change rather than a config migration.
+
+Set the key:
+
+```text
+PI_WEB_AGENT_GOOGLE_SERP_API_KEY=...
+```
+
+Then pick **Settings → Backends → Search backend → google-serp** and enter the endpoint under **Search endpoint URL**, or write it directly:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "google-serp",
+      "baseUrl": "https://google.serper.dev/search"
+    }
+  }
+}
+```
+
+`pi-web-agent` POSTs this body to that URL:
+
+```json
+{ "q": "example", "num": 10 }
+```
+
+with the key in a header (`X-API-Key` by default) and expects the common `organic[]` shape back:
+
+```json
+{
+  "organic": [
+    { "title": "Example", "link": "https://example.com", "snippet": "..." }
+  ]
+}
+```
+
+If your vendor spells the header differently, set `keyHeader`:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "google-serp",
+      "baseUrl": "https://api.example.com/search",
+      "keyHeader": "Authorization"
+    }
+  }
+}
+```
+
+Two things worth knowing:
+
+- Vendors in this space often answer **HTTP 200 with a non-zero `status` in the body** when the key is bad or the balance is empty. That envelope is checked, so a bad key shows up as an auth or quota failure instead of "no results".
+- SerpApi needs the key as a query parameter and returns `organic_results`, so it is a separate profile rather than part of this one.
+
+Run `/web-agent doctor` after editing config: it sends the same one-result probe and reports `search backend: google-serp ok`, a warning with the reason, or the missing base URL/key.
 
 ## Brave Search
 
