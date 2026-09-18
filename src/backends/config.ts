@@ -24,8 +24,10 @@ export type ProxyConfig = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily';
+  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'google-serp';
   baseUrl?: string;
+  /** Header the Google SERP key is sent in (default X-API-Key). */
+  keyHeader?: string;
   fallback?: 'duckduckgo';
   options?: SearxngOptions;
   fanout?: FanoutConfig;
@@ -65,7 +67,7 @@ export type BackendConfigOverride = {
 
 export type BackendConfigFile = {
   backends?: {
-    search?: { provider?: unknown; baseUrl?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
+    search?: { provider?: unknown; baseUrl?: unknown; keyHeader?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
     headless?: { provider?: unknown };
     proxy?: { url?: unknown; username?: unknown; password?: unknown };
@@ -186,7 +188,13 @@ function extractFirecrawlOptions(value: unknown): FirecrawlOptions | undefined {
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
-const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily'];
+const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
+
+/** Providers that talk to an endpoint the user configures in backends.search.baseUrl. */
+export const BASE_URL_SEARCH_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'google-serp'];
+
+/** Providers a duckduckgo fallback can fall back from. */
+export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
 
 export function usableSearchProviders(
   search: SearchBackendConfig,
@@ -199,6 +207,7 @@ export function usableSearchProviders(
   if (env.YDC_API_KEY?.trim()) usable.push('youcom');
   if (env.EXA_API_KEY?.trim()) usable.push('exa');
   if (env.TAVILY_API_KEY?.trim()) usable.push('tavily');
+  if (search.baseUrl?.trim() && env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY?.trim()) usable.push('google-serp');
   return usable;
 }
 
@@ -223,17 +232,13 @@ export function extractBackendConfigOverride(
   const backends = file?.backends;
   const override: BackendConfigOverride = {};
 
-  if (
-    backends?.search?.provider === 'duckduckgo' ||
-    backends?.search?.provider === 'searxng' ||
-    backends?.search?.provider === 'brave' ||
-    backends?.search?.provider === 'youcom' ||
-    backends?.search?.provider === 'exa' ||
-    backends?.search?.provider === 'tavily'
-  ) {
-    override.search = { provider: backends.search.provider };
-    if (backends.search.provider === 'searxng' && typeof backends.search.baseUrl === 'string') {
+  if (typeof backends?.search?.provider === 'string' && (PROVIDER_NAMES as string[]).includes(backends.search.provider)) {
+    override.search = { provider: backends.search.provider as SearchProviderName };
+    if (BASE_URL_SEARCH_PROVIDERS.includes(backends.search.provider as SearchProviderName) && typeof backends.search.baseUrl === 'string') {
       override.search.baseUrl = backends.search.baseUrl;
+    }
+    if (backends.search.provider === 'google-serp' && typeof backends.search.keyHeader === 'string') {
+      override.search.keyHeader = backends.search.keyHeader;
     }
     if (backends.search.fallback === 'duckduckgo') {
       override.search.fallback = 'duckduckgo';
@@ -288,8 +293,12 @@ export function extractBackendConfigOverride(
 export function validateBackendConfig(config: BackendConfig): string[] {
   const issues: string[] = [];
 
-  if (config.search.provider === 'searxng' && !config.search.baseUrl) {
-    issues.push('search provider searxng requires backends.search.baseUrl');
+  if (BASE_URL_SEARCH_PROVIDERS.includes(config.search.provider) && !config.search.baseUrl) {
+    issues.push(`search provider ${config.search.provider} requires backends.search.baseUrl`);
+  }
+
+  if (config.search.keyHeader !== undefined && !config.search.keyHeader.trim()) {
+    issues.push('search keyHeader must not be empty when provided');
   }
 
   if (config.proxy && config.proxy.url.trim() !== '') {
@@ -329,8 +338,9 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     issues.push('backends.network.trustProxyDns has no effect without backends.proxy');
   }
 
-  if (config.search.fallback === 'duckduckgo' && config.search.provider !== 'searxng' && config.search.provider !== 'brave' && config.search.provider !== 'youcom' && config.search.provider !== 'exa' && config.search.provider !== 'tavily') {
-    issues.push('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, or tavily');
+  if (config.search.fallback === 'duckduckgo' && !DUCKDUCKGO_FALLBACK_PROVIDERS.includes(config.search.provider)) {
+    const supported = DUCKDUCKGO_FALLBACK_PROVIDERS.join(', ').replace(/, ([^,]*)$/, ', or $1');
+    issues.push(`search fallback duckduckgo is only supported when search provider is ${supported}`);
   }
 
   if (config.fetch.fallback === 'http' && config.fetch.provider !== 'firecrawl') {
@@ -363,6 +373,9 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     }
     if (fanout.providers?.includes('searxng') && !config.search.baseUrl) {
       issues.push('search fanout with searxng requires backends.search.baseUrl');
+    }
+    if (fanout.providers?.includes('google-serp') && !config.search.baseUrl) {
+      issues.push('search fanout with google-serp requires backends.search.baseUrl');
     }
   }
 

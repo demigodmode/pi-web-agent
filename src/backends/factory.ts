@@ -12,6 +12,7 @@ import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
+import { createGoogleSerpSearchTool } from '../search/google-serp.js';
 import { createFanoutSearch, FANOUT_PROVIDER_TIMEOUT_MS, withCallTimeout } from '../search/fanout.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from './fallback-policy.js';
 import { createProviderHealth, type ProviderHealth } from './provider-health.js';
@@ -49,6 +50,7 @@ export type BackendFactoryDeps = {
   createYouComSearch?: typeof createYouComSearchTool;
   createExaSearch?: typeof createExaSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
+  createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
@@ -71,21 +73,30 @@ export type BackendFactoryDeps = {
   repoApiFetch?: typeof fetch;
 };
 
-function invalidSearxngSearch() {
+/** A selected endpoint-backed provider with no endpoint: instead of throwing, it reports the gap once. */
+function invalidConfiguredSearch(backend: SearchProviderName, message: string) {
   return async function search() {
     const result: WebSearchResponse = {
       status: 'error',
       results: [],
-      metadata: { backend: 'searxng', cacheHit: false },
+      metadata: { backend, cacheHit: false },
       error: {
         code: 'BACKEND_CONFIG_INVALID',
-        message: 'SearXNG search requires backends.search.baseUrl.',
+        message,
         failure: { kind: 'not_configured' }
       }
     };
 
     return { ...result, presentation: buildSearchPresentation(result) };
   };
+}
+
+function invalidSearxngSearch() {
+  return invalidConfiguredSearch('searxng', 'SearXNG search requires backends.search.baseUrl.');
+}
+
+function invalidGoogleSerpSearch() {
+  return invalidConfiguredSearch('google-serp', 'Google SERP search requires backends.search.baseUrl.');
 }
 
 function invalidFirecrawlFetch() {
@@ -145,6 +156,7 @@ export function createBackendSet(
   const createYouComSearch = deps.createYouComSearch ?? createYouComSearchTool;
   const createExaSearch = deps.createExaSearch ?? createExaSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
+  const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
@@ -279,6 +291,15 @@ export function createBackendSet(
         return createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl });
       case 'tavily':
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
+      case 'google-serp':
+        return config.search.baseUrl
+          ? createGoogleSerpSearch({
+              baseUrl: config.search.baseUrl,
+              apiKey: process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY,
+              ...(config.search.keyHeader !== undefined ? { keyHeader: config.search.keyHeader } : {}),
+              fetchImpl
+            })
+          : invalidGoogleSerpSearch();
       case 'duckduckgo':
       default:
         return createDuckDuckGo();
