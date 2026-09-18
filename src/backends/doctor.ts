@@ -29,6 +29,10 @@ function tavilyDoctorBody() {
   return JSON.stringify({ query: 'pi-web-agent-doctor', max_results: 1 });
 }
 
+function googleSerpDoctorBody() {
+  return JSON.stringify({ q: 'pi-web-agent-doctor', num: 1 });
+}
+
 function searxngDoctorUrl(baseUrl: string, options: SearxngOptions = {}) {
   const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', 'pi-web-agent-doctor');
@@ -178,6 +182,39 @@ export async function checkBackendHealth(
         }
       } catch (error) {
         lines.push(`search backend: tavily warning (${message(error)})`);
+      } finally {
+        timeout.done();
+      }
+    }
+  } else if (config.search.provider === 'google-serp') {
+    const apiKey = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    if (!config.search.baseUrl) {
+      lines.push('search backend: google-serp warning (missing baseUrl)');
+    } else if (!apiKey?.trim()) {
+      lines.push('search backend: google-serp warning (missing PI_WEB_AGENT_GOOGLE_SERP_API_KEY)');
+    } else {
+      const timeout = withTimeout(timeoutMs);
+      try {
+        const response = await fetchImpl(config.search.baseUrl, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            [config.search.keyHeader ?? 'X-API-Key']: apiKey
+          },
+          body: googleSerpDoctorBody(),
+          signal: timeout.signal
+        });
+        if (!response.ok) {
+          lines.push(`search backend: google-serp warning (HTTP ${response.status})`);
+        } else {
+          const json = (await response.json()) as { organic?: unknown };
+          lines.push(Array.isArray(json.organic)
+            ? 'search backend: google-serp ok'
+            : 'search backend: google-serp warning (unexpected response)');
+        }
+      } catch (error) {
+        lines.push(`search backend: google-serp warning (${message(error)})`);
       } finally {
         timeout.done();
       }

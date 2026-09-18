@@ -68,9 +68,9 @@ If you want a hosted search backend, SearXNG, or Firecrawl, open:
 /web-agent settings
 ```
 
-Choose **Backends** to point search at Brave, You.com, Exa, Tavily, or SearXNG, and page reading at Firecrawl. The settings UI can edit providers, base URLs where relevant, and fallback behavior.
+Choose **Backends** to point search at Brave, You.com, Exa, Tavily, SearXNG, or a hosted Google SERP endpoint, and page reading at Firecrawl. The settings UI can edit providers, base URLs where relevant, and fallback behavior.
 
-The hosted search backends each read a key from the environment: `PI_WEB_AGENT_BRAVE_API_KEY` for Brave, `YDC_API_KEY` for You.com, `EXA_API_KEY` for Exa, `TAVILY_API_KEY` for Tavily. Set the one you want, then choose that provider under **Backends**. They're hosted, so none needs a `baseUrl`, and each only handles source discovery; `web_explore` still fetches pages, ranks evidence, and writes caveats itself.
+The hosted search backends each read a key from the environment: `PI_WEB_AGENT_BRAVE_API_KEY` for Brave, `YDC_API_KEY` for You.com, `EXA_API_KEY` for Exa, `TAVILY_API_KEY` for Tavily, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` for a Google SERP endpoint. Set the one you want, then choose that provider under **Backends**. None of them needs a `baseUrl` except `google-serp`, which takes the endpoint you point it at, and each only handles source discovery; `web_explore` still fetches pages, ranks evidence, and writes caveats itself.
 
 Use `/web-agent show` to confirm the effective backend config. Use `/web-agent doctor` to check configured backend health.
 

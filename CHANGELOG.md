@@ -7,7 +7,7 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- A `google-serp` search backend: point `backends.search.baseUrl` at any hosted Google SERP vendor (Serper, SerpBase, and similar), set its key in `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and set `backends.search.keyHeader` if it doesn't use `X-API-Key`. It POSTs `{ q, num }` and reads the common `organic[]` shape, so switching vendors is a base-URL change. Without the key the provider stays absent and nothing else changes, and a failure reported inside a 2xx body (bad key, empty balance) is classified as auth/quota instead of "no results". SerpApi's query-param profile is not part of this. (#46)
 
 ### Changed
 - None.

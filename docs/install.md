@@ -107,6 +107,7 @@ Secrets live in the environment, not in config the settings UI writes. The ones 
 - `YDC_API_KEY`: You.com search
 - `EXA_API_KEY`: Exa search
 - `TAVILY_API_KEY`: Tavily search
+- `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`: Google SERP endpoint search (`baseUrl` + header key, any vendor)
 - `PI_WEB_AGENT_FIRECRAWL_API_KEY`: Firecrawl fetch
 - `GITHUB_TOKEN`: optional, raises the GitHub reader's API rate limit (GitHub links work without it)
 
