@@ -126,7 +126,28 @@ function makeWindows(sections: Section[], terms: string[], maxLength: number): W
   const windows: Window[] = [];
   const windowLimit = Math.max(1, Math.min(1200, maxLength));
   for (const section of sections) {
-    const heading = (section.heading ?? '').slice(0, windowLimit);
+    const fullHeading = section.heading ?? '';
+    if (fullHeading.length + 2 > windowLimit) {
+      const heading = fullHeading.slice(0, windowLimit);
+      windows.push({
+        text: heading,
+        anchor: section.anchor,
+        score: scoreText(heading, terms) * 3,
+        index: windows.length
+      });
+      for (const block of section.blocks) {
+        for (const chunk of splitLong(block, windowLimit)) {
+          windows.push({
+            text: chunk,
+            anchor: section.anchor,
+            score: scoreText(chunk, terms),
+            index: windows.length
+          });
+        }
+      }
+      continue;
+    }
+    const heading = fullHeading;
     const headingLength = heading ? heading.length + 2 : 0;
     const bodyLimit = Math.max(0, windowLimit - headingLength);
     const chunks = bodyLimit > 0 ? section.blocks.flatMap((block) => splitLong(block, bodyLimit)) : [];

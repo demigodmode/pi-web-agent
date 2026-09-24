@@ -48,6 +48,18 @@ describe('section selection', () => {
     expect(result.text.length).toBeLessThanOrEqual(80);
   });
 
+  it('finds a body match after an oversized unrelated heading', () => {
+    const result = selectRelevantContent({
+      source: `<article><h2 id="policy">${'General policy details. '.repeat(100)}</h2>
+        <p>The cancellation deadline is 14 days.</p></article>`,
+      format: 'html', query: 'cancellation deadline', maxLength: 120
+    });
+    expect(result.matched).toBe(true);
+    expect(result.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.anchor).toBe('policy');
+    expect(result.text.length).toBeLessThanOrEqual(120);
+  });
+
   it('selects a late Markdown heading', () => {
     const result = selectRelevantContent({
       source: `# Guide\n\n${'Generic information. '.repeat(300)}\n\n## Cancellation deadline\n\nThe deadline is 14 days.`,
