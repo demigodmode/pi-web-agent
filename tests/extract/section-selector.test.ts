@@ -36,6 +36,23 @@ describe('section selection', () => {
     expect(result.anchor).toBe('refund-policy');
   });
 
+  it('excludes ARIA-labelled page chrome inside the readable region', () => {
+    const result = selectRelevantContent({
+      source: `<main><div role="navigation" aria-label="Breadcrumb"><h2>Cancellation deadline</h2><p>Menu link</p></div>
+        <div role="complementary"><p>Related cancellation deadline</p></div>
+        <div role="banner"><p>Banner cancellation deadline</p></div>
+        <div role="contentinfo"><p>Footer cancellation deadline</p></div>
+        <article><h2 id="real">Cancellation deadline</h2><p>The deadline is 14 days.</p></article></main>`,
+      format: 'html', query: 'cancellation deadline', maxLength: 4000
+    });
+    expect(result.text).toContain('The deadline is 14 days.');
+    expect(result.text).not.toContain('Menu link');
+    expect(result.text).not.toContain('Related cancellation deadline');
+    expect(result.text).not.toContain('Banner cancellation deadline');
+    expect(result.text).not.toContain('Footer cancellation deadline');
+    expect(result.anchor).toBe('real');
+  });
+
   it('bounds a matching heading that is longer than the output budget', () => {
     const heading = `Cancellation deadline ${'details '.repeat(30)}`;
     const result = selectRelevantContent({

@@ -63,7 +63,15 @@ function htmlSections(source: string): Section[] {
   const document = new JSDOM(source).window.document;
   const root = document.querySelector('main, article') ?? document.body;
   root.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
-  root.querySelectorAll('nav, aside, header, footer').forEach((element) => element.remove());
+  const chromeTags = new Set(['nav', 'aside', 'header', 'footer']);
+  const chromeRoles = new Set(['navigation', 'complementary', 'banner', 'contentinfo']);
+  root.querySelectorAll('nav, aside, header, footer, [role], [aria-label]').forEach((element) => {
+    const roles = (element.getAttribute('role') ?? '').toLowerCase().split(/\s+/);
+    const label = element.getAttribute('aria-label') ?? '';
+    if (chromeTags.has(element.tagName.toLowerCase()) || roles.some((role) => chromeRoles.has(role)) || /\bbreadcrumbs?\b/i.test(label)) {
+      element.remove();
+    }
+  });
   const sections: Section[] = [{ blocks: [] }];
   let current = sections[0];
   let pendingAnchor: string | undefined;
