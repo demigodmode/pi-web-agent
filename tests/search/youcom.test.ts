@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createYouComSearchTool } from '../../src/search/youcom.js';
+import { createYouComSearchTool, normalizeYouComResults, YOUCOM_SEARCH_URL } from '../../src/search/youcom.js';
 
 function response(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}) {
   return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
@@ -9,19 +9,12 @@ function response(body: unknown, init: { status?: number; headers?: Record<strin
 }
 
 describe('youcom search', () => {
-  it('normalizes You.com search results', async () => {
+  it('posts the documented search request and concatenates web before news', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response({
-      results: [
-        {
-          title: 'Playwright browsers',
-          url: 'https://playwright.dev/docs/browsers',
-          snippet: 'Browsers docs.'
-        },
-        {
-          title: 'Missing URL',
-          snippet: 'Ignored.'
-        }
-      ]
+      results: {
+        web: [{ title: 'Playwright browsers', url: 'https://playwright.dev/docs/browsers', description: 'Browsers docs.' }],
+        news: [{ title: 'Playwright news', url: 'https://example.com/news', description: 'News docs.' }]
+      }
     }));
 
     const search = createYouComSearchTool({ apiKey: 'key', fetchImpl });
@@ -34,10 +27,15 @@ describe('youcom search', () => {
         title: 'Playwright browsers',
         url: 'https://playwright.dev/docs/browsers',
         snippet: 'Browsers docs.'
+      },
+      {
+        title: 'Playwright news',
+        url: 'https://example.com/news',
+        snippet: 'News docs.'
       }
     ]);
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.you.com/v1/agents/search',
+      YOUCOM_SEARCH_URL,
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -49,8 +47,31 @@ describe('youcom search', () => {
     );
     expect(JSON.parse((fetchImpl.mock.calls[0][1] as { body: string }).body)).toEqual({
       query: 'playwright browsers',
-      max_results: 10
+      count: 10
     });
+  });
+
+  it('uses the first web snippet when description is absent', () => {
+    expect(normalizeYouComResults({
+      results: {
+        web: [{ title: 'Snippet fallback', url: 'https://example.com', snippets: [42, 'First text', 'Second text'] }]
+      }
+    })).toEqual({
+      rawCount: 1,
+      results: [{ title: 'Snippet fallback', url: 'https://example.com', snippet: 'First text' }]
+    });
+  });
+
+  it('accepts web-only, news-only, and valid empty sections', () => {
+    expect(normalizeYouComResults({ results: { web: [{ title: 'Web', url: 'https://web.example' }] } })).toEqual({
+      rawCount: 1,
+      results: [{ title: 'Web', url: 'https://web.example', snippet: '' }]
+    });
+    expect(normalizeYouComResults({ results: { news: [{ title: 'News', url: 'https://news.example' }] } })).toEqual({
+      rawCount: 1,
+      results: [{ title: 'News', url: 'https://news.example', snippet: '' }]
+    });
+    expect(normalizeYouComResults({ results: { web: [], news: [] } })).toEqual({ rawCount: 0, results: [] });
   });
 
   it('rejects empty queries with youcom metadata', async () => {
@@ -80,7 +101,7 @@ describe('youcom search', () => {
   it('treats a body whose items all fail normalization as bad_response', async () => {
     const search = createYouComSearchTool({
       apiKey: 'key',
-      fetchImpl: vi.fn().mockResolvedValue(response({ results: [{ title: 'No URL' }] }))
+      fetchImpl: vi.fn().mockResolvedValue(response({ results: { web: [{ title: 'No URL' }] } }))
     });
 
     const result = await search({ query: 'empty' });
@@ -121,9 +142,9 @@ describe('youcom search', () => {
     });
   });
 
-  it('treats a missing snippet as an empty string', async () => {
+  it('treats a missing description and snippets as an empty string', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response({
-      results: [{ title: 'No snippet', url: 'https://example.com' }]
+      results: { web: [{ title: 'No snippet', url: 'https://example.com' }] }
     }));
 
     const search = createYouComSearchTool({ apiKey: 'key', fetchImpl });
@@ -134,14 +155,14 @@ describe('youcom search', () => {
   });
 
   it('returns ok with an empty list for a valid empty response', async () => {
-    const search = createYouComSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ results: [] })) });
+    const search = createYouComSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response({ results: { web: [], news: [] } })) });
     const result = await search({ query: 'q' });
     expect(result).toMatchObject({ status: 'ok', results: [] });
     expect(result.error).toBeUndefined();
   });
 
-  it('treats a malformed body as bad_response', async () => {
-    for (const body of ['not json', { results: 'nope' }]) {
+  it('treats missing, absent, and non-array result sections as bad_response', async () => {
+    for (const body of ['not json', {}, { results: {} }, { results: 'nope' }, { results: { web: 'nope' } }, { results: { news: 'nope' } }]) {
       const search = createYouComSearchTool({ apiKey: 'key', fetchImpl: vi.fn().mockResolvedValue(response(body)) });
       const result = await search({ query: 'q' });
       expect(result.error).toMatchObject({ code: 'BAD_RESPONSE', failure: { kind: 'bad_response' } });

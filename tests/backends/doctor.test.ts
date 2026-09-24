@@ -123,7 +123,7 @@ describe('backend doctor checks', () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ results: [{ title: 'A', url: 'https://example.com' }] })
+      json: vi.fn().mockResolvedValue({ results: { web: [{ title: 'A', url: 'https://example.com' }] } })
     });
 
     try {
@@ -135,12 +135,36 @@ describe('backend doctor checks', () => {
       expect(lines).toContain('search backend: youcom ok');
       expect(lines).toContain('search fallback: duckduckgo');
       expect(fetchImpl).toHaveBeenCalledWith(
-        'https://api.you.com/v1/agents/search',
+        'https://ydc-index.io/v1/search',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({ 'X-API-Key': 'key' })
         })
       );
+      expect(JSON.parse((fetchImpl.mock.calls[0][1] as { body: string }).body)).toEqual({ query: 'pi-web-agent-doctor', count: 1 });
+    } finally {
+      if (original === undefined) delete process.env.YDC_API_KEY;
+      else process.env.YDC_API_KEY = original;
+    }
+  });
+
+  it('reports youcom ok for a valid empty response and warns for malformed or all-invalid responses', async () => {
+    const original = process.env.YDC_API_KEY;
+    process.env.YDC_API_KEY = 'key';
+
+    try {
+      for (const [body, expected] of [
+        [{ results: { web: [], news: [] } }, 'search backend: youcom ok'],
+        [{ results: { web: [{ title: 'Missing URL' }] } }, 'search backend: youcom warning (unexpected response)'],
+        [{ results: {} }, 'search backend: youcom warning (unexpected response)']
+      ] as const) {
+        const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue(body) });
+        const lines = await checkBackendHealth(
+          { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'youcom' } },
+          { fetchImpl: fetchImpl as unknown as typeof fetch }
+        );
+        expect(lines).toContain(expected);
+      }
     } finally {
       if (original === undefined) delete process.env.YDC_API_KEY;
       else process.env.YDC_API_KEY = original;
