@@ -208,7 +208,12 @@ describe('withFetchPolicy', () => {
   it('retries a transient Firecrawl failure once before falling back', async () => {
     const x = deps();
     const primary = vi.fn(async () => page('error', { kind: 'transient' }));
-    await withFetchPolicy(primary, async () => http(), x)({ url: 'https://page.test/' });
+    const fallback = vi.fn(async () => http());
+    const input = { url: 'https://page.test/', query: 'relevant section' };
+    await withFetchPolicy(primary, fallback, x)(input);
     expect(primary).toHaveBeenCalledTimes(2);
+    expect(primary).toHaveBeenNthCalledWith(1, input);
+    expect(primary).toHaveBeenNthCalledWith(2, input);
+    expect(fallback).toHaveBeenCalledWith(input);
   });
 });

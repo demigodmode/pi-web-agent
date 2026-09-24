@@ -54,6 +54,12 @@ describe('research worker', () => {
   });
 
   it('flags a likely headless candidate when http fetch is weak', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({
+      status: 'needs_headless' as const,
+      url: 'https://example.com/app',
+      metadata: { method: 'http' as const, cacheHit: false, contentType: 'text/html' },
+      error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
+    });
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
         status: 'ok',
@@ -66,12 +72,7 @@ describe('research worker', () => {
         ],
         metadata: { backend: 'duckduckgo', cacheHit: false }
       }),
-      fetchPage: vi.fn().mockResolvedValue({
-        status: 'needs_headless',
-        url: 'https://example.com/app',
-        metadata: { method: 'http', cacheHit: false, contentType: 'text/html' },
-        error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
-      })
+      fetchPage
     });
 
     const result = await worker.run({
@@ -82,6 +83,7 @@ describe('research worker', () => {
 
     expect(result.suggestedHeadlessUrl).toBe('https://example.com/app');
     expect(result.gaps[0]?.kind).toBe('fetch-failed');
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com/app', query: 'dynamic docs app' });
   });
 
   it('records empty search results as a low-value outcome', async () => {

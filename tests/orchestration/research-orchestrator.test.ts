@@ -100,6 +100,10 @@ describe('research orchestrator types', () => {
     const result = await orchestrator.run({ query: 'Read https://example.com/thread?utm_source=x' });
 
     expect(calls[0]).toBe('direct:https://example.com/thread');
+    expect(fetchDirect).toHaveBeenCalledWith({
+      url: 'https://example.com/thread',
+      query: 'Read https://example.com/thread?utm_source=x'
+    });
     expect(result.evidence[0]?.url).toBe('https://example.com/thread');
   });
 
@@ -127,7 +131,10 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'Read https://example.com/comment' });
 
-    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/comment' });
+    expect(headlessFetch).toHaveBeenCalledWith({
+      url: 'https://example.com/comment',
+      query: 'Read https://example.com/comment'
+    });
     expect(result.evidence[0]?.method).toBe('headless');
   });
 
@@ -155,7 +162,10 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/' });
 
-    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://www.reddit.com/r/selfhosted/comments/abc/example' });
+    expect(headlessFetch).toHaveBeenCalledWith({
+      url: 'https://www.reddit.com/r/selfhosted/comments/abc/example',
+      query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/'
+    });
     expect(result.workerPass.gaps).toContainEqual({
       kind: 'fetch-failed',
       message: 'Thread source could not be read reliably: https://www.reddit.com/r/selfhosted/comments/abc/example'
@@ -423,7 +433,7 @@ describe('research orchestrator types', () => {
 
     expect(result.decision.action).toBe('research-again');
     expect(result.evidence).toHaveLength(1);
-    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app' });
+    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app', query: 'dynamic app' });
   });
 
   it('answers once two strong sources exist and one is official', async () => {
