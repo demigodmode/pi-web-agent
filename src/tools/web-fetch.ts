@@ -1,13 +1,13 @@
 import { createHttpFetcher } from '../fetch/http-fetch.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
-import type { WebFetchResponse } from '../types.js';
+import type { ResearchFetchInput, WebFetchResponse } from '../types.js';
 
 export function createWebFetchTool({
-  fetchPage = createHttpFetcher()
+  fetchPage = ({ url, query }) => createHttpFetcher()(url, query)
 }: {
-  fetchPage?: (url: string) => Promise<WebFetchResponse>;
+  fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 } = {}) {
-  return async function webFetch({ url }: { url: string }): Promise<WebFetchResponse> {
+  return async function webFetch({ url, query }: ResearchFetchInput): Promise<WebFetchResponse> {
     if (!/^https?:\/\//.test(url)) {
       const result: WebFetchResponse = {
         status: 'unsupported',
@@ -22,7 +22,7 @@ export function createWebFetchTool({
       };
     }
 
-    const result = await fetchPage(url);
+    const result = await fetchPage({ url, ...(query ? { query } : {}) });
     return {
       ...result,
       presentation: buildFetchPresentation(result)

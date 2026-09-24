@@ -1,15 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createWebFetchHeadlessTool } from '../../src/tools/web-fetch-headless.js';
 
 describe('web_fetch_headless tool', () => {
   it('passes through headless fetch results', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({
+      status: 'ok',
+      url: 'https://example.com',
+      metadata: { method: 'headless', cacheHit: false, browser: 'chrome', navigationMs: 1200 },
+      content: { text: 'Rendered text' }
+    });
     const tool = createWebFetchHeadlessTool({
-      fetchPage: async () => ({
-        status: 'ok',
-        url: 'https://example.com',
-        metadata: { method: 'headless', cacheHit: false, browser: 'chrome', navigationMs: 1200 },
-        content: { text: 'Rendered text' }
-      })
+      fetchPage
     });
     const result = await tool({ url: 'https://example.com' });
 
@@ -23,6 +24,7 @@ describe('web_fetch_headless tool', () => {
         }
       }
     });
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com' });
   });
 
   it('can be constructed without dependency arguments', () => {

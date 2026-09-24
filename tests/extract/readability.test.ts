@@ -1,7 +1,99 @@
 import { describe, expect, it } from 'vitest';
-import { extractReadableContent, extractReadableContentSafely } from '../../src/extract/readability.js';
+import { extractReadableContent, extractReadableContentForQuery, extractReadableContentSafely } from '../../src/extract/readability.js';
 
 describe('readability extraction', () => {
+  it('keeps a relevant answer after the leading 4,000 characters', () => {
+    const html = `<html><body><article>
+      <h1>Service guide</h1>
+      <p>${'General information about this service. '.repeat(180)}</p>
+      <h2 id="late-answer">Cancellation deadline</h2>
+      <p>The cancellation deadline is 14 days.</p>
+    </article></body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.text.length).toBeLessThanOrEqual(4000);
+    expect(result.content.sectionAnchor).toBe('late-answer');
+    expect(result.omitted).toBe(true);
+  });
+
+  it('recovers a late relevant main section omitted by Readability', () => {
+    const html = `<html><body>
+      <nav><h2>Cancellation deadline</h2><p>Navigation item</p></nav>
+      <article><h1>Guide</h1><p>${'intro '.repeat(1000)}</p></article>
+      <main><h2 id="late">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p></main>
+    </body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.mode).toBe('readability');
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.text).not.toContain('Navigation item');
+    expect(result.content.sectionAnchor).toBe('late');
+  });
+
+  it('keeps main siblings after a nested article when recovering content', () => {
+    const html = `<html><body><main>
+      <article><h1>Guide</h1><p>${'intro '.repeat(1000)}</p></article>
+      <h2 id="late">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p>
+    </main></body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.sectionAnchor).toBe('late');
+  });
+
+  it('prefers a more complete main query match over Readability partial content', () => {
+    const html = `<html><body>
+      <article><h1>Guide</h1><h2>Cancellation overview</h2><p>${'intro '.repeat(1000)}</p></article>
+      <main><h2 id="late">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p></main>
+    </body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.sectionAnchor).toBe('late');
+  });
+
+  it('selects a late answer through the CSS parser fallback', () => {
+    const html = `<html><head><style>.x { &:hover { color: red; } }</style></head><body><main>
+      <h1>Service guide</h1><p>${'General information. '.repeat(300)}</p>
+      <h2 id="deadline">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p>
+      <script>const secret = 'script content';</script>
+    </main></body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.mode).toBe('fallback');
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.text).not.toContain('script content');
+    expect(result.content.text).not.toContain('color: red');
+    expect(result.content.sectionAnchor).toBe('deadline');
+  });
+
+  it('uses leading text when no query terms match', () => {
+    const html = `<html><body><article><p>${'General information. '.repeat(300)}</p></article></body></html>`;
+    const baseline = extractReadableContentSafely(html);
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.text.slice(0, 100)).toBe(baseline.content.text.slice(0, 100));
+    expect(result.content.text.length).toBeLessThanOrEqual(4000);
+  });
+
+  it('preserves Readability metadata with a query-selected section', () => {
+    const html = `<html><head><title>Service guide</title><meta name="author" content="Ada Lovelace"></head>
+      <body><article><h1>Service guide</h1><p>${'General information. '.repeat(300)}</p>
+      <h2 id="deadline">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p>
+      </article></body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.title).toBe('Service guide');
+    expect(result.content.byline).toBe('Ada Lovelace');
+  });
+
   it('extracts readable text from article-like HTML', () => {
     const result = extractReadableContent(`
       <html>

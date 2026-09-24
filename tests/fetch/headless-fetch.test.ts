@@ -6,6 +6,72 @@ import type { GuardProxy, Refusal } from '../../src/fetch/guard-proxy.js';
 import { BlockedAddressError, UnverifiedDestinationError, type GuardError } from '../../src/fetch/network-guard.js';
 
 describe('headless fetch', () => {
+  it('keeps no-query rendered chrome that cleans below the minimum as weak', async () => {
+    const result = await headlessFetch('https://example.com/chrome', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => undefined,
+            waitForLoadState: async () => undefined,
+            content: async () => `<html><body><article><p>${'Show more '.repeat(10)}</p></article></body></html>`,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }))
+    });
+
+    expect(result).toMatchObject({ status: 'blocked', error: { code: 'HEADLESS_EXTRACTION_WEAK' } });
+  });
+
+  it('selects a late relevant rendered section when given a query', async () => {
+    const earlyText = 'General documentation background. '.repeat(220);
+    const result = await headlessFetch('https://example.com/guide', {
+      query: 'cancellation deadline',
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => undefined,
+            waitForLoadState: async () => undefined,
+            content: async () => `<html><body><article><p>${earlyText}</p><h2 id="cancellation">Cancellation deadline</h2><p>The cancellation deadline is 48 hours before departure.</p></article></body></html>`,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }))
+    });
+
+    expect(result).toMatchObject({ status: 'ok', content: { sectionAnchor: 'cancellation' }, metadata: { truncated: true } });
+    expect(result.content?.text).toContain('48 hours before departure');
+    expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+  });
+
+  it('preserves a raw bot-wall signal omitted by query selection', async () => {
+    const result = await headlessFetch('https://example.com/guide', {
+      query: 'lunar archive transfer manifest',
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => undefined,
+            waitForLoadState: async () => undefined,
+            content: async () => `<html><body><main><h1>Lunar archive transfer manifest</h1><p>${'Lunar archive transfer manifest instructions. '.repeat(110)}</p><p>Performing security verification. Please verify you are not a bot.</p></main></body></html>`,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }))
+    });
+
+    expect(result).toMatchObject({ status: 'ok', content: { botCheck: true } });
+    expect(result.content?.text).not.toContain('Performing security verification');
+  });
+
   it('falls back to Playwright-managed Chromium when no local browser can be resolved', async () => {
     const launchBrowser = vi.fn(async () => ({
       newContext: async () => ({

@@ -1,4 +1,5 @@
-import { extractReadableContentSafely } from '../extract/readability.js';
+import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 import { findGuardError } from './network-guard.js';
 import type { WebFetchResponse } from '../types.js';
 
@@ -26,7 +27,7 @@ export function createHttpFetcher({
 }: {
   fetchImpl?: typeof fetch;
 } = {}) {
-  return async function httpFetch(url: string): Promise<WebFetchResponse> {
+  return async function httpFetch(url: string, query?: string): Promise<WebFetchResponse> {
     let response: Response;
     try {
       response = await fetchImpl(url);
@@ -51,13 +52,18 @@ export function createHttpFetcher({
     }
 
     const html = await response.text();
-    const extraction = extractReadableContentSafely(html);
-    const content = extraction.content;
+    const baselineExtraction = extractReadableContentSafely(html);
+    const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
+    const extraction = queryExtraction ?? baselineExtraction;
+    const content = {
+      ...extraction.content,
+      ...(hasBotCheckContent(html, 'html') ? { botCheck: true } : {})
+    };
 
     if (
       looksLikeScriptShell(html) ||
-      content.text.length < 40 ||
-      isWeakHttpContent({ html, title: content.title, text: content.text })
+      baselineExtraction.content.text.length < 40 ||
+      isWeakHttpContent({ html, title: baselineExtraction.content.title, text: baselineExtraction.content.text })
     ) {
       return {
         status: 'needs_headless',
@@ -74,7 +80,7 @@ export function createHttpFetcher({
       status: 'ok',
       url: response.url,
       content,
-      metadata: { method: 'http', cacheHit: false, contentType, truncated: content.text.length >= 4000 }
+      metadata: { method: 'http', cacheHit: false, contentType, truncated: queryExtraction?.omitted ?? content.text.length >= 4000 }
     };
   };
 }

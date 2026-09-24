@@ -1,6 +1,7 @@
 import { Readability } from '@mozilla/readability';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import type { ExtractedContent } from '../types.js';
+import { selectRelevantContent } from './section-selector.js';
 
 export type ReadableExtractionMode = 'readability' | 'fallback';
 
@@ -86,6 +87,13 @@ function extractPreferredSection(html: string): string {
   return html;
 }
 
+function extractPreferredDomSection(document: Document): string {
+  const region = document.querySelector('main') ?? document.querySelector('article') ?? document.body;
+  const cleanedRegion = region.cloneNode(true) as Element;
+  cleanedRegion.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
+  return cleanedRegion.outerHTML;
+}
+
 function extractFallbackText(html: string, maxLength: number): ExtractedContent {
   const title = extractTitle(html);
   let section = extractPreferredSection(html);
@@ -121,6 +129,62 @@ export function extractReadableContentSafely(
     return {
       mode: 'fallback',
       content: extractFallbackText(html, maxLength)
+    };
+  }
+}
+
+/** Research-only extraction: choose relevant content before the usual text cap. */
+export function extractReadableContentForQuery(
+  html: string,
+  query: string,
+  maxLength = 4000
+): SafeReadableExtraction & { omitted: boolean } {
+  let stylesheetError: Error | undefined;
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('jsdomError', (error) => {
+    if (!stylesheetError && error.message.includes('Could not parse CSS stylesheet')) {
+      stylesheetError = error;
+    }
+  });
+
+  try {
+    const dom = new JSDOM(html, { url: 'https://example.com', virtualConsole });
+    if (stylesheetError) throw stylesheetError;
+    const preferredRegion = extractPreferredDomSection(dom.window.document);
+    const article = new Readability(dom.window.document).parse();
+    const selected = selectRelevantContent({
+      source: article?.content ?? dom.window.document.body.innerHTML,
+      format: 'html', query, maxLength
+    });
+    const preferredSelection = selectRelevantContent({
+      source: preferredRegion,
+      format: 'html', query, maxLength
+    });
+    const querySelection = preferredSelection.matched ? preferredSelection : selected;
+    return {
+      mode: 'readability',
+      omitted: querySelection.omitted,
+      content: {
+        title: article?.title ?? (dom.window.document.title || undefined),
+        byline: article?.byline || undefined,
+        text: querySelection.text,
+        ...(querySelection.anchor ? { sectionAnchor: querySelection.anchor } : {})
+      }
+    };
+  } catch {
+    let region = extractPreferredSection(html);
+    for (const tag of ['script', 'style', 'noscript', 'svg', 'template']) {
+      region = stripTagContent(region, tag);
+    }
+    const selected = selectRelevantContent({ source: region, format: 'html', query, maxLength });
+    return {
+      mode: 'fallback',
+      omitted: selected.omitted,
+      content: {
+        title: extractTitle(html),
+        text: selected.text,
+        ...(selected.anchor ? { sectionAnchor: selected.anchor } : {})
+      }
     };
   }
 }

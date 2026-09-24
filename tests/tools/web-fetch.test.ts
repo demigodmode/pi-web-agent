@@ -17,13 +17,14 @@ describe('web_fetch tool', () => {
   });
 
   it('passes through honest fetch results', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({
+      status: 'needs_headless',
+      url: 'https://example.com',
+      metadata: { method: 'http', cacheHit: false },
+      error: { code: 'WEAK_EXTRACTION', message: 'not enough content' }
+    });
     const webFetch = createWebFetchTool({
-      fetchPage: vi.fn().mockResolvedValue({
-        status: 'needs_headless',
-        url: 'https://example.com',
-        metadata: { method: 'http', cacheHit: false },
-        error: { code: 'WEAK_EXTRACTION', message: 'not enough content' }
-      })
+      fetchPage
     });
 
     await expect(webFetch({ url: 'https://example.com' })).resolves.toMatchObject({
@@ -34,6 +35,7 @@ describe('web_fetch tool', () => {
         }
       }
     });
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com' });
   });
 
   it('can be constructed without dependency arguments', () => {

@@ -1,13 +1,13 @@
-import type { WebFetchResponse } from '../types.js';
+import type { ResearchFetchInput, WebFetchResponse } from '../types.js';
 import type { SpecialContentReader } from './types.js';
 
 type ResolverDeps = {
   readers: SpecialContentReader[];
-  fallback: (input: { url: string }) => Promise<WebFetchResponse>;
+  fallback: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 };
 
 export function createSpecialContentResolver({ readers, fallback }: ResolverDeps) {
-  return async function resolve(input: { url: string }): Promise<WebFetchResponse> {
+  return async function resolve(input: ResearchFetchInput): Promise<WebFetchResponse> {
     const matched = readers.find((reader) => reader.canHandle(input.url));
     if (matched) {
       return matched.read(input.url);

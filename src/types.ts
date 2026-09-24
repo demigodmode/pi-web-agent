@@ -89,6 +89,11 @@ export type SearchMetadata = {
 
 export type FetchMethod = 'http' | 'headless' | 'firecrawl' | 'github' | 'pdf' | 'youtube';
 
+export type ResearchFetchInput = {
+  url: string;
+  query?: string;
+};
+
 export type FetchMetadata = {
   method: FetchMethod;
   cacheHit: boolean;
@@ -107,6 +112,10 @@ export type ExtractedContent = {
   title?: string;
   byline?: string;
   text: string;
+  /** A bot or security verification marker appeared in the source before query selection. */
+  botCheck?: boolean;
+  /** Anchor of the section chosen for research; direct fetches do not set this. */
+  sectionAnchor?: string;
 };
 
 export type WebSearchResponse = {

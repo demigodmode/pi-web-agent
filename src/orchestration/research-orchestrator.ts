@@ -1,4 +1,4 @@
-import type { Attempt, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
+import type { Attempt, ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
@@ -13,6 +13,8 @@ import type {
 } from './research-types.js';
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
+import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -22,23 +24,18 @@ function classifyEvidenceUrl(url: string): ResearchEvidence['sourceKind'] {
   return classifySourceProfile(url).sourceKind;
 }
 
-function summarizeText(text: string, maxLength = 180): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
-}
-
 function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
 }
 
-function isBotCheckContent({ title = '', text }: { title?: string; text: string }) {
-  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
-    `${title}\n${text}`
-  );
+function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
+  if (botCheck) return true;
+  return hasBotCheckContent(`${title}\n${text}`);
 }
 
-function evidenceFromFetch(result: WebFetchResponse): ResearchEvidence | null {
+function evidenceFromFetch(result: WebFetchResponse, query: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
-  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   if (isReaderMethod(result.metadata.method)) {
     return {
@@ -56,22 +53,22 @@ function evidenceFromFetch(result: WebFetchResponse): ResearchEvidence | null {
     url: result.url,
     sourceKind: classifyEvidenceUrl(result.url),
     method: result.metadata.method,
-    summary: summarizeText(result.content.text),
-    supports: [summarizeText(result.content.text, 120)]
+    summary: selectRelevantExcerpt(result.content.text, query, 180),
+    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
   };
 }
 
-function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidence | null {
+function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
-  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   return {
     title: result.content.title ?? result.url,
     url: result.url,
     sourceKind: classifyEvidenceUrl(result.url),
     method: 'headless',
-    summary: summarizeText(result.content.text),
-    supports: [summarizeText(result.content.text, 120)]
+    summary: selectRelevantExcerpt(result.content.text, query, 180),
+    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
   };
 }
 
@@ -183,8 +180,8 @@ export function createResearchOrchestrator({
       maxFetches: number;
     }) => Promise<ResearchWorkerResult>;
   };
-  fetchDirect?: (input: { url: string }) => Promise<WebFetchResponse>;
-  headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
+  fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
+  headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 }) {
   return {
     async run({ query }: { query: string }) {
@@ -209,9 +206,9 @@ export function createResearchOrchestrator({
 
       if (fetchDirect) {
         for (const url of extractDirectUrls(query).slice(0, 3)) {
-          const directResult = await fetchDirect({ url });
+          const directResult = await fetchDirect({ url, query });
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
-          const directEvidence = evidenceFromFetch(directResult);
+          const directEvidence = evidenceFromFetch(directResult, query);
           if (directEvidence) {
             allEvidence.push(directEvidence);
             continue;
@@ -228,8 +225,8 @@ export function createResearchOrchestrator({
           if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
               headlessAttempts++;
-              const headlessResult = await headlessFetch({ url: directResult.url });
-              const headlessEvidence = evidenceFromHeadless(headlessResult);
+              const headlessResult = await headlessFetch({ url: directResult.url, query });
+              const headlessEvidence = evidenceFromHeadless(headlessResult, query);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
               } else {
@@ -335,8 +332,8 @@ export function createResearchOrchestrator({
 
           if (decision.action === 'headless') {
             headlessAttempts++;
-            const headlessResult = await headlessFetch({ url: decision.url });
-            const headlessEvidence = evidenceFromHeadless(headlessResult);
+            const headlessResult = await headlessFetch({ url: decision.url, query });
+            const headlessEvidence = evidenceFromHeadless(headlessResult, query);
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);
               const updatedRanked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));

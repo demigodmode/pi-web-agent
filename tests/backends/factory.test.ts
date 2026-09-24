@@ -220,21 +220,25 @@ describe('backend factory', () => {
   });
 
   it('falls back from Firecrawl weak extraction to HTTP when configured', async () => {
-    const firecrawl = async () => ({
+    const firecrawl = vi.fn(async (_url: string, _query?: string) => ({
       status: 'needs_headless' as const,
       url: 'https://example.com',
       metadata: { method: 'firecrawl' as const, cacheHit: false },
       error: { code: 'WEAK_EXTRACTION', message: 'weak' }
-    });
-    const httpFetch = async ({ url }: { url: string }) => ({
+    }));
+    const httpFetch = vi.fn(async ({ url }: { url: string; query?: string }) => ({
       status: 'ok' as const,
       url,
       content: { text: 'HTTP content' },
       metadata: { method: 'http' as const, cacheHit: false }
-    });
-    const createHttpFetch = (options?: { fetchPage?: (url: string) => Promise<any> }) => async ({ url }: { url: string }) => {
-      if (options?.fetchPage) return options.fetchPage(url);
-      return httpFetch({ url });
+    }));
+    let createdFetchTools = 0;
+    const createHttpFetch = (options?: { fetchPage?: (input: { url: string; query?: string }) => Promise<any> }) => {
+      const isHttpFallback = createdFetchTools++ === 0;
+      return async ({ url, query }: { url: string; query?: string }) => {
+        if (isHttpFallback) return httpFetch({ url, query });
+        return options!.fetchPage!({ url, query });
+      };
     };
 
     const backends = createBackendSet(
@@ -242,10 +246,28 @@ describe('backend factory', () => {
       { ...offlineNetworkDeps(), createFirecrawlFetch: () => firecrawl, createHttpFetch: createHttpFetch as never }
     );
 
-    await expect(backends.fetchPage({ url: 'https://example.com' })).resolves.toMatchObject({
+    await expect(backends.fetchPage({ url: 'https://example.com', query: 'relevant section' })).resolves.toMatchObject({
       status: 'ok',
       metadata: { method: 'http', fallbackFrom: 'firecrawl', fallbackReason: 'weak' }
     });
+    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section');
+    expect(httpFetch).toHaveBeenCalledWith({ url: 'https://example.com', query: 'relevant section' });
+  });
+
+  it('forwards the research query to the headless backend', async () => {
+    const headlessTool = vi.fn(async ({ url, query }: { url: string; query?: string }) => ({
+      status: 'ok' as const,
+      url,
+      content: { text: query ?? '' },
+      metadata: { method: 'headless' as const, cacheHit: false }
+    }));
+    const createHeadlessFetch = vi.fn(() => headlessTool);
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, { ...offlineNetworkDeps(), createHeadlessFetch: createHeadlessFetch as never });
+
+    await expect(backends.headlessFetch({ url: 'https://example.com', query: 'relevant section' })).resolves.toMatchObject({
+      status: 'ok'
+    });
+    expect(headlessTool).toHaveBeenCalledWith({ url: 'https://example.com', query: 'relevant section' });
   });
 
   it('creates exa search with the environment API key', () => {

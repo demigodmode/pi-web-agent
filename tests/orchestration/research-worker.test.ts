@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createResearchWorker } from '../../src/orchestration/research-worker.js';
+import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('research worker', () => {
   it('runs one bounded search/fetch pass and summarizes evidence', async () => {
@@ -53,7 +54,67 @@ describe('research worker', () => {
     expect(result.exhaustedBudget).toBe(false);
   });
 
+  it('uses a query-relevant late passage for non-reader evidence', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive guide' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok',
+        url: 'https://example.com/archive',
+        content: {
+          title: 'Archive guide',
+          text: `${'General archive background. '.repeat(12)}\n\nLunar archive transfer requires the signed manifest before upload.`
+        },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      })
+    });
+
+    const result = await worker.run({ query: 'lunar archive transfer', maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(result.evidence[0]?.summary).toContain('Lunar archive transfer requires the signed manifest');
+    expect(result.evidence[0]?.supports[0]).toContain('Lunar archive transfer requires the signed manifest');
+  });
+
+  it('keeps a Firecrawl bot wall omitted by query selection out of evidence', async () => {
+    const query = 'lunar archive transfer manifest';
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        markdown: `# Lunar archive transfer manifest\n\n${'Lunar archive transfer manifest instructions. '.repeat(110)}\n\nPerforming security verification. Please verify you are not a bot.`,
+        metadata: { title: 'Archive guide' }
+      }
+    })));
+    const firecrawlFetch = createFirecrawlFetcher({ baseUrl: 'http://firecrawl.test', fetchImpl });
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive transfer details' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: ({ url, query: activeQuery }) => firecrawlFetch(url, activeQuery)
+    });
+
+    const result = await worker.run({ query, maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(0);
+    expect(result.lowValueOutcomes).toContainEqual({
+      kind: 'bot-check',
+      url: 'https://example.com/archive',
+      message: 'Fetched page showed a bot-check or security verification page.'
+    });
+  });
+
   it('flags a likely headless candidate when http fetch is weak', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({
+      status: 'needs_headless' as const,
+      url: 'https://example.com/app',
+      metadata: { method: 'http' as const, cacheHit: false, contentType: 'text/html' },
+      error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
+    });
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
         status: 'ok',
@@ -66,12 +127,7 @@ describe('research worker', () => {
         ],
         metadata: { backend: 'duckduckgo', cacheHit: false }
       }),
-      fetchPage: vi.fn().mockResolvedValue({
-        status: 'needs_headless',
-        url: 'https://example.com/app',
-        metadata: { method: 'http', cacheHit: false, contentType: 'text/html' },
-        error: { code: 'WEAK_EXTRACTION', message: 'HTTP extraction was not reliable enough.' }
-      })
+      fetchPage
     });
 
     const result = await worker.run({
@@ -82,6 +138,7 @@ describe('research worker', () => {
 
     expect(result.suggestedHeadlessUrl).toBe('https://example.com/app');
     expect(result.gaps[0]?.kind).toBe('fetch-failed');
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com/app', query: 'dynamic docs app' });
   });
 
   it('records empty search results as a low-value outcome', async () => {

@@ -1,6 +1,6 @@
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import type { Attempt, FailureInfo, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { Attempt, FailureInfo, ResearchFetchInput, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { failureOf, shouldFallBack } from './failure.js';
 import type { ProviderHealth, ProviderHealthState } from './provider-health.js';
 
@@ -15,7 +15,7 @@ export type PolicyDeps = {
 };
 
 type Search = (input: { query: string }) => Promise<WebSearchResponse>;
-type FetchPage = (input: { url: string }) => Promise<WebFetchResponse>;
+type FetchPage = (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 
 const USER_FIXABLE_KINDS: ReadonlySet<string> = new Set(['not_configured', 'auth_failed', 'quota_exhausted']);
 

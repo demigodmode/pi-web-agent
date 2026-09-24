@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
-import { extractReadableContentSafely } from '../extract/readability.js';
+import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import { BLOCKED_HEADER, type GuardProxy } from './guard-proxy.js';
 import { BLOCKED_PRIVATE_ADDRESS, BlockedAddressError, UPSTREAM_PROXY_REFUSED, type NetworkGuard } from './network-guard.js';
@@ -46,6 +47,7 @@ export async function headlessFetch(
   url: string,
   {
     configuredPath,
+    query,
     proxy,
     guard,
     guardProxy,
@@ -62,6 +64,7 @@ export async function headlessFetch(
     now = () => Date.now()
   }: {
     configuredPath?: string;
+    query?: string;
     /** Only used without a guard. With a guard, Chromium always goes through the guard proxy, which chains upstream itself. */
     proxy?: BrowserProxyOptions;
     guard?: NetworkGuard;
@@ -248,13 +251,17 @@ export async function headlessFetch(
     const finishedAt = now();
 
     const blockedSubresources = subresourceRefusals();
-    const extraction = extractReadableContentSafely(html);
+    const baselineExtraction = extractReadableContentSafely(html);
+    const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
+    const extraction = queryExtraction ?? baselineExtraction;
+    const cleanedBaselineText = cleanupRenderedText(baselineExtraction.content.text);
     const cleanedContent = {
       ...extraction.content,
-      text: cleanupRenderedText(extraction.content.text)
+      text: cleanupRenderedText(extraction.content.text),
+      ...(hasBotCheckContent(html, 'html') ? { botCheck: true } : {})
     };
 
-    if (!cleanedContent.text || cleanedContent.text.length < 40) {
+    if (!cleanedBaselineText || cleanedBaselineText.length < 40) {
       return {
         status: 'blocked',
         url,
@@ -281,7 +288,7 @@ export async function headlessFetch(
         cacheHit: false,
         browser: browserName,
         navigationMs: finishedAt - startedAt,
-        truncated: cleanedContent.text.length >= 4000,
+        truncated: queryExtraction?.omitted ?? cleanedContent.text.length >= 4000,
         ...(blockedSubresources > 0 ? { blockedSubresources } : {})
       }
     };
