@@ -1,4 +1,4 @@
-import type { Attempt, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
+import type { Attempt, ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
@@ -183,8 +183,8 @@ export function createResearchOrchestrator({
       maxFetches: number;
     }) => Promise<ResearchWorkerResult>;
   };
-  fetchDirect?: (input: { url: string }) => Promise<WebFetchResponse>;
-  headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
+  fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
+  headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 }) {
   return {
     async run({ query }: { query: string }) {
@@ -209,7 +209,7 @@ export function createResearchOrchestrator({
 
       if (fetchDirect) {
         for (const url of extractDirectUrls(query).slice(0, 3)) {
-          const directResult = await fetchDirect({ url });
+          const directResult = await fetchDirect({ url, query });
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
           const directEvidence = evidenceFromFetch(directResult);
           if (directEvidence) {
@@ -228,7 +228,7 @@ export function createResearchOrchestrator({
           if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
               headlessAttempts++;
-              const headlessResult = await headlessFetch({ url: directResult.url });
+              const headlessResult = await headlessFetch({ url: directResult.url, query });
               const headlessEvidence = evidenceFromHeadless(headlessResult);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
@@ -335,7 +335,7 @@ export function createResearchOrchestrator({
 
           if (decision.action === 'headless') {
             headlessAttempts++;
-            const headlessResult = await headlessFetch({ url: decision.url });
+            const headlessResult = await headlessFetch({ url: decision.url, query });
             const headlessEvidence = evidenceFromHeadless(headlessResult);
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);

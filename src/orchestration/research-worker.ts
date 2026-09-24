@@ -1,5 +1,5 @@
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
-import type { Attempt, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { Attempt, ResearchFetchInput, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
 import type {
@@ -86,7 +86,7 @@ export function createResearchWorker({
   fetchPage
 }: {
   search: (input: { query: string }) => Promise<WebSearchResponse>;
-  fetchPage: (input: { url: string }) => Promise<WebFetchResponse>;
+  fetchPage: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 }) {
   return {
     async run({
@@ -183,7 +183,7 @@ export function createResearchWorker({
 
       const fetchAttempts: Attempt[] = [];
       for (const candidate of candidates) {
-        const fetched = await fetchPage({ url: candidate.url });
+        const fetched = await fetchPage({ url: candidate.url, query });
         if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
 
         if (fetched.status === 'ok') {

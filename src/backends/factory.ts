@@ -20,7 +20,7 @@ import { buildSearchPresentation } from '../presentation/search-presentation.js'
 import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
-import type { SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
 import { createGithubReader } from '../readers/github-reader.js';
@@ -29,8 +29,8 @@ import { createYoutubeReader } from '../readers/youtube-reader.js';
 
 export type BackendSet = {
   search: (input: { query: string }) => Promise<WebSearchResponse>;
-  fetchPage: (input: { url: string }) => Promise<WebFetchResponse>;
-  headlessFetch: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
+  fetchPage: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
+  headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
   /** Releases the guard proxy and its agents. Idempotent; never starts the proxy. */
   close: () => Promise<void>;
 };
@@ -302,20 +302,20 @@ export function createBackendSet(
     search = chainSearch([search, guarded('tavily', createTavilySearch({ keyless: true, fetchImpl }), 'tavily-keyless')], policyDeps);
   }
 
-  const httpFetch = createHttpFetch({ fetchPage: createHttpFetcher({ fetchImpl: targetFetch }) });
+  const httpFetcher = createHttpFetcher({ fetchImpl: targetFetch });
+  const httpFetch = createHttpFetch({ fetchPage: ({ url, query }) => httpFetcher(url, query) });
+  const firecrawlFetcher = config.fetch.baseUrl
+    ? createFirecrawlFetch({
+        baseUrl: config.fetch.baseUrl,
+        apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY,
+        options: config.fetch.options,
+        fetchImpl
+      })
+    : invalidFirecrawlFetch();
   const fetchPage: BackendSet['fetchPage'] =
     config.fetch.provider === 'firecrawl'
       ? withFetchPolicy(
-          config.fetch.baseUrl
-            ? createHttpFetch({
-                fetchPage: createFirecrawlFetch({
-                  baseUrl: config.fetch.baseUrl,
-                  apiKey: config.fetch.apiKey ?? process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY,
-                  options: config.fetch.options,
-                  fetchImpl
-                })
-              })
-            : createHttpFetch({ fetchPage: invalidFirecrawlFetch() }),
+          createHttpFetch({ fetchPage: ({ url, query }) => firecrawlFetcher(url, query) }),
           config.fetch.fallback === 'http' ? httpFetch : undefined,
           policyDeps
         )
@@ -330,7 +330,8 @@ export function createBackendSet(
     fallback: fetchPage
   });
 
-  const headlessPage = (url: string) => headlessFetch(url, { guard: networkGuard, guardProxy: getGuardProxy });
+  const headlessPage = ({ url, query }: ResearchFetchInput) =>
+    headlessFetch(url, { query, guard: networkGuard, guardProxy: getGuardProxy });
 
   return {
     search,

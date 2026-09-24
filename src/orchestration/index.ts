@@ -1,6 +1,6 @@
 import { createBackendSet } from '../backends/factory.js';
 import type { BackendConfig } from '../backends/config.js';
-import type { WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { ResearchFetchInput, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { createResearchOrchestrator } from './research-orchestrator.js';
 import { createResearchWorker } from './research-worker.js';
 
@@ -12,8 +12,8 @@ export function createResearchWorkflow({
 }: {
   backendConfig?: BackendConfig;
   search?: (input: { query: string }) => Promise<WebSearchResponse>;
-  fetchPage?: (input: { url: string }) => Promise<WebFetchResponse>;
-  headlessFetch?: (input: { url: string }) => Promise<WebFetchHeadlessResponse>;
+  fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
+  headlessFetch?: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 } = {}) {
   // Only build (and own) a backend set when something wasn't injected.
   const backends = search && fetchPage && headlessFetch ? undefined : createBackendSet(backendConfig);

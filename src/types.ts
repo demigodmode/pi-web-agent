@@ -89,6 +89,11 @@ export type SearchMetadata = {
 
 export type FetchMethod = 'http' | 'headless' | 'firecrawl' | 'github' | 'pdf' | 'youtube';
 
+export type ResearchFetchInput = {
+  url: string;
+  query?: string;
+};
+
 export type FetchMetadata = {
   method: FetchMethod;
   cacheHit: boolean;

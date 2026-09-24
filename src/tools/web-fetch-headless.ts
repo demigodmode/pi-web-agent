@@ -1,13 +1,13 @@
 import { headlessFetch } from '../fetch/headless-fetch.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
-import type { WebFetchHeadlessResponse } from '../types.js';
+import type { ResearchFetchInput, WebFetchHeadlessResponse } from '../types.js';
 
 export function createWebFetchHeadlessTool({
-  fetchPage = headlessFetch
+  fetchPage = ({ url, query }) => headlessFetch(url, { query })
 }: {
-  fetchPage?: (url: string) => Promise<WebFetchHeadlessResponse>;
+  fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 } = {}) {
-  return async function webFetchHeadless({ url }: { url: string }): Promise<WebFetchHeadlessResponse> {
+  return async function webFetchHeadless({ url, query }: ResearchFetchInput): Promise<WebFetchHeadlessResponse> {
     if (!/^https?:\/\//.test(url)) {
       const result: WebFetchHeadlessResponse = {
         status: 'unsupported',
@@ -22,7 +22,7 @@ export function createWebFetchHeadlessTool({
       };
     }
 
-    const result = await fetchPage(url);
+    const result = await fetchPage({ url, ...(query ? { query } : {}) });
     return {
       ...result,
       presentation: buildFetchPresentation(result)
