@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.13.0] - 2026-09-24
+### Added
 - `web_explore` now uses the research question to pick relevant sections from long HTML pages instead of stopping at the first 4,000 characters. It can reach an answer buried later in a page, whether the page came through HTTP, headless browsing, or Firecrawl. Direct `web_fetch` output is unchanged. (#36)
 
 ### Changed
