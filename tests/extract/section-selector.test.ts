@@ -36,6 +36,16 @@ describe('section selection', () => {
     expect(result.anchor).toBe('refund-policy');
   });
 
+  it('searches across sibling articles when the page has no main region', () => {
+    const result = selectRelevantContent({
+      source: `<body><article><h2>Cancellation deadline</h2><p>Cancellation deadline is mentioned here only.</p></article>
+        <article><h2 id="actual-deadline">Cancellation deadline</h2><p>The actual cancellation deadline is 14 days before departure.</p></article></body>`,
+      format: 'html', query: 'cancellation deadline', maxLength: 4000
+    });
+
+    expect(result.text).toContain('The actual cancellation deadline is 14 days before departure.');
+  });
+
   it('excludes ARIA-labelled page chrome inside the readable region', () => {
     const result = selectRelevantContent({
       source: `<main><div role="navigation" aria-label="Breadcrumb"><h2>Cancellation deadline</h2><p>Menu link</p></div>

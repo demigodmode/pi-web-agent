@@ -42,6 +42,19 @@ describe('http fetch query selection', () => {
     expect(result.metadata.truncated).toBe(true);
   });
 
+  it('finds a relevant answer in a later sibling article', async () => {
+    const html = `<html><body>
+      <article><h2>Cancellation deadline</h2><p>Cancellation deadline is mentioned here only.</p></article>
+      <article><h2 id="actual-deadline">Cancellation deadline</h2><p>The actual cancellation deadline is 14 days before departure.</p></article>
+    </body></html>`;
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(html, { headers: { 'content-type': 'text/html' } }));
+
+    const result = await createHttpFetcher({ fetchImpl })('https://example.com/guide', 'cancellation deadline');
+
+    expect(result).toMatchObject({ status: 'ok' });
+    expect(result.content?.text).toContain('The actual cancellation deadline is 14 days before departure.');
+  });
+
   it('keeps the leading extraction behavior when no query is supplied', async () => {
     const html = `<html><body><article><p>${'Early material. '.repeat(400)}</p><h2>Cancellation deadline</h2><p>Late answer.</p></article></body></html>`;
     const fetchImpl = vi.fn().mockResolvedValue(new Response(html, { headers: { 'content-type': 'text/html' } }));
