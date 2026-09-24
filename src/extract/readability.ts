@@ -78,8 +78,11 @@ function extractPreferredSection(html: string): string {
   const mainMatch = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
   if (mainMatch) return mainMatch[1];
 
-  const articleMatch = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
-  if (articleMatch) return articleMatch[1];
+  const articles = html.match(/<article\b[^>]*>/gi) ?? [];
+  if (articles.length === 1) {
+    const articleMatch = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+    if (articleMatch) return articleMatch[1];
+  }
 
   const bodyMatch = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch) return bodyMatch[1];
@@ -88,7 +91,9 @@ function extractPreferredSection(html: string): string {
 }
 
 function extractPreferredDomSection(document: Document): string {
-  const region = document.querySelector('main') ?? document.querySelector('article') ?? document.body;
+  const main = document.querySelector('main');
+  const articles = document.querySelectorAll('article');
+  const region = main ?? (articles.length === 1 ? articles[0] : document.body);
   const cleanedRegion = region.cloneNode(true) as Element;
   cleanedRegion.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
   return cleanedRegion.outerHTML;

@@ -61,7 +61,9 @@ function splitLong(text: string, maxLength: number): string[] {
 
 function htmlSections(source: string): Section[] {
   const document = new JSDOM(source).window.document;
-  const root = document.querySelector('main, article') ?? document.body;
+  const main = document.querySelector('main');
+  const articles = document.querySelectorAll('article');
+  const root = main ?? (articles.length === 1 ? articles[0] : document.body);
   root.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
   const chromeTags = new Set(['nav', 'aside', 'header', 'footer']);
   const chromeRoles = new Set(['navigation', 'complementary', 'banner', 'contentinfo']);

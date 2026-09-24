@@ -33,6 +33,18 @@ describe('readability extraction', () => {
     expect(result.content.sectionAnchor).toBe('late');
   });
 
+  it('searches sibling articles instead of stopping at the first article', () => {
+    const html = `<html><body>
+      <article><h1>Overview</h1><h2>Cancellation deadline</h2><p>Cancellation deadline is mentioned here only.</p></article>
+      <article><h2 id="actual-deadline">Cancellation deadline</h2><p>The actual cancellation deadline is 14 days before departure.</p></article>
+    </body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.mode).toBe('readability');
+    expect(result.content.text).toContain('The actual cancellation deadline is 14 days before departure.');
+  });
+
   it('keeps main siblings after a nested article when recovering content', () => {
     const html = `<html><body><main>
       <article><h1>Guide</h1><p>${'intro '.repeat(1000)}</p></article>
@@ -71,6 +83,18 @@ describe('readability extraction', () => {
     expect(result.content.text).not.toContain('script content');
     expect(result.content.text).not.toContain('color: red');
     expect(result.content.sectionAnchor).toBe('deadline');
+  });
+
+  it('searches sibling articles through the CSS parser fallback', () => {
+    const html = `<html><head><style>.x { &:hover { color: red; } }</style></head><body>
+      <article><h2>Cancellation deadline</h2><p>Cancellation deadline is mentioned here only.</p></article>
+      <article><h2 id="actual-deadline">Cancellation deadline</h2><p>The actual cancellation deadline is 14 days before departure.</p></article>
+    </body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.mode).toBe('fallback');
+    expect(result.content.text).toContain('The actual cancellation deadline is 14 days before departure.');
   });
 
   it('uses leading text when no query terms match', () => {
