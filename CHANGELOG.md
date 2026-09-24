@@ -7,13 +7,15 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- `web_explore` now uses the research question to pick relevant sections from long HTML pages instead of stopping at the first 4,000 characters. It can reach an answer buried later in a page, whether the page came through HTTP, headless browsing, or Firecrawl. Direct `web_fetch` output is unchanged. (#36)
 
 ### Changed
-- None.
+- You.com search and `/web-agent doctor` now use the documented `/v1/search` endpoint. Web and news results appear in the usual search list, with web results first. Result descriptions provide the snippets when present. (#60)
 
 ### Fixed
-- None.
+- Research still excludes recognized bot-check pages when their verification message sits outside the section chosen for the question. That page cannot be used as evidence just because another section looks relevant. (#36)
+- `/web-agent doctor` no longer repeats the default DuckDuckGo and HTTP backends after listing them in the config summary. It still shows checks and warnings for backends that need them. (#64)
+- On pages with several `<article>` sections and no `<main>`, query-based reads now search across the articles. A match in the first article no longer hides an answer in a later one. (#71)
 
 ### Breaking
 - None.
