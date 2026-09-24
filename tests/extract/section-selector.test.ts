@@ -23,6 +23,31 @@ describe('section selection', () => {
     expect(result.text).toContain('The cancellation deadline is 14 days.');
   });
 
+  it('prefers article content to matching page chrome', () => {
+    const result = selectRelevantContent({
+      source: `<nav><h2>Cancellation deadline</h2><p>Navigation item</p></nav>
+        <header>Site header</header><main><article><h2 id="refund-policy">Refund policy</h2>
+        <p>The cancellation deadline is 14 days.</p></article></main>
+        <aside>Sidebar</aside><footer>Site footer</footer>`,
+      format: 'html', query: 'cancellation deadline', maxLength: 4000
+    });
+    expect(result.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.text).not.toContain('Navigation item');
+    expect(result.anchor).toBe('refund-policy');
+  });
+
+  it('bounds a matching heading that is longer than the output budget', () => {
+    const heading = `Cancellation deadline ${'details '.repeat(30)}`;
+    const result = selectRelevantContent({
+      source: `<article><h2 id="deadline">${heading}</h2><p>Requests are accepted online.</p></article>`,
+      format: 'html', query: 'cancellation deadline', maxLength: 80
+    });
+    expect(result.matched).toBe(true);
+    expect(result.text).toBe(heading.slice(0, 80));
+    expect(result.anchor).toBe('deadline');
+    expect(result.text.length).toBeLessThanOrEqual(80);
+  });
+
   it('selects a late Markdown heading', () => {
     const result = selectRelevantContent({
       source: `# Guide\n\n${'Generic information. '.repeat(300)}\n\n## Cancellation deadline\n\nThe deadline is 14 days.`,

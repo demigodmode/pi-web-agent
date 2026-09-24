@@ -52,8 +52,9 @@ function splitLong(text: string, maxLength: number): string[] {
 
 function htmlSections(source: string): Section[] {
   const document = new JSDOM(source).window.document;
-  const root = document.body;
+  const root = document.querySelector('main, article') ?? document.body;
   root.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
+  root.querySelectorAll('nav, aside, header, footer').forEach((element) => element.remove());
   const sections: Section[] = [{ blocks: [] }];
   let current = sections[0];
   let pendingAnchor: string | undefined;
@@ -125,10 +126,10 @@ function makeWindows(sections: Section[], terms: string[], maxLength: number): W
   const windows: Window[] = [];
   const windowLimit = Math.max(1, Math.min(1200, maxLength));
   for (const section of sections) {
-    const heading = section.heading ?? '';
+    const heading = (section.heading ?? '').slice(0, windowLimit);
     const headingLength = heading ? heading.length + 2 : 0;
-    const bodyLimit = Math.max(1, windowLimit - headingLength);
-    const chunks = section.blocks.flatMap((block) => splitLong(block, bodyLimit));
+    const bodyLimit = Math.max(0, windowLimit - headingLength);
+    const chunks = bodyLimit > 0 ? section.blocks.flatMap((block) => splitLong(block, bodyLimit)) : [];
     if (chunks.length === 0 && heading) chunks.push('');
     let body = '';
     const add = () => {
