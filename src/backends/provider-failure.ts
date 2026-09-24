@@ -17,6 +17,9 @@ export class BodyReadError extends Error {
   }
 }
 
+/** A failure a provider reported inside a 2xx body, with the wording to show the user. */
+export type EnvelopeFailure = { failure: FailureInfo; message: string };
+
 /**
  * Reads a response body once, keeping status and headers alongside the parsed JSON.
  * A body that can't be read (connection dropped mid-stream) throws BodyReadError: that's
@@ -97,6 +100,12 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
   } else if (provider === 'searxng') {
     // Source: https://docs.searxng.org/dev/search_api.html (403 = format=json disabled in settings)
     if (status === 403) kind = 'auth_failed';
+  } else if (provider === 'google-serp') {
+    // Vendor-neutral Google SERP endpoint. Vendors in this space reject a bad or
+    // revoked key with 401/403 rather than a bot wall, and bill an empty balance
+    // as 402. UNVERIFIED across every vendor, so anything else keeps the defaults.
+    if (status === 401 || status === 403) kind = 'auth_failed';
+    else if (status === 402) kind = 'quota_exhausted';
   }
   // brave, tavily, duckduckgo: defaults only (UNVERIFIED beyond 429; see research gate).
 
@@ -108,3 +117,33 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
   }
   return info;
 }
+
+const ENVELOPE_KINDS: Array<[RegExp, FailureKind]> = [
+  [/quota|credit|billing|insufficient|payment|exhaust/i, 'quota_exhausted'],
+  [/rate.?limit|too many/i, 'rate_limited'],
+  [/unauthor|forbidden|denied|api.?key|token/i, 'auth_failed'],
+  [/invalid|required|missing/i, 'bad_request']
+];
+
+/**
+ * Some vendors answer HTTP 200 with the failure in the body instead of a 4xx, e.g.
+ * `{"status": 1001, "error": "unauthorized"}`. Returns undefined when the body
+ * reports success (`status: 0`) or does not carry a status envelope at all, so
+ * this is only consulted after the response failed to normalize.
+ *
+ * The numeric codes are vendor-specific and not documented consistently, so the
+ * kind comes from the vendor's own wording and the code is only kept for the
+ * message. Anything unrecognized stays `bad_response`, which the fallback policy
+ * already treats as non-retryable against that provider.
+ */
+export function classifyEnvelopeFailure(json: unknown): EnvelopeFailure | undefined {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return undefined;
+  const body = json as Record<string, unknown>;
+  const status = body.status;
+  if (typeof status !== 'number' || status === 0) return undefined;
+  const wording = [body.error, body.message].find((value): value is string => typeof value === 'string');
+  const kind = ENVELOPE_KINDS.find(([pattern]) => pattern.test(wording ?? ''))?.[1] ?? 'bad_response';
+  const message = wording ? `"${wording}" (provider status ${status})` : `provider status ${status}`;
+  return { failure: { kind, httpStatus: 200, providerCode: String(status) }, message };
+}
+

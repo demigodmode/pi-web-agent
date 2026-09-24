@@ -118,7 +118,7 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, or tavily');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, or google-serp');
   });
 
   it('accepts youcom search provider with duckduckgo fallback', () => {
@@ -129,6 +129,51 @@ describe('backend config', () => {
     });
 
     expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
+  });
+
+  it('extracts the google-serp key header only for that provider', () => {
+    expect(extractBackendConfigOverride({
+      backends: {
+        search: {
+          provider: 'google-serp',
+          baseUrl: 'https://serp.example/search',
+          keyHeader: 'Authorization',
+          fallback: 'duckduckgo'
+        }
+      }
+    }).search).toEqual({
+      provider: 'google-serp',
+      baseUrl: 'https://serp.example/search',
+      fallback: 'duckduckgo',
+      keyHeader: 'Authorization'
+    });
+
+    expect(extractBackendConfigOverride({
+      backends: {
+        search: { provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' }
+      }
+    }).search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
+  });
+
+  it('accepts google-serp with an endpoint and duckduckgo fallback', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'google-serp', baseUrl: 'https://serp.example/search', fallback: 'duckduckgo' }
+    })).toEqual([]);
+  });
+
+  it('requires an endpoint for google-serp', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'google-serp' }
+    })).toEqual(['search provider google-serp requires backends.search.baseUrl']);
+  });
+
+  it('rejects a blank google-serp key header', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'google-serp', baseUrl: 'https://serp.example/search', keyHeader: '  ' }
+    })).toEqual(['search keyHeader must not be empty when provided']);
   });
 
   it('allows duckduckgo fallback for youcom', () => {
@@ -228,6 +273,14 @@ describe('fanout config', () => {
     expect(issues.some((i) => i.includes('searxng'))).toBe(true);
   });
 
+  it('flags google-serp in the fanout set without a base url', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'google-serp'] } }
+    });
+    expect(issues).toContain('search fanout with google-serp requires backends.search.baseUrl');
+  });
+
   it('parses fanout even when no provider is set (provider inherited)', () => {
     const override = extractBackendConfigOverride({
       backends: { search: { fanout: { mode: 'auto', providers: ['duckduckgo', 'brave'] } } }
@@ -283,6 +336,14 @@ describe('usableSearchProviders', () => {
       { EXA_API_KEY: 'test-key' }
     );
     expect(providers).toEqual(['duckduckgo', 'exa']);
+  });
+
+  it('includes google-serp when a baseUrl and the API key are set', () => {
+    const search = { provider: 'duckduckgo' as const, baseUrl: 'https://serp.example/search' };
+
+    expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
+      .toEqual(['duckduckgo', 'searxng', 'google-serp']);
+    expect(usableSearchProviders(search, {})).toEqual(['duckduckgo', 'searxng']);
   });
 
   it('includes tavily when TAVILY_API_KEY is set', () => {

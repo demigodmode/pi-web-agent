@@ -1,5 +1,7 @@
 import {
+  BASE_URL_SEARCH_PROVIDERS,
   DEFAULT_BACKEND_CONFIG,
+  DUCKDUCKGO_FALLBACK_PROVIDERS,
   isValidProxyUrl,
   mergeBackendConfigLayers,
   stripProxyCredentials,
@@ -323,19 +325,19 @@ function buildBackendSettingsItems(
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp']
     },
     {
       id: 'backend:search:baseUrl',
-      label: 'SearXNG URL',
+      label: 'Search endpoint URL',
       currentValue: backends.search.baseUrl ?? 'not set',
-      submenu: createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080', onUrlEditorOpenChange)
+      submenu: createBackendUrlEditor(theme, 'Search endpoint URL', 'http://localhost:8080', onUrlEditorOpenChange)
     },
     {
       id: 'backend:search:fallback',
       label: 'Search fallback',
-      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' || backends.search.provider === 'exa' || backends.search.provider === 'tavily' ? backends.search.fallback ?? 'off' : 'off',
-      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' || backends.search.provider === 'exa' || backends.search.provider === 'tavily' ? ['off', 'duckduckgo'] : ['off']
+      currentValue: DUCKDUCKGO_FALLBACK_PROVIDERS.includes(backends.search.provider) ? backends.search.fallback ?? 'off' : 'off',
+      values: DUCKDUCKGO_FALLBACK_PROVIDERS.includes(backends.search.provider) ? ['off', 'duckduckgo'] : ['off']
     },
     {
       id: 'backend:search:fanout:mode',
@@ -370,6 +372,12 @@ function buildBackendSettingsItems(
     {
       id: 'backend:secret:tavily',
       label: 'Tavily API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:google-serp',
+      label: 'Google SERP API key',
       currentValue: 'env var',
       values: ['env var']
     },
@@ -558,11 +566,17 @@ export function applySettingsValue(
     currentDraft.tools = nextTools;
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
     currentBackends.search.provider = newValue;
-    if (newValue !== 'searxng') {
+    // baseUrl belongs to the endpoint-backed providers; the others drop it.
+    if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue)) {
       delete currentBackends.search.baseUrl;
+    }
+    if (newValue !== 'searxng') {
       delete currentBackends.search.options;
+    }
+    if (newValue !== 'google-serp') {
+      delete currentBackends.search.keyHeader;
     }
     if (newValue === 'duckduckgo') {
       delete currentBackends.search.fallback;
@@ -570,7 +584,7 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:fallback') {
-    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave' || currentBackends.search.provider === 'youcom' || currentBackends.search.provider === 'exa' || currentBackends.search.provider === 'tavily')) {
+    if (newValue === 'duckduckgo' && DUCKDUCKGO_FALLBACK_PROVIDERS.includes(currentBackends.search.provider)) {
       currentBackends.search.fallback = 'duckduckgo';
     } else {
       delete currentBackends.search.fallback;
@@ -616,7 +630,10 @@ export function applySettingsValue(
 
   if (id === 'backend:search:baseUrl') {
     if (newValue.trim()) {
-      currentBackends.search.provider = 'searxng';
+      // Keep an endpoint-backed provider (searxng, google-serp); anything else is promoted to searxng.
+      if (!BASE_URL_SEARCH_PROVIDERS.includes(currentBackends.search.provider)) {
+        currentBackends.search.provider = 'searxng';
+      }
       currentBackends.search.baseUrl = newValue.trim();
     } else {
       delete currentBackends.search.baseUrl;
@@ -724,6 +741,7 @@ export function collapseBackendConfigToOverride(
       ? { ...config.search }
       : {
           ...(config.search.baseUrl !== inheritedConfig.search.baseUrl ? { baseUrl: config.search.baseUrl } : {}),
+          ...(config.search.keyHeader !== inheritedConfig.search.keyHeader ? { keyHeader: config.search.keyHeader } : {}),
           ...(config.search.fallback !== inheritedConfig.search.fallback ? { fallback: config.search.fallback } : {}),
           ...(!sameJson(config.search.options, inheritedConfig.search.options) ? { options: config.search.options } : {}),
           ...(!sameJson(config.search.fanout, inheritedConfig.search.fanout) ? { fanout: config.search.fanout } : {})

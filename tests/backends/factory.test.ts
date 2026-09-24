@@ -190,6 +190,49 @@ describe('backend factory', () => {
     }
   });
 
+  it('creates google-serp search from the endpoint, header, and environment API key', () => {
+    const original = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = 'serp-key';
+    const createGoogleSerpSearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        {
+          ...DEFAULT_BACKEND_CONFIG,
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://serp.example/search',
+            keyHeader: 'Authorization'
+          }
+        },
+        { ...offlineNetworkDeps(), createGoogleSerpSearch }
+      );
+
+      expect(createGoogleSerpSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://serp.example/search',
+          apiKey: 'serp-key',
+          keyHeader: 'Authorization'
+        })
+      );
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+      else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
+    }
+  });
+
+  it('keeps the Google SERP base URL hint on a later, skipped call', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'google-serp' } }, offlineNetworkDeps());
+    const first = await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+    expect(first.error?.message).toContain('requires backends.search.baseUrl');
+    expect(second.metadata.attempts?.[0]).toMatchObject({
+      outcome: 'skipped',
+      detail: 'Google SERP search requires backends.search.baseUrl.'
+    });
+    expect(second.error?.message).toContain('requires backends.search.baseUrl');
+  });
+
   it('records youcom as the search fallback source', async () => {
     const primary = vi.fn().mockResolvedValue({
       status: 'error',

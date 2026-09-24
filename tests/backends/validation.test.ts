@@ -44,7 +44,7 @@ describe('backend config validation', () => {
         headless: { provider: 'local-browser' }
       })
     ).toEqual([
-      'search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, or tavily',
+      'search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, or google-serp',
       'fetch fallback http is only supported when fetch provider is firecrawl'
     ]);
   });
