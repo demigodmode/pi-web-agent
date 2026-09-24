@@ -59,9 +59,7 @@ export async function checkBackendHealth(
 ): Promise<string[]> {
   const lines: string[] = [];
 
-  if (config.search.provider === 'duckduckgo') {
-    lines.push('search backend: duckduckgo');
-  } else if (config.search.provider === 'brave') {
+  if (config.search.provider === 'brave') {
     const apiKey = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
     if (!apiKey?.trim()) {
       lines.push('search backend: brave warning (missing PI_WEB_AGENT_BRAVE_API_KEY)');
@@ -182,20 +180,23 @@ export async function checkBackendHealth(
         timeout.done();
       }
     }
-  } else if (!config.search.baseUrl) {
-    lines.push('search backend: searxng warning (missing baseUrl)');
-  } else {
-    const timeout = withTimeout(timeoutMs);
-    try {
-      const response = await fetchImpl(searxngDoctorUrl(config.search.baseUrl, config.search.options), { signal: timeout.signal });
-      const json = (await response.json()) as { results?: unknown };
-      lines.push(response.ok && Array.isArray(json.results)
-        ? 'search backend: searxng ok'
-        : 'search backend: searxng warning (unexpected response)');
-    } catch (error) {
-      lines.push(`search backend: searxng warning (${message(error)})`);
-    } finally {
-      timeout.done();
+  } else if (config.search.provider === 'searxng') {
+    const baseUrl = config.search.baseUrl;
+    if (!baseUrl) {
+      lines.push('search backend: searxng warning (missing baseUrl)');
+    } else {
+      const timeout = withTimeout(timeoutMs);
+      try {
+        const response = await fetchImpl(searxngDoctorUrl(baseUrl, config.search.options), { signal: timeout.signal });
+        const json = (await response.json()) as { results?: unknown };
+        lines.push(response.ok && Array.isArray(json.results)
+          ? 'search backend: searxng ok'
+          : 'search backend: searxng warning (unexpected response)');
+      } catch (error) {
+        lines.push(`search backend: searxng warning (${message(error)})`);
+      } finally {
+        timeout.done();
+      }
     }
   }
 
@@ -234,11 +235,9 @@ export async function checkBackendHealth(
     }
   }
 
-  if (config.fetch.provider === 'http') {
-    lines.push('fetch backend: http');
-  } else if (!config.fetch.baseUrl) {
+  if (config.fetch.provider !== 'http' && !config.fetch.baseUrl) {
     lines.push('fetch backend: firecrawl warning (missing baseUrl)');
-  } else {
+  } else if (config.fetch.provider !== 'http') {
     const timeout = withTimeout(timeoutMs);
     try {
       const headers: Record<string, string> = { 'content-type': 'application/json' };

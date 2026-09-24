@@ -733,7 +733,7 @@ describe('web-agent config commands', () => {
         effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
         effectiveBackends: DEFAULT_BACKEND_CONFIG
       }),
-      checkBackends: vi.fn().mockResolvedValue(['search backend: duckduckgo', 'fetch backend: http']),
+      checkBackends: vi.fn().mockResolvedValue(['headless backend: local-browser (managed Chromium fallback configured)']),
       // Injected so this stays hermetic. The real checkJitiCompat reads this
       // machine's node_modules, which would make the test fail on exactly the
       // trees where #34 has recurred.
@@ -750,9 +750,9 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('trust upstream proxy for private addresses: off');
     expect(notify.mock.calls[0][0]).toContain('search: duckduckgo');
     expect(notify.mock.calls[0][0]).toContain('fetch: http');
-    expect(notify.mock.calls[0][0]).toContain('headless: local-browser');
-    expect(notify.mock.calls[0][0]).toContain('search backend: duckduckgo');
-    expect(notify.mock.calls[0][0]).toContain('fetch backend: http');
+    expect(notify.mock.calls[0][0]).toContain('headless backend: local-browser (managed Chromium fallback configured)');
+    expect(notify.mock.calls[0][0]).not.toContain('search backend: duckduckgo');
+    expect(notify.mock.calls[0][0]).not.toContain('fetch backend: http');
     expect(notify.mock.calls[0][0]).toContain('jsdom compat patch: ok');
     expect(notify.mock.calls[0][0]).toContain('network allow list: none');
   });
