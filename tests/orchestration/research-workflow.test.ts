@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
-import { createResearchWorker } from '../../src/orchestration/research-worker.js';
 
 describe('research workflow composition', () => {
   it('can compose from backend config defaults', async () => {
@@ -107,21 +106,25 @@ describe('research workflow composition', () => {
       { headers: { 'content-type': 'text/html' } }
     ));
     const httpFetch = createHttpFetcher({ fetchImpl: fetchImpl as typeof fetch });
-    const worker = createResearchWorker({
-      search: async () => ({
+    const search = vi.fn()
+      .mockResolvedValueOnce({
         status: 'ok',
         results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive transfer details' }],
         metadata: { backend: 'duckduckgo', cacheHit: false }
-      }),
-      fetchPage: ({ url, query }) => httpFetch(url, query)
+      })
+      .mockResolvedValue({
+        status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false }
+      });
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: ({ url, query }) => httpFetch(url, query),
+      headlessFetch: async () => ({
+        status: 'error', url: 'https://example.com/archive', metadata: { method: 'headless', cacheHit: false },
+        error: { code: 'BROWSER_NOT_FOUND', message: 'No browser found.' }
+      })
     });
 
-    const result = await createWebExploreTool({
-      explore: async ({ query }) => {
-        const workerPass = await worker.run({ query, maxSearchRounds: 1, maxFetches: 1 });
-        return { decision: { action: 'answer' as const }, evidence: workerPass.evidence, workerPass };
-      }
-    })({ query: 'lunar archive transfer manifest' });
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'lunar archive transfer manifest' });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(result.findings.join(' ')).toContain(lateAnswer);
