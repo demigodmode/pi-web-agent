@@ -6,6 +6,26 @@ import type { GuardProxy, Refusal } from '../../src/fetch/guard-proxy.js';
 import { BlockedAddressError, UnverifiedDestinationError, type GuardError } from '../../src/fetch/network-guard.js';
 
 describe('headless fetch', () => {
+  it('keeps no-query rendered chrome that cleans below the minimum as weak', async () => {
+    const result = await headlessFetch('https://example.com/chrome', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => undefined,
+            waitForLoadState: async () => undefined,
+            content: async () => `<html><body><article><p>${'Show more '.repeat(10)}</p></article></body></html>`,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }))
+    });
+
+    expect(result).toMatchObject({ status: 'blocked', error: { code: 'HEADLESS_EXTRACTION_WEAK' } });
+  });
+
   it('selects a late relevant rendered section when given a query', async () => {
     const earlyText = 'General documentation background. '.repeat(220);
     const result = await headlessFetch('https://example.com/guide', {

@@ -253,12 +253,13 @@ export async function headlessFetch(
     const baselineExtraction = extractReadableContentSafely(html);
     const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
     const extraction = queryExtraction ?? baselineExtraction;
+    const cleanedBaselineText = cleanupRenderedText(baselineExtraction.content.text);
     const cleanedContent = {
       ...extraction.content,
       text: cleanupRenderedText(extraction.content.text)
     };
 
-    if (!baselineExtraction.content.text || baselineExtraction.content.text.length < 40) {
+    if (!cleanedBaselineText || cleanedBaselineText.length < 40) {
       return {
         status: 'blocked',
         url,
