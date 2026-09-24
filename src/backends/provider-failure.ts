@@ -91,7 +91,6 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
     if (status === 402) kind = 'quota_exhausted';
   } else if (provider === 'youcom') {
     // Source: https://you.com/docs/api-reference/search/v1-search (429 UNVERIFIED -> default)
-    // Documented for /v1/search; the client currently calls /v1/agents/search (#60).
     if (status === 402) kind = 'quota_exhausted';
     else if (status === 403) kind = 'auth_failed';
   } else if (provider === 'searxng') {

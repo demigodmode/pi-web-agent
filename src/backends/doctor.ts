@@ -1,4 +1,5 @@
 import type { BackendConfig, FirecrawlOptions, SearxngOptions } from './config.js';
+import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
 
 function withTimeout(timeoutMs: number) {
   const controller = new AbortController();
@@ -18,7 +19,7 @@ function braveDoctorUrl() {
 }
 
 function youcomDoctorBody() {
-  return JSON.stringify({ query: 'pi-web-agent-doctor', max_results: 1 });
+  return JSON.stringify({ query: 'pi-web-agent-doctor', count: 1 });
 }
 
 function exaDoctorBody() {
@@ -94,7 +95,7 @@ export async function checkBackendHealth(
     } else {
       const timeout = withTimeout(timeoutMs);
       try {
-        const response = await fetchImpl('https://api.you.com/v1/agents/search', {
+        const response = await fetchImpl(YOUCOM_SEARCH_URL, {
           method: 'POST',
           headers: {
             Accept: 'application/json',
@@ -107,8 +108,8 @@ export async function checkBackendHealth(
         if (!response.ok) {
           lines.push(`search backend: youcom warning (HTTP ${response.status})`);
         } else {
-          const json = (await response.json()) as { results?: unknown };
-          lines.push(Array.isArray(json.results)
+          const normalized = normalizeYouComResults(await response.json());
+          lines.push(normalized && (normalized.rawCount === 0 || normalized.results.length > 0)
             ? 'search backend: youcom ok'
             : 'search backend: youcom warning (unexpected response)');
         }
