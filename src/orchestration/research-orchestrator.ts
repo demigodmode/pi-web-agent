@@ -27,7 +27,8 @@ function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
 }
 
-function isBotCheckContent({ title = '', text }: { title?: string; text: string }) {
+function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
+  if (botCheck) return true;
   return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
     `${title}\n${text}`
   );
@@ -35,7 +36,7 @@ function isBotCheckContent({ title = '', text }: { title?: string; text: string 
 
 function evidenceFromFetch(result: WebFetchResponse, query: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
-  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   if (isReaderMethod(result.metadata.method)) {
     return {
@@ -60,7 +61,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string): ResearchEvi
 
 function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
-  if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
+  if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   return {
     title: result.content.title ?? result.url,

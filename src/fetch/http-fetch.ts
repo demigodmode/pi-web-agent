@@ -7,6 +7,10 @@ function looksLikeScriptShell(html: string): boolean {
   return lower.includes('<script') && (lower.includes('id="app"') || lower.includes('id="root"'));
 }
 
+function hasBotCheckContent(text: string): boolean {
+  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(text);
+}
+
 function isWeakHttpContent(options: { html: string; title?: string; text: string }): boolean {
   const normalizedText = options.text.replace(/\s+/g, ' ').trim();
   const normalizedHtml = options.html.replace(/\s+/g, ' ').trim();
@@ -54,7 +58,10 @@ export function createHttpFetcher({
     const baselineExtraction = extractReadableContentSafely(html);
     const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
     const extraction = queryExtraction ?? baselineExtraction;
-    const content = extraction.content;
+    const content = {
+      ...extraction.content,
+      ...(hasBotCheckContent(html) ? { botCheck: true } : {})
+    };
 
     if (
       looksLikeScriptShell(html) ||

@@ -50,6 +50,28 @@ describe('headless fetch', () => {
     expect(result.content?.text.length).toBeLessThanOrEqual(4000);
   });
 
+  it('preserves a raw bot-wall signal omitted by query selection', async () => {
+    const result = await headlessFetch('https://example.com/guide', {
+      query: 'lunar archive transfer manifest',
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => undefined,
+            waitForLoadState: async () => undefined,
+            content: async () => `<html><body><main><h1>Lunar archive transfer manifest</h1><p>${'Lunar archive transfer manifest instructions. '.repeat(110)}</p><p>Performing security verification. Please verify you are not a bot.</p></main></body></html>`,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }))
+    });
+
+    expect(result).toMatchObject({ status: 'ok', content: { botCheck: true } });
+    expect(result.content?.text).not.toContain('Performing security verification');
+  });
+
   it('falls back to Playwright-managed Chromium when no local browser can be resolved', async () => {
     const launchBrowser = vi.fn(async () => ({
       newContext: async () => ({

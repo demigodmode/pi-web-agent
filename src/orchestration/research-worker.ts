@@ -19,7 +19,8 @@ function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
 }
 
-function isBotCheckContent({ title = '', text }: { title?: string; text: string }) {
+function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
+  if (botCheck) return true;
   return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
     `${title}\n${text}`
   );
@@ -28,7 +29,7 @@ function isBotCheckContent({ title = '', text }: { title?: string; text: string 
 function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, query: string) {
   const content = fetched.content;
   if (fetched.status !== 'ok' || !content) return null;
-  if (isBotCheckContent({ title: content.title, text: content.text })) return null;
+  if (isBotCheckContent({ title: content.title, text: content.text, botCheck: content.botCheck })) return null;
 
   // A successful reader read with usable text is primary content, exempt from the
   // package-page filter below.
@@ -61,7 +62,7 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
 function lowValueOutcomeFromFetch(fetched: WebFetchResponse): ResearchLowValueOutcome | null {
   if (fetched.status !== 'ok' || !fetched.content) return null;
 
-  if (isBotCheckContent({ title: fetched.content.title, text: fetched.content.text })) {
+  if (isBotCheckContent({ title: fetched.content.title, text: fetched.content.text, botCheck: fetched.content.botCheck })) {
     return {
       kind: 'bot-check',
       url: fetched.url,

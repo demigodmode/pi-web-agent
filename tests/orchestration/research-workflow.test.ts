@@ -102,10 +102,11 @@ describe('research workflow composition', () => {
   it('keeps a late selected answer in final search-result findings with one HTTP request', async () => {
     const lateAnswer = 'Lunar archive transfer requires the signed manifest before upload.';
     const fetchImpl = vi.fn(async () => new Response(
-      `<html><head><title>Archive guide</title></head><body><main><h1>Lunar archive transfer</h1><p>${'General archive background. '.repeat(12)}</p><p>${lateAnswer}</p></main></body></html>`,
+      `<html><head><title>Archive guide</title></head><body><main><h1>Lunar archive transfer</h1><p>${'General archive background. '.repeat(250)}</p><p>${lateAnswer}</p></main></body></html>`,
       { headers: { 'content-type': 'text/html' } }
     ));
     const httpFetch = createHttpFetcher({ fetchImpl: fetchImpl as typeof fetch });
+    const fetchPage = vi.fn(({ url, query }) => httpFetch(url, query));
     const search = vi.fn()
       .mockResolvedValueOnce({
         status: 'ok',
@@ -117,7 +118,7 @@ describe('research workflow composition', () => {
       });
     const workflow = createResearchWorkflow({
       search,
-      fetchPage: ({ url, query }) => httpFetch(url, query),
+      fetchPage,
       headlessFetch: async () => ({
         status: 'error', url: 'https://example.com/archive', metadata: { method: 'headless', cacheHit: false },
         error: { code: 'BROWSER_NOT_FOUND', message: 'No browser found.' }
@@ -127,7 +128,40 @@ describe('research workflow composition', () => {
     const result = await createWebExploreTool({ explore: workflow })({ query: 'lunar archive transfer manifest' });
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const fetched = await fetchPage.mock.results[0]?.value;
+    expect(fetched.metadata.truncated).toBe(true);
+    expect(fetched.content?.text).toContain(lateAnswer);
     expect(result.findings.join(' ')).toContain(lateAnswer);
+  });
+
+  it('does not turn a bot wall omitted by query selection into workflow evidence', async () => {
+    const query = 'lunar archive transfer manifest';
+    const fetchImpl = vi.fn(async () => new Response(
+      `<html><head><title>Archive guide</title></head><body><main><h1>Lunar archive transfer manifest</h1><p>${'Lunar archive transfer manifest instructions. '.repeat(110)}</p><p>Performing security verification. Please verify you are not a bot.</p></main></body></html>`,
+      { headers: { 'content-type': 'text/html' } }
+    ));
+    const httpFetch = createHttpFetcher({ fetchImpl: fetchImpl as typeof fetch });
+    const search = vi.fn()
+      .mockResolvedValueOnce({
+        status: 'ok',
+        results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive transfer details' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      })
+      .mockResolvedValue({ status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false } });
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: ({ url, query: activeQuery }) => httpFetch(url, activeQuery),
+      headlessFetch: async () => ({
+        status: 'blocked', url: 'https://example.com/archive', metadata: { method: 'headless', cacheHit: false },
+        error: { code: 'HEADLESS_EXTRACTION_WEAK', message: 'Rendered page did not produce enough readable content.' }
+      })
+    });
+
+    const result = await workflow.run({ query });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(0);
+    expect(result.metadata?.caveatReasons).toContain('bot-check');
   });
 
   it('does not spend headless on a low-value npm package page when other technical sources exist', async () => {

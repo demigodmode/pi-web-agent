@@ -19,6 +19,10 @@ function cleanupRenderedText(text: string): string {
   return cleaned;
 }
 
+function hasBotCheckContent(text: string): boolean {
+  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(text);
+}
+
 function errorResult(url: string, code: string, message: string): WebFetchHeadlessResponse {
   const guard = code === BLOCKED_PRIVATE_ADDRESS || code === UPSTREAM_PROXY_REFUSED;
   return {
@@ -256,7 +260,8 @@ export async function headlessFetch(
     const cleanedBaselineText = cleanupRenderedText(baselineExtraction.content.text);
     const cleanedContent = {
       ...extraction.content,
-      text: cleanupRenderedText(extraction.content.text)
+      text: cleanupRenderedText(extraction.content.text),
+      ...(hasBotCheckContent(html) ? { botCheck: true } : {})
     };
 
     if (!cleanedBaselineText || cleanedBaselineText.length < 40) {
