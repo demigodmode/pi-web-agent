@@ -107,6 +107,8 @@ export type ExtractedContent = {
   title?: string;
   byline?: string;
   text: string;
+  /** Anchor of the section chosen for research; direct fetches do not set this. */
+  sectionAnchor?: string;
 };
 
 export type WebSearchResponse = {
