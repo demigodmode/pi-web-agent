@@ -33,6 +33,30 @@ describe('readability extraction', () => {
     expect(result.content.sectionAnchor).toBe('late');
   });
 
+  it('keeps main siblings after a nested article when recovering content', () => {
+    const html = `<html><body><main>
+      <article><h1>Guide</h1><p>${'intro '.repeat(1000)}</p></article>
+      <h2 id="late">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p>
+    </main></body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.sectionAnchor).toBe('late');
+  });
+
+  it('prefers a more complete main query match over Readability partial content', () => {
+    const html = `<html><body>
+      <article><h1>Guide</h1><h2>Cancellation overview</h2><p>${'intro '.repeat(1000)}</p></article>
+      <main><h2 id="late">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p></main>
+    </body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.sectionAnchor).toBe('late');
+  });
+
   it('selects a late answer through the CSS parser fallback', () => {
     const html = `<html><head><style>.x { &:hover { color: red; } }</style></head><body><main>
       <h1>Service guide</h1><p>${'General information. '.repeat(300)}</p>

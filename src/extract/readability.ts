@@ -91,7 +91,7 @@ function extractPreferredDomSection(document: Document): string {
   const region = document.querySelector('main') ?? document.querySelector('article') ?? document.body;
   const cleanedRegion = region.cloneNode(true) as Element;
   cleanedRegion.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
-  return cleanedRegion.innerHTML;
+  return cleanedRegion.outerHTML;
 }
 
 function extractFallbackText(html: string, maxLength: number): ExtractedContent {
@@ -150,16 +150,17 @@ export function extractReadableContentForQuery(
   try {
     const dom = new JSDOM(html, { url: 'https://example.com', virtualConsole });
     if (stylesheetError) throw stylesheetError;
+    const preferredRegion = extractPreferredDomSection(dom.window.document);
     const article = new Readability(dom.window.document).parse();
     const selected = selectRelevantContent({
       source: article?.content ?? dom.window.document.body.innerHTML,
       format: 'html', query, maxLength
     });
-    const recovered = selected.matched ? undefined : selectRelevantContent({
-      source: extractPreferredDomSection(dom.window.document),
+    const preferredSelection = selectRelevantContent({
+      source: preferredRegion,
       format: 'html', query, maxLength
     });
-    const querySelection = recovered?.matched ? recovered : selected;
+    const querySelection = preferredSelection.matched ? preferredSelection : selected;
     return {
       mode: 'readability',
       omitted: querySelection.omitted,
