@@ -90,7 +90,10 @@ describe('research workflow composition', () => {
 
     const result = await workflow.run({ query: 'Read https://example.com/post?utm_source=x' });
 
-    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com/post' });
+    expect(fetchPage).toHaveBeenCalledWith({
+      url: 'https://example.com/post',
+      query: 'Read https://example.com/post?utm_source=x'
+    });
     expect(result.evidence[0]?.url).toBe('https://example.com/post');
   });
 
