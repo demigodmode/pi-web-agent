@@ -2,6 +2,7 @@ import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import type { Attempt, ResearchFetchInput, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
+import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -14,10 +15,6 @@ function classifySource(url: string): ResearchSourceKind {
   return classifySourceProfile(url).sourceKind;
 }
 
-function summarizeText(text: string, maxLength = 180): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
-}
-
 function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
 }
@@ -28,7 +25,7 @@ function isBotCheckContent({ title = '', text }: { title?: string; text: string 
   );
 }
 
-function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string) {
+function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, query: string) {
   const content = fetched.content;
   if (fetched.status !== 'ok' || !content) return null;
   if (isBotCheckContent({ title: content.title, text: content.text })) return null;
@@ -56,8 +53,8 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string) {
     url: fetched.url,
     sourceKind,
     method: fetched.metadata.method,
-    summary: summarizeText(content.text),
-    supports: [summarizeText(content.text, 120)]
+    summary: selectRelevantExcerpt(content.text, query, 180),
+    supports: [selectRelevantExcerpt(content.text, query, 120)]
   } satisfies ResearchEvidence;
 }
 
@@ -187,7 +184,7 @@ export function createResearchWorker({
         if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
 
         if (fetched.status === 'ok') {
-          const parsedEvidence = evidenceFromFetch(fetched, candidate.title);
+          const parsedEvidence = evidenceFromFetch(fetched, candidate.title, query);
           if (parsedEvidence) {
             evidence.push(parsedEvidence);
             continue;

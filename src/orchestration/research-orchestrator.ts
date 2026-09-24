@@ -13,6 +13,7 @@ import type {
 } from './research-types.js';
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
+import { selectRelevantExcerpt } from '../extract/section-selector.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -20,10 +21,6 @@ const DEFAULT_MAX_HEADLESS_ATTEMPTS = 2;
 
 function classifyEvidenceUrl(url: string): ResearchEvidence['sourceKind'] {
   return classifySourceProfile(url).sourceKind;
-}
-
-function summarizeText(text: string, maxLength = 180): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
 function isReaderMethod(method: string): boolean {
@@ -36,7 +33,7 @@ function isBotCheckContent({ title = '', text }: { title?: string; text: string 
   );
 }
 
-function evidenceFromFetch(result: WebFetchResponse): ResearchEvidence | null {
+function evidenceFromFetch(result: WebFetchResponse, query: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
 
@@ -56,12 +53,12 @@ function evidenceFromFetch(result: WebFetchResponse): ResearchEvidence | null {
     url: result.url,
     sourceKind: classifyEvidenceUrl(result.url),
     method: result.metadata.method,
-    summary: summarizeText(result.content.text),
-    supports: [summarizeText(result.content.text, 120)]
+    summary: selectRelevantExcerpt(result.content.text, query, 180),
+    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
   };
 }
 
-function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidence | null {
+function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (isBotCheckContent({ title: result.content.title, text: result.content.text })) return null;
 
@@ -70,8 +67,8 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse): ResearchEvidenc
     url: result.url,
     sourceKind: classifyEvidenceUrl(result.url),
     method: 'headless',
-    summary: summarizeText(result.content.text),
-    supports: [summarizeText(result.content.text, 120)]
+    summary: selectRelevantExcerpt(result.content.text, query, 180),
+    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
   };
 }
 
@@ -211,7 +208,7 @@ export function createResearchOrchestrator({
         for (const url of extractDirectUrls(query).slice(0, 3)) {
           const directResult = await fetchDirect({ url, query });
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
-          const directEvidence = evidenceFromFetch(directResult);
+          const directEvidence = evidenceFromFetch(directResult, query);
           if (directEvidence) {
             allEvidence.push(directEvidence);
             continue;
@@ -229,7 +226,7 @@ export function createResearchOrchestrator({
             if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
               headlessAttempts++;
               const headlessResult = await headlessFetch({ url: directResult.url, query });
-              const headlessEvidence = evidenceFromHeadless(headlessResult);
+              const headlessEvidence = evidenceFromHeadless(headlessResult, query);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
               } else {
@@ -336,7 +333,7 @@ export function createResearchOrchestrator({
           if (decision.action === 'headless') {
             headlessAttempts++;
             const headlessResult = await headlessFetch({ url: decision.url, query });
-            const headlessEvidence = evidenceFromHeadless(headlessResult);
+            const headlessEvidence = evidenceFromHeadless(headlessResult, query);
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);
               const updatedRanked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));

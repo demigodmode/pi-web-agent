@@ -107,6 +107,59 @@ describe('research orchestrator types', () => {
     expect(result.evidence[0]?.url).toBe('https://example.com/thread');
   });
 
+  it('uses a late query-relevant passage for direct and direct-headless evidence', async () => {
+    const lateAnswer = 'Lunar archive transfer requires the signed manifest before upload.';
+    const worker = {
+      run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }))
+    };
+    const fetchDirect = vi.fn(async ({ url }) => ({
+      status: 'ok' as const,
+      url,
+      content: { title: 'Archive guide', text: `${'General archive background. '.repeat(12)}\n\n${lateAnswer}` },
+      metadata: { method: 'http' as const, cacheHit: false }
+    }));
+    const direct = createResearchOrchestrator({ worker, fetchDirect, headlessFetch: vi.fn() });
+    const directResult = await direct.run({ query: 'Read https://example.com/archive lunar archive transfer' });
+
+    expect(directResult.evidence[0]?.summary).toContain(lateAnswer);
+    expect(directResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+
+    const headlessFetch = vi.fn(async ({ url }) => ({
+      status: 'ok' as const,
+      url,
+      content: { title: 'Rendered archive', text: `${'General archive background. '.repeat(12)}\n\n${lateAnswer}` },
+      metadata: { method: 'headless' as const, cacheHit: false, browser: 'chromium' as const, navigationMs: 10 }
+    }));
+    const headless = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'needs_headless' as const,
+        url,
+        metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'WEAK_EXTRACTION', message: 'Weak extraction.' }
+      })),
+      headlessFetch
+    });
+    const headlessResult = await headless.run({ query: 'Read https://example.com/archive lunar archive transfer' });
+
+    expect(headlessResult.evidence[0]?.summary).toContain(lateAnswer);
+    expect(headlessResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+
+    const searchHeadless = createResearchOrchestrator({
+      worker: {
+        run: vi.fn(async () => ({
+          searchQueries: ['lunar archive transfer'], evidence: [], gaps: [], lowValueOutcomes: [],
+          suggestedHeadlessUrl: 'https://example.com/archive', exhaustedBudget: false
+        }))
+      },
+      headlessFetch
+    });
+    const searchHeadlessResult = await searchHeadless.run({ query: 'lunar archive transfer' });
+
+    expect(searchHeadlessResult.evidence[0]?.summary).toContain(lateAnswer);
+    expect(searchHeadlessResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+  });
+
   it('uses headless fallback when a direct url has weak http extraction', async () => {
     const fetchDirect = vi.fn(async ({ url }) => ({
       status: 'needs_headless' as const,

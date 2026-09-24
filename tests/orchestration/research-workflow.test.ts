@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
+import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
+import { createResearchWorker } from '../../src/orchestration/research-worker.js';
 
 describe('research workflow composition', () => {
   it('can compose from backend config defaults', async () => {
@@ -95,6 +98,33 @@ describe('research workflow composition', () => {
       query: 'Read https://example.com/post?utm_source=x'
     });
     expect(result.evidence[0]?.url).toBe('https://example.com/post');
+  });
+
+  it('keeps a late selected answer in final search-result findings with one HTTP request', async () => {
+    const lateAnswer = 'Lunar archive transfer requires the signed manifest before upload.';
+    const fetchImpl = vi.fn(async () => new Response(
+      `<html><head><title>Archive guide</title></head><body><main><h1>Lunar archive transfer</h1><p>${'General archive background. '.repeat(12)}</p><p>${lateAnswer}</p></main></body></html>`,
+      { headers: { 'content-type': 'text/html' } }
+    ));
+    const httpFetch = createHttpFetcher({ fetchImpl: fetchImpl as typeof fetch });
+    const worker = createResearchWorker({
+      search: async () => ({
+        status: 'ok',
+        results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive transfer details' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: ({ url, query }) => httpFetch(url, query)
+    });
+
+    const result = await createWebExploreTool({
+      explore: async ({ query }) => {
+        const workerPass = await worker.run({ query, maxSearchRounds: 1, maxFetches: 1 });
+        return { decision: { action: 'answer' as const }, evidence: workerPass.evidence, workerPass };
+      }
+    })({ query: 'lunar archive transfer manifest' });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.findings.join(' ')).toContain(lateAnswer);
   });
 
   it('does not spend headless on a low-value npm package page when other technical sources exist', async () => {

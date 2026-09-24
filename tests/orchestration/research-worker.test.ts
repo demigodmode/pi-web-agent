@@ -53,6 +53,30 @@ describe('research worker', () => {
     expect(result.exhaustedBudget).toBe(false);
   });
 
+  it('uses a query-relevant late passage for non-reader evidence', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive guide' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok',
+        url: 'https://example.com/archive',
+        content: {
+          title: 'Archive guide',
+          text: `${'General archive background. '.repeat(12)}\n\nLunar archive transfer requires the signed manifest before upload.`
+        },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      })
+    });
+
+    const result = await worker.run({ query: 'lunar archive transfer', maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(result.evidence[0]?.summary).toContain('Lunar archive transfer requires the signed manifest');
+    expect(result.evidence[0]?.supports[0]).toContain('Lunar archive transfer requires the signed manifest');
+  });
+
   it('flags a likely headless candidate when http fetch is weak', async () => {
     const fetchPage = vi.fn().mockResolvedValue({
       status: 'needs_headless' as const,
