@@ -60,6 +60,46 @@ describe('section selection', () => {
     expect(result.text.length).toBeLessThanOrEqual(120);
   });
 
+  it('captures relevant text from an ordinary container after paragraph text', () => {
+    const result = selectRelevantContent({
+      source: '<article><p>General policy information.</p><div>The cancellation deadline is 14 days.</div></article>',
+      format: 'html', query: 'cancellation deadline', maxLength: 4000
+    });
+    expect(result.matched).toBe(true);
+    expect(result.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.omitted).toBe(false);
+  });
+
+  it('matches Han query text within continuous Han content', () => {
+    const result = selectRelevantContent({
+      source: '<article><p>这是取消政策详情和退款说明。</p></article>',
+      format: 'html', query: '取消政策', maxLength: 4000
+    });
+    expect(result.matched).toBe(true);
+    expect(result.text).toContain('这是取消政策详情和退款说明。');
+  });
+
+  it('bounds every part of an oversized unbroken token and finds a late match', () => {
+    const token = `${'x'.repeat(80)}cancellationdeadline${'y'.repeat(80)}`;
+    const result = selectRelevantContent({
+      source: `<article><p>${token}</p></article>`,
+      format: 'html', query: 'cancellationdeadline', maxLength: 40
+    });
+    expect(result.matched).toBe(true);
+    expect(result.text).toContain('cancellationdeadline');
+    expect(result.text.length).toBeLessThanOrEqual(40);
+  });
+
+  it('returns an empty unmatched result for a nonpositive output budget', () => {
+    for (const maxLength of [-1, 0]) {
+      const result = selectRelevantContent({
+        source: '<article><p>The cancellation deadline is 14 days.</p></article>',
+        format: 'html', query: 'cancellation deadline', maxLength
+      });
+      expect(result).toEqual({ text: '', omitted: true, matched: false });
+    }
+  });
+
   it('selects a late Markdown heading', () => {
     const result = selectRelevantContent({
       source: `# Guide\n\n${'Generic information. '.repeat(300)}\n\n## Cancellation deadline\n\nThe deadline is 14 days.`,

@@ -5,6 +5,7 @@ export type SectionSelection = { text: string; anchor?: string; omitted: boolean
 
 type Section = { heading?: string; anchor?: string; blocks: string[] };
 type Window = { text: string; anchor?: string; score: number; index: number };
+type Chunk = { text: string; allowPartialMatch: boolean };
 
 const STOPWORDS = new Set([
   'about', 'after', 'from', 'have', 'into', 'that', 'their', 'there', 'these',
@@ -21,9 +22,14 @@ function queryTerms(query: string): string[] {
     .filter((term) => !STOPWORDS.has(term)))];
 }
 
-function scoreText(text: string, terms: string[]): number {
-  const words = new Set(text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
-  return terms.reduce((score, term) => score + Number(words.has(term)), 0);
+function scoreText(text: string, terms: string[], allowPartialMatch = false): number {
+  const normalized = text.toLowerCase();
+  const words = new Set(normalized.match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+  return terms.reduce((score, term) => score + Number(
+    words.has(term) ||
+    (/\p{Script=Han}/u.test(term) && normalized.includes(term)) ||
+    (allowPartialMatch && normalized.includes(term))
+  ), 0);
 }
 
 function splitLong(text: string, maxLength: number): string[] {
@@ -32,11 +38,14 @@ function splitLong(text: string, maxLength: number): string[] {
   const words = normalized.split(' ');
   const chunks: string[] = [];
   let chunk = '';
-  for (const word of words) {
+  for (let word of words) {
     if (word.length > maxLength) {
       if (chunk) chunks.push(chunk);
-      chunks.push(word.slice(0, maxLength));
-      chunk = word.slice(maxLength);
+      while (word.length > maxLength) {
+        chunks.push(word.slice(0, maxLength));
+        word = word.slice(maxLength);
+      }
+      chunk = word;
       continue;
     }
     if (chunk && chunk.length + word.length + 1 > maxLength) {
@@ -58,7 +67,8 @@ function htmlSections(source: string): Section[] {
   const sections: Section[] = [{ blocks: [] }];
   let current = sections[0];
   let pendingAnchor: string | undefined;
-  for (const element of root.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, pre, blockquote, dt, dd, a[name]')) {
+  const contentSelector = 'h1, h2, h3, h4, h5, h6, p, li, pre, blockquote, dt, dd, div, a[name]';
+  for (const element of root.querySelectorAll(contentSelector)) {
     const tag = element.tagName.toLowerCase();
     if (tag === 'a') {
       pendingAnchor = element.getAttribute('name') ?? element.id ?? pendingAnchor;
@@ -74,6 +84,7 @@ function htmlSections(source: string): Section[] {
       pendingAnchor = undefined;
       continue;
     }
+    if (tag === 'div' && element.querySelector(contentSelector)) continue;
     if (element.closest('li, blockquote') !== element && element.parentElement?.closest('li, blockquote')) continue;
     const text = clean(element.textContent ?? '');
     if (text) {
@@ -136,11 +147,12 @@ function makeWindows(sections: Section[], terms: string[], maxLength: number): W
         index: windows.length
       });
       for (const block of section.blocks) {
+        const allowPartialMatch = /^\p{L}[\p{L}\p{N}]*$/u.test(block) && block.length > windowLimit;
         for (const chunk of splitLong(block, windowLimit)) {
           windows.push({
             text: chunk,
             anchor: section.anchor,
-            score: scoreText(chunk, terms),
+            score: scoreText(chunk, terms, allowPartialMatch),
             index: windows.length
           });
         }
@@ -150,17 +162,23 @@ function makeWindows(sections: Section[], terms: string[], maxLength: number): W
     const heading = fullHeading;
     const headingLength = heading ? heading.length + 2 : 0;
     const bodyLimit = Math.max(0, windowLimit - headingLength);
-    const chunks = bodyLimit > 0 ? section.blocks.flatMap((block) => splitLong(block, bodyLimit)) : [];
-    if (chunks.length === 0 && heading) chunks.push('');
+    const chunks: Chunk[] = bodyLimit > 0 ? section.blocks.flatMap((block) => {
+      const allowPartialMatch = /^\p{L}[\p{L}\p{N}]*$/u.test(block) && block.length > bodyLimit;
+      return splitLong(block, bodyLimit).map((text) => ({ text, allowPartialMatch }));
+    }) : [];
+    if (chunks.length === 0 && heading) chunks.push({ text: '', allowPartialMatch: false });
     let body = '';
+    let bodyAllowsPartialMatch = false;
     const add = () => {
       const text = clean([heading, body].filter(Boolean).join('\n\n'));
-      windows.push({ text, anchor: section.anchor, score: scoreText(heading, terms) * 3 + scoreText(body, terms), index: windows.length });
+      windows.push({ text, anchor: section.anchor, score: scoreText(heading, terms) * 3 + scoreText(body, terms, bodyAllowsPartialMatch), index: windows.length });
       body = '';
+      bodyAllowsPartialMatch = false;
     };
     for (const chunk of chunks) {
-      if (body && body.length + chunk.length + 2 > bodyLimit) add();
-      body = body ? `${body}\n\n${chunk}` : chunk;
+      if (body && body.length + chunk.text.length + 2 > bodyLimit) add();
+      body = body ? `${body}\n\n${chunk.text}` : chunk.text;
+      bodyAllowsPartialMatch = !body.includes('\n\n') && chunk.allowPartialMatch;
     }
     if (body || heading) add();
   }
@@ -178,6 +196,9 @@ export function selectRelevantContent({
   const sections = format === 'html' ? htmlSections(source) : format === 'markdown'
     ? markdownSections(source) : plainSections(source);
   const fullText = renderSections(sections);
+  if (maxLength <= 0) {
+    return { text: '', omitted: fullText.length > 0, matched: false };
+  }
   const terms = queryTerms(query);
   const windows = makeWindows(sections, terms, maxLength);
   const ranked = windows.filter((window) => window.score > 0)
