@@ -7,13 +7,15 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- `web_explore` can pull query-relevant sections from long HTML pages, including content past the old 4,000-character cutoff. This applies to HTTP, headless, and Firecrawl reads; direct fetch output stays as it was. (#36)
 
 ### Changed
-- None.
+- You.com search and doctor now use the documented `/v1/search` endpoint. Web and news results feed into the usual search result list, with web results first. (#60)
 
 ### Fixed
-- None.
+- Research excludes recognized bot-check pages even when the verification text falls outside the section selected for the query. (#36)
+- `/web-agent doctor` no longer repeats the default DuckDuckGo and HTTP backends after listing them in the config summary. (#64)
+- Query-based page reads now check sibling articles when there is no `<main>` section. A match in the first article no longer hides an answer in a later one. (#71)
 
 ### Breaking
 - None.
