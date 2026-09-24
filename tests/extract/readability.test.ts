@@ -18,6 +18,21 @@ describe('readability extraction', () => {
     expect(result.omitted).toBe(true);
   });
 
+  it('recovers a late relevant main section omitted by Readability', () => {
+    const html = `<html><body>
+      <nav><h2>Cancellation deadline</h2><p>Navigation item</p></nav>
+      <article><h1>Guide</h1><p>${'intro '.repeat(1000)}</p></article>
+      <main><h2 id="late">Cancellation deadline</h2><p>The cancellation deadline is 14 days.</p></main>
+    </body></html>`;
+
+    const result = extractReadableContentForQuery(html, 'cancellation deadline');
+
+    expect(result.mode).toBe('readability');
+    expect(result.content.text).toContain('The cancellation deadline is 14 days.');
+    expect(result.content.text).not.toContain('Navigation item');
+    expect(result.content.sectionAnchor).toBe('late');
+  });
+
   it('selects a late answer through the CSS parser fallback', () => {
     const html = `<html><head><style>.x { &:hover { color: red; } }</style></head><body><main>
       <h1>Service guide</h1><p>${'General information. '.repeat(300)}</p>

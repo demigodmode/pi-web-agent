@@ -87,6 +87,13 @@ function extractPreferredSection(html: string): string {
   return html;
 }
 
+function extractPreferredDomSection(document: Document): string {
+  const region = document.querySelector('main') ?? document.querySelector('article') ?? document.body;
+  const cleanedRegion = region.cloneNode(true) as Element;
+  cleanedRegion.querySelectorAll('script, style, noscript, svg, template').forEach((element) => element.remove());
+  return cleanedRegion.innerHTML;
+}
+
 function extractFallbackText(html: string, maxLength: number): ExtractedContent {
   const title = extractTitle(html);
   let section = extractPreferredSection(html);
@@ -148,14 +155,19 @@ export function extractReadableContentForQuery(
       source: article?.content ?? dom.window.document.body.innerHTML,
       format: 'html', query, maxLength
     });
+    const recovered = selected.matched ? undefined : selectRelevantContent({
+      source: extractPreferredDomSection(dom.window.document),
+      format: 'html', query, maxLength
+    });
+    const querySelection = recovered?.matched ? recovered : selected;
     return {
       mode: 'readability',
-      omitted: selected.omitted,
+      omitted: querySelection.omitted,
       content: {
         title: article?.title ?? (dom.window.document.title || undefined),
         byline: article?.byline || undefined,
-        text: selected.text,
-        ...(selected.anchor ? { sectionAnchor: selected.anchor } : {})
+        text: querySelection.text,
+        ...(querySelection.anchor ? { sectionAnchor: querySelection.anchor } : {})
       }
     };
   } catch {
