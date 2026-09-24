@@ -3,6 +3,7 @@ import type { Attempt, ResearchFetchInput, WebFetchResponse, WebSearchResponse }
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -21,9 +22,7 @@ function isReaderMethod(method: string): boolean {
 
 function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
   if (botCheck) return true;
-  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
-    `${title}\n${text}`
-  );
+  return hasBotCheckContent(`${title}\n${text}`);
 }
 
 function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, query: string) {

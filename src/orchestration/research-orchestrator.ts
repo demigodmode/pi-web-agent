@@ -14,6 +14,7 @@ import type {
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -29,9 +30,7 @@ function isReaderMethod(method: string): boolean {
 
 function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
   if (botCheck) return true;
-  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(
-    `${title}\n${text}`
-  );
+  return hasBotCheckContent(`${title}\n${text}`);
 }
 
 function evidenceFromFetch(result: WebFetchResponse, query: string): ResearchEvidence | null {

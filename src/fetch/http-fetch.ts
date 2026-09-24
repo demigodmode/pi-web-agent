@@ -1,14 +1,11 @@
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 import { findGuardError } from './network-guard.js';
 import type { WebFetchResponse } from '../types.js';
 
 function looksLikeScriptShell(html: string): boolean {
   const lower = html.toLowerCase();
   return lower.includes('<script') && (lower.includes('id="app"') || lower.includes('id="root"'));
-}
-
-function hasBotCheckContent(text: string): boolean {
-  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(text);
 }
 
 function isWeakHttpContent(options: { html: string; title?: string; text: string }): boolean {
@@ -60,7 +57,7 @@ export function createHttpFetcher({
     const extraction = queryExtraction ?? baselineExtraction;
     const content = {
       ...extraction.content,
-      ...(hasBotCheckContent(html) ? { botCheck: true } : {})
+      ...(hasBotCheckContent(html, 'html') ? { botCheck: true } : {})
     };
 
     if (

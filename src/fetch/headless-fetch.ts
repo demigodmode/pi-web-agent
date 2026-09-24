@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import { BLOCKED_HEADER, type GuardProxy } from './guard-proxy.js';
 import { BLOCKED_PRIVATE_ADDRESS, BlockedAddressError, UPSTREAM_PROXY_REFUSED, type NetworkGuard } from './network-guard.js';
@@ -17,10 +18,6 @@ function cleanupRenderedText(text: string): string {
   cleaned = cleaned.replace(/(Privacy Terms)(\s+\1){1,}/gi, '$1');
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
   return cleaned;
-}
-
-function hasBotCheckContent(text: string): boolean {
-  return /performing security verification|security service|verify you are not a bot|just a moment|checking your browser/i.test(text);
 }
 
 function errorResult(url: string, code: string, message: string): WebFetchHeadlessResponse {
@@ -261,7 +258,7 @@ export async function headlessFetch(
     const cleanedContent = {
       ...extraction.content,
       text: cleanupRenderedText(extraction.content.text),
-      ...(hasBotCheckContent(html) ? { botCheck: true } : {})
+      ...(hasBotCheckContent(html, 'html') ? { botCheck: true } : {})
     };
 
     if (!cleanedBaselineText || cleanedBaselineText.length < 40) {

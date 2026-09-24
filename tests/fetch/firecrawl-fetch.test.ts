@@ -33,6 +33,17 @@ describe('firecrawl fetch backend', () => {
     expect(result.content?.text).not.toContain('ignored malicious script text');
   });
 
+  it('does not treat a bot phrase inside Firecrawl HTML script content as a bot wall', async () => {
+    const html = '<html><body><main><h1>Archive guide</h1><p>Useful archive transfer details.</p><script>"Performing security verification"</script></main></body></html>';
+    const result = await createFirecrawlFetcher({
+      baseUrl: 'http://localhost:3002',
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { html, metadata: {} } })))
+    })('https://example.com/guide', 'archive transfer');
+
+    expect(result.status).toBe('ok');
+    expect(result.content?.botCheck).toBeUndefined();
+  });
+
   it('treats a body that fails mid-read as a transient FETCH_FAILED', async () => {
     const body = new ReadableStream({
       start(controller) {

@@ -1,6 +1,7 @@
 import type { FirecrawlOptions } from '../backends/config.js';
 import { classifyHttpFailure, readResponseParts } from '../backends/provider-failure.js';
 import { selectRelevantContent } from '../extract/section-selector.js';
+import { hasBotCheckContent } from '../extract/bot-check.js';
 import type { FailureInfo, WebFetchResponse } from '../types.js';
 
 type FirecrawlResponse = {
@@ -116,7 +117,12 @@ export function createFirecrawlFetcher({
     return {
       status: 'ok',
       url: resolvedUrl,
-      content: { title, text: selectedText, ...(selection?.anchor ? { sectionAnchor: selection.anchor } : {}) },
+      content: {
+        title,
+        text: selectedText,
+        ...(hasBotCheckContent(text, markdown !== undefined ? 'markdown' : 'html') ? { botCheck: true } : {}),
+        ...(selection?.anchor ? { sectionAnchor: selection.anchor } : {})
+      },
       metadata: { method: 'firecrawl', cacheHit: false, truncated: selection?.omitted ?? text.length >= 4000 }
     };
   };

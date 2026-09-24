@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createResearchWorker } from '../../src/orchestration/research-worker.js';
+import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('research worker', () => {
   it('runs one bounded search/fetch pass and summarizes evidence', async () => {
@@ -75,6 +76,36 @@ describe('research worker', () => {
 
     expect(result.evidence[0]?.summary).toContain('Lunar archive transfer requires the signed manifest');
     expect(result.evidence[0]?.supports[0]).toContain('Lunar archive transfer requires the signed manifest');
+  });
+
+  it('keeps a Firecrawl bot wall omitted by query selection out of evidence', async () => {
+    const query = 'lunar archive transfer manifest';
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: {
+        markdown: `# Lunar archive transfer manifest\n\n${'Lunar archive transfer manifest instructions. '.repeat(110)}\n\nPerforming security verification. Please verify you are not a bot.`,
+        metadata: { title: 'Archive guide' }
+      }
+    })));
+    const firecrawlFetch = createFirecrawlFetcher({ baseUrl: 'http://firecrawl.test', fetchImpl });
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Archive guide', url: 'https://example.com/archive', snippet: 'Archive transfer details' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: ({ url, query: activeQuery }) => firecrawlFetch(url, activeQuery)
+    });
+
+    const result = await worker.run({ query, maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(0);
+    expect(result.lowValueOutcomes).toContainEqual({
+      kind: 'bot-check',
+      url: 'https://example.com/archive',
+      message: 'Fetched page showed a bot-check or security verification page.'
+    });
   });
 
   it('flags a likely headless candidate when http fetch is weak', async () => {
