@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { BlockedAddressError } from '../../src/fetch/network-guard.js';
 
@@ -25,5 +25,31 @@ describe('http fetch blocked redirect', () => {
     }) as unknown as typeof fetch;
 
     await expect(createHttpFetcher({ fetchImpl })('https://example.com/')).rejects.toThrow('socket hang up');
+  });
+});
+
+describe('http fetch query selection', () => {
+  it('selects a late relevant section without treating the short selection as weak', async () => {
+    const earlyText = 'General documentation background. '.repeat(220);
+    const html = `<html><body><article><h1>Guide</h1><p>${earlyText}</p><h2 id="cancellation">Cancellation deadline</h2><p>The cancellation deadline is 48 hours before departure.</p></article></body></html>`;
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(html, { headers: { 'content-type': 'text/html' } }));
+
+    const result = await createHttpFetcher({ fetchImpl })('https://example.com/guide', 'cancellation deadline');
+
+    expect(result).toMatchObject({ status: 'ok', content: { sectionAnchor: 'cancellation' } });
+    expect(result.content?.text).toContain('48 hours before departure');
+    expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+    expect(result.metadata.truncated).toBe(true);
+  });
+
+  it('keeps the leading extraction behavior when no query is supplied', async () => {
+    const html = `<html><body><article><p>${'Early material. '.repeat(400)}</p><h2>Cancellation deadline</h2><p>Late answer.</p></article></body></html>`;
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(html, { headers: { 'content-type': 'text/html' } }));
+
+    const result = await createHttpFetcher({ fetchImpl })('https://example.com/guide');
+
+    expect(result).toMatchObject({ status: 'ok', metadata: { truncated: true } });
+    expect(result.content?.text).toContain('Early material');
+    expect(result.content?.text).not.toContain('Late answer');
   });
 });

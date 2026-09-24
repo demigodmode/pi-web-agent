@@ -1,5 +1,6 @@
 import type { FirecrawlOptions } from '../backends/config.js';
 import { classifyHttpFailure, readResponseParts } from '../backends/provider-failure.js';
+import { selectRelevantContent } from '../extract/section-selector.js';
 import type { FailureInfo, WebFetchResponse } from '../types.js';
 
 type FirecrawlResponse = {
@@ -34,7 +35,7 @@ export function createFirecrawlFetcher({
   options?: FirecrawlOptions;
   fetchImpl?: typeof fetch;
 }) {
-  return async function firecrawlFetch(url: string): Promise<WebFetchResponse> {
+  return async function firecrawlFetch(url: string, query?: string): Promise<WebFetchResponse> {
     const failed = (message: string, failure: FailureInfo): WebFetchResponse => ({
       status: 'error',
       url,
@@ -88,11 +89,9 @@ export function createFirecrawlFetcher({
       });
     }
 
-    const text = typeof parsed.data?.markdown === 'string'
-      ? parsed.data.markdown
-      : typeof parsed.data?.html === 'string'
-        ? parsed.data.html
-        : '';
+    const markdown = typeof parsed.data?.markdown === 'string' ? parsed.data.markdown : undefined;
+    const html = typeof parsed.data?.html === 'string' ? parsed.data.html : undefined;
+    const text = markdown ?? html ?? '';
     const resolvedUrl = typeof parsed.data?.metadata?.sourceURL === 'string'
       ? parsed.data.metadata.sourceURL
       : url;
@@ -109,11 +108,16 @@ export function createFirecrawlFetcher({
       };
     }
 
+    const selection = query
+      ? selectRelevantContent({ source: text, format: markdown !== undefined ? 'markdown' : 'html', query })
+      : undefined;
+    const selectedText = selection?.text ?? text;
+
     return {
       status: 'ok',
       url: resolvedUrl,
-      content: { title, text },
-      metadata: { method: 'firecrawl', cacheHit: false, truncated: text.length >= 4000 }
+      content: { title, text: selectedText, ...(selection?.anchor ? { sectionAnchor: selection.anchor } : {}) },
+      metadata: { method: 'firecrawl', cacheHit: false, truncated: selection?.omitted ?? text.length >= 4000 }
     };
   };
 }

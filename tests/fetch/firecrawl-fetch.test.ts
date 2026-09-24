@@ -2,6 +2,37 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('firecrawl fetch backend', () => {
+  it('selects a late relevant markdown section with one scrape', async () => {
+    const markdown = `# Guide\n\n${'General documentation background. '.repeat(220)}\n\n## Cancellation deadline\n\nThe cancellation deadline is 48 hours before departure.`;
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: { markdown, metadata: { title: 'Guide' } }
+    })));
+
+    const result = await createFirecrawlFetcher({ baseUrl: 'http://localhost:3002', fetchImpl })(
+      'https://example.com/guide',
+      'cancellation deadline'
+    );
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'ok', metadata: { truncated: true } });
+    expect(result.content?.text).toContain('48 hours before departure');
+    expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+  });
+
+  it('selects HTML without markup or scripts when markdown is unavailable', async () => {
+    const html = `<html><body><article><p>${'General documentation background. '.repeat(220)}</p><script>ignored malicious script text</script><h2 id="cancellation">Cancellation deadline</h2><p>The cancellation deadline is 48 hours before departure.</p></article></body></html>`;
+    const result = await createFirecrawlFetcher({
+      baseUrl: 'http://localhost:3002',
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: { html, metadata: {} } })))
+    })('https://example.com/guide', 'cancellation deadline');
+
+    expect(result).toMatchObject({ status: 'ok', content: { sectionAnchor: 'cancellation' } });
+    expect(result.content?.text).toContain('48 hours before departure');
+    expect(result.content?.text).not.toContain('<h2');
+    expect(result.content?.text).not.toContain('ignored malicious script text');
+  });
+
   it('treats a body that fails mid-read as a transient FETCH_FAILED', async () => {
     const body = new ReadableStream({
       start(controller) {
