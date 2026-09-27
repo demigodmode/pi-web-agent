@@ -273,12 +273,47 @@ describe('fanout config', () => {
     expect(issues.some((i) => i.includes('searxng'))).toBe(true);
   });
 
-  it('flags google-serp in the fanout set without a base url', () => {
+  it('flags google-serp in the fanout set without an endpoint of its own', () => {
     const issues = validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'google-serp'] } }
     });
-    expect(issues).toContain('search fanout with google-serp requires backends.search.baseUrl');
+    expect(issues).toContain('search fanout with google-serp requires backends.search.baseUrls.google-serp');
+  });
+
+  it('flags a google-serp fanout entry that only has the SearXNG baseUrl', () => {
+    // The endpoint the fanout set would otherwise hand to Google SERP belongs to SearXNG.
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://localhost:8080',
+        fanout: { mode: 'on', providers: ['duckduckgo', 'searxng', 'google-serp'] }
+      }
+    });
+    expect(issues).toContain('search fanout with google-serp requires backends.search.baseUrls.google-serp');
+    expect(issues.some((i) => i.includes('searxng'))).toBe(false);
+  });
+
+  it('accepts a fanout set where each endpoint-backed provider has its own url', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://localhost:8080',
+        baseUrls: { 'google-serp': 'https://serp.example/search' },
+        fanout: { mode: 'on', providers: ['duckduckgo', 'searxng', 'google-serp'] }
+      }
+    });
+    expect(issues.filter((i) => i.includes('requires backends.search.baseUrl'))).toEqual([]);
+  });
+
+  it('flags a blank baseUrls entry', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'duckduckgo', baseUrls: { searxng: '   ' } }
+    });
+    expect(issues).toContain('search baseUrls.searxng must not be empty when provided');
   });
 
   it('parses fanout even when no provider is set (provider inherited)', () => {
@@ -338,12 +373,34 @@ describe('usableSearchProviders', () => {
     expect(providers).toEqual(['duckduckgo', 'exa']);
   });
 
-  it('includes google-serp when a baseUrl and the API key are set', () => {
-    const search = { provider: 'duckduckgo' as const, baseUrl: 'https://serp.example/search' };
+  it('includes google-serp when it has an endpoint of its own and the API key is set', () => {
+    const search = {
+      provider: 'duckduckgo' as const,
+      baseUrl: 'https://searxng.example',
+      baseUrls: { 'google-serp': 'https://serp.example/search' }
+    };
 
     expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
       .toEqual(['duckduckgo', 'searxng', 'google-serp']);
     expect(usableSearchProviders(search, {})).toEqual(['duckduckgo', 'searxng']);
+  });
+
+  it('does not offer google-serp a bare baseUrl that belongs to SearXNG', () => {
+    // Regression: both endpoint-backed providers used to read the one baseUrl, so the fanout set
+    // offered Google SERP a SearXNG URL and posted the Google key to it.
+    const search = { provider: 'duckduckgo' as const, baseUrl: 'https://searxng.example' };
+
+    expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
+      .toEqual(['duckduckgo', 'searxng']);
+  });
+
+  it('does not offer SearXNG the endpoint of a selected google-serp provider', () => {
+    // The reverse configuration: Google SERP selected, default fanout enabled. SearXNG has no
+    // endpoint of its own here, so it stays out of the set instead of querying the Google endpoint.
+    const search = { provider: 'google-serp' as const, baseUrl: 'https://serp.example/search' };
+
+    expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
+      .toEqual(['duckduckgo', 'google-serp']);
   });
 
   it('includes tavily when TAVILY_API_KEY is set', () => {

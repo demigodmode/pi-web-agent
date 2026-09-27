@@ -1,4 +1,5 @@
-import type { BackendConfig, FirecrawlOptions, SearxngOptions } from './config.js';
+import { resolveSearchBaseUrl, type BackendConfig, type FirecrawlOptions, type SearxngOptions } from './config.js';
+import { classifyEnvelopeFailure } from './provider-failure.js';
 import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
 
 function withTimeout(timeoutMs: number) {
@@ -187,14 +188,15 @@ export async function checkBackendHealth(
     }
   } else if (config.search.provider === 'google-serp') {
     const apiKey = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
-    if (!config.search.baseUrl) {
+    const baseUrl = resolveSearchBaseUrl(config.search, 'google-serp');
+    if (!baseUrl) {
       lines.push('search backend: google-serp warning (missing baseUrl)');
     } else if (!apiKey?.trim()) {
       lines.push('search backend: google-serp warning (missing PI_WEB_AGENT_GOOGLE_SERP_API_KEY)');
     } else {
       const timeout = withTimeout(timeoutMs);
       try {
-        const response = await fetchImpl(config.search.baseUrl, {
+        const response = await fetchImpl(baseUrl, {
           method: 'POST',
           headers: {
             Accept: 'application/json',
@@ -208,9 +210,16 @@ export async function checkBackendHealth(
           lines.push(`search backend: google-serp warning (HTTP ${response.status})`);
         } else {
           const json = (await response.json()) as { organic?: unknown };
-          lines.push(Array.isArray(json.organic)
-            ? 'search backend: google-serp ok'
-            : 'search backend: google-serp warning (unexpected response)');
+          // A 200 body carrying an error envelope is not healthy, even when it also has
+          // an (empty) organic array — that is the shape a rejected key comes back in.
+          const envelope = classifyEnvelopeFailure(json);
+          if (envelope) {
+            lines.push(`search backend: google-serp warning (${envelope.message})`);
+          } else {
+            lines.push(Array.isArray(json.organic)
+              ? 'search backend: google-serp ok'
+              : 'search backend: google-serp warning (unexpected response)');
+          }
         }
       } catch (error) {
         lines.push(`search backend: google-serp warning (${message(error)})`);
@@ -219,7 +228,7 @@ export async function checkBackendHealth(
       }
     }
   } else if (config.search.provider === 'searxng') {
-    const baseUrl = config.search.baseUrl;
+    const baseUrl = resolveSearchBaseUrl(config.search, 'searxng');
     if (!baseUrl) {
       lines.push('search backend: searxng warning (missing baseUrl)');
     } else {
@@ -247,8 +256,15 @@ export async function checkBackendHealth(
     lines.push(`search fanout: ${config.search.fanout.mode} (${providers.join(', ')})`);
 
     for (const provider of providers) {
-      if (provider === 'searxng' && !config.search.baseUrl) {
+      if (provider === 'searxng' && !resolveSearchBaseUrl(config.search, 'searxng')) {
         lines.push('search fanout provider searxng warning (missing baseUrl)');
+      } else if (provider === 'google-serp') {
+        const apiKey = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+        if (!resolveSearchBaseUrl(config.search, 'google-serp')) {
+          lines.push('search fanout provider google-serp warning (missing baseUrl)');
+        } else if (!apiKey?.trim()) {
+          lines.push('search fanout provider google-serp warning (missing PI_WEB_AGENT_GOOGLE_SERP_API_KEY)');
+        }
       } else if (provider === 'brave') {
         const apiKey = process.env.PI_WEB_AGENT_BRAVE_API_KEY;
         if (!apiKey?.trim()) {

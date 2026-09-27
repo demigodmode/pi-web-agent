@@ -25,7 +25,10 @@ export type ProxyConfig = {
 
 export type SearchBackendConfig = {
   provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'google-serp';
+  /** Endpoint of the selected provider. Under fanout, give the other endpoint-backed providers their own entry in baseUrls. */
   baseUrl?: string;
+  /** Per-provider endpoints, so one endpoint-backed provider never has to reuse another's baseUrl (see resolveSearchBaseUrl). */
+  baseUrls?: Partial<Record<SearchProviderName, string>>;
   /** Header the Google SERP key is sent in (default X-API-Key). */
   keyHeader?: string;
   fallback?: 'duckduckgo';
@@ -67,7 +70,7 @@ export type BackendConfigOverride = {
 
 export type BackendConfigFile = {
   backends?: {
-    search?: { provider?: unknown; baseUrl?: unknown; keyHeader?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
+    search?: { provider?: unknown; baseUrl?: unknown; baseUrls?: unknown; keyHeader?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
     headless?: { provider?: unknown };
     proxy?: { url?: unknown; username?: unknown; password?: unknown };
@@ -193,6 +196,35 @@ const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 
 /** Providers that talk to an endpoint the user configures in backends.search.baseUrl. */
 export const BASE_URL_SEARCH_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'google-serp'];
 
+/**
+ * Whether `backends.search.baseUrl` is the key that configures this provider.
+ *
+ * The provider the user selected reads its endpoint from `baseUrl`. For anything else that is only
+ * true for SearXNG under a selection that has no endpoint of its own: `baseUrl` predates this
+ * provider, so a config that selects DuckDuckGo (or any hosted provider) and sets `baseUrl` still
+ * means "the SearXNG endpoint", which is how a fanout set adds SearXNG to the default engine.
+ * Validation names that key in its message, so it has to agree with resolveSearchBaseUrl.
+ */
+function searchBaseUrlApplies(search: SearchBackendConfig, provider: SearchProviderName): boolean {
+  if (provider === search.provider) return true;
+  return provider === 'searxng' && !BASE_URL_SEARCH_PROVIDERS.includes(search.provider);
+}
+
+/**
+ * The endpoint one provider should talk to. `backends.search.baseUrls.<provider>` is that
+ * provider's own endpoint and always wins; otherwise `baseUrl` is used, but only by the provider
+ * it belongs to (see searchBaseUrlApplies).
+ *
+ * Without that split, a fanout set with both endpoint-backed providers would hand both of them the
+ * same URL — and the Google key would ride along to SearXNG. A provider that has no endpoint of its
+ * own is left out of the set instead (usableSearchProviders), never pointed at another's URL.
+ */
+export function resolveSearchBaseUrl(search: SearchBackendConfig, provider: SearchProviderName): string | undefined {
+  const own = search.baseUrls?.[provider]?.trim();
+  if (own) return own;
+  return searchBaseUrlApplies(search, provider) ? search.baseUrl?.trim() || undefined : undefined;
+}
+
 /** Providers a duckduckgo fallback can fall back from. */
 export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
 
@@ -202,13 +234,30 @@ export function usableSearchProviders(
 ): SearchProviderName[] {
   // Match the provider implementations, which treat a blank/whitespace key as unconfigured.
   const usable: SearchProviderName[] = ['duckduckgo']; // keyless, always usable
-  if (search.baseUrl?.trim()) usable.push('searxng');
+  if (resolveSearchBaseUrl(search, 'searxng')) usable.push('searxng');
   if (env.PI_WEB_AGENT_BRAVE_API_KEY?.trim()) usable.push('brave');
   if (env.YDC_API_KEY?.trim()) usable.push('youcom');
   if (env.EXA_API_KEY?.trim()) usable.push('exa');
   if (env.TAVILY_API_KEY?.trim()) usable.push('tavily');
-  if (search.baseUrl?.trim() && env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY?.trim()) usable.push('google-serp');
+  if (resolveSearchBaseUrl(search, 'google-serp') && env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY?.trim()) usable.push('google-serp');
   return usable;
+}
+
+/**
+ * Per-provider endpoints. Only the endpoint-backed providers can have one, and the value has
+ * to be a string: a typo drops the block rather than pointing a provider at an empty URL.
+ */
+function extractSearchBaseUrls(value: unknown): Partial<Record<SearchProviderName, string>> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return undefined;
+  const baseUrls: Partial<Record<SearchProviderName, string>> = {};
+  for (const [provider, url] of entries) {
+    if (!BASE_URL_SEARCH_PROVIDERS.includes(provider as SearchProviderName)) return undefined;
+    if (typeof url !== 'string') return undefined;
+    baseUrls[provider as SearchProviderName] = url;
+  }
+  return baseUrls;
 }
 
 function extractFanoutConfig(value: unknown): FanoutConfig | undefined {
@@ -249,6 +298,11 @@ export function extractBackendConfigOverride(
         override.search.options = options;
       }
     }
+  }
+
+  const baseUrls = extractSearchBaseUrls(backends?.search?.baseUrls);
+  if (baseUrls) {
+    override.search = { ...(override.search ?? {}), baseUrls };
   }
 
   const fanout = extractFanoutConfig(backends?.search?.fanout);
@@ -293,8 +347,14 @@ export function extractBackendConfigOverride(
 export function validateBackendConfig(config: BackendConfig): string[] {
   const issues: string[] = [];
 
-  if (BASE_URL_SEARCH_PROVIDERS.includes(config.search.provider) && !config.search.baseUrl) {
+  if (BASE_URL_SEARCH_PROVIDERS.includes(config.search.provider) && !resolveSearchBaseUrl(config.search, config.search.provider)) {
     issues.push(`search provider ${config.search.provider} requires backends.search.baseUrl`);
+  }
+
+  for (const [provider, baseUrl] of Object.entries(config.search.baseUrls ?? {})) {
+    if (baseUrl !== undefined && !baseUrl.trim()) {
+      issues.push(`search baseUrls.${provider} must not be empty when provided`);
+    }
   }
 
   if (config.search.keyHeader !== undefined && !config.search.keyHeader.trim()) {
@@ -371,11 +431,13 @@ export function validateBackendConfig(config: BackendConfig): string[] {
     if (fanout.mode !== 'off' && fanout.mode !== 'on' && fanout.mode !== 'auto') {
       issues.push('search fanout.mode must be off, on, or auto');
     }
-    if (fanout.providers?.includes('searxng') && !config.search.baseUrl) {
-      issues.push('search fanout with searxng requires backends.search.baseUrl');
-    }
-    if (fanout.providers?.includes('google-serp') && !config.search.baseUrl) {
-      issues.push('search fanout with google-serp requires backends.search.baseUrl');
+    for (const provider of BASE_URL_SEARCH_PROVIDERS) {
+      if (!fanout.providers?.includes(provider) || resolveSearchBaseUrl(config.search, provider)) continue;
+      issues.push(
+        searchBaseUrlApplies(config.search, provider)
+          ? `search fanout with ${provider} requires backends.search.baseUrl`
+          : `search fanout with ${provider} requires backends.search.baseUrls.${provider}`
+      );
     }
   }
 
@@ -387,10 +449,14 @@ function mergeSearchConfig(
   override: Partial<SearchBackendConfig> | undefined
 ): SearchBackendConfig {
   if (!override) return current;
+  // Per-provider endpoints are additive across layers: a project layer naming one endpoint
+  // must not drop the endpoint a global layer set for the other provider.
+  const baseUrls = { ...current.baseUrls, ...override.baseUrls };
+  const withBaseUrls = Object.keys(baseUrls).length > 0 ? { baseUrls } : {};
   if (override.provider && override.provider !== current.provider) {
-    return { ...override, provider: override.provider };
+    return { ...override, provider: override.provider, ...withBaseUrls };
   }
-  return { ...current, ...override };
+  return { ...current, ...override, ...withBaseUrls };
 }
 
 function mergeFetchConfig(

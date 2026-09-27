@@ -22,7 +22,7 @@ import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
 import type { ResearchFetchInput, SearchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
-import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
+import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, resolveSearchBaseUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
 import { throwIfAborted } from '../abort.js';
 import { createGithubReader } from '../readers/github-reader.js';
@@ -279,10 +279,12 @@ export function createBackendSet(
 
   function buildProviderSearch(name: SearchProviderName): BackendSet['search'] {
     switch (name) {
-      case 'searxng':
-        return config.search.baseUrl
-          ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options, fetchImpl })
+      case 'searxng': {
+        const baseUrl = resolveSearchBaseUrl(config.search, 'searxng');
+        return baseUrl
+          ? createSearxngSearch({ baseUrl, options: config.search.options, fetchImpl })
           : invalidSearxngSearch();
+      }
       case 'brave':
         return createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY, fetchImpl });
       case 'youcom':
@@ -291,15 +293,19 @@ export function createBackendSet(
         return createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl });
       case 'tavily':
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
-      case 'google-serp':
-        return config.search.baseUrl
+      case 'google-serp': {
+        // Each endpoint-backed provider resolves its own URL, so a fanout set can never
+        // point one provider at another's endpoint (or send it the other's key).
+        const baseUrl = resolveSearchBaseUrl(config.search, 'google-serp');
+        return baseUrl
           ? createGoogleSerpSearch({
-              baseUrl: config.search.baseUrl,
+              baseUrl,
               apiKey: process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY,
               ...(config.search.keyHeader !== undefined ? { keyHeader: config.search.keyHeader } : {}),
               fetchImpl
             })
           : invalidGoogleSerpSearch();
+      }
       case 'duckduckgo':
       default:
         return createDuckDuckGo();

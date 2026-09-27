@@ -70,14 +70,17 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
       return error('FETCH_FAILED', `${label} search request failed: HTTP ${response.status}`, classifyHttpFailure(name, parts, now()));
     }
 
+    // A 2xx whose body reports the failure: still a provider failure, and the kind
+    // matters to the fallback policy (#55), so it must not collapse into bad_response.
+    // Checked before normalizing: an error envelope with an empty (or partially filled)
+    // `organic` array would otherwise be reported as a successful, empty search.
+    const envelope = parts.json === undefined ? undefined : options.bodyFailure?.(parts.json);
+    if (envelope) {
+      return error('FETCH_FAILED', `${label} search request failed: ${envelope.message}.`, envelope.failure);
+    }
+
     const normalized = parts.json === undefined ? undefined : options.normalize(parts.json);
     if (!normalized) {
-      // A 2xx whose body reports the failure: still a provider failure, and the kind
-      // matters to the fallback policy (#55), so it must not collapse into bad_response.
-      const envelope = parts.json === undefined ? undefined : options.bodyFailure?.(parts.json);
-      if (envelope) {
-        return error('FETCH_FAILED', `${label} search request failed: ${envelope.message}.`, envelope.failure);
-      }
       return error('BAD_RESPONSE', `${label} returned a response that did not match the expected format.`, {
         kind: 'bad_response',
         httpStatus: response.status

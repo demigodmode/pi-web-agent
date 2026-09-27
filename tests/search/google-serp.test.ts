@@ -129,6 +129,42 @@ describe('google-serp search', () => {
     expect(result.error).toBeUndefined();
   });
 
+  it('reports an auth failure for an error envelope that also carries an organic array', async () => {
+    // The envelope wins over the payload: an empty array is not a valid empty search, and a row
+    // next to the error is not a result.
+    for (const body of [
+      { status: 1001, error: 'Unauthorized', organic: [] },
+      { status: 1001, error: 'Unauthorized', organic: [{ title: 'T', link: 'https://x.test/', snippet: 's' }] }
+    ]) {
+      const result = await createGoogleSerpSearchTool({
+        baseUrl: ENDPOINT,
+        apiKey: 'key',
+        fetchImpl: vi.fn().mockResolvedValue(response(body))
+      })({ query: 'q' });
+
+      expect(result.status).toBe('error');
+      expect(result.results).toEqual([]);
+      expect(result.error).toMatchObject({
+        code: 'FETCH_FAILED',
+        message: 'Google SERP search request failed: "Unauthorized" (provider status 1001).',
+        failure: { kind: 'auth_failed', httpStatus: 200, providerCode: '1001' }
+      });
+    }
+  });
+
+  it('treats the documented 1504 timeout as retryable', async () => {
+    const result = await createGoogleSerpSearchTool({
+      baseUrl: ENDPOINT,
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({ status: 1504, error: 'Failed to fetch search results' }))
+    })({ query: 'q' });
+
+    expect(result.error).toMatchObject({
+      code: 'FETCH_FAILED',
+      failure: { kind: 'transient', httpStatus: 200, providerCode: '1504' }
+    });
+  });
+
   it('classifies HTTP failures for the endpoint', async () => {
     const cases: Array<[number, string]> = [
       [401, 'auth_failed'],

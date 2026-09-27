@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyHttpFailure } from '../../src/backends/provider-failure.js';
+import { classifyEnvelopeFailure, classifyHttpFailure } from '../../src/backends/provider-failure.js';
 
 const now = Date.parse('2026-09-16T12:00:00Z');
 const parts = (status: number, body?: unknown, headers: Record<string, string> = {}) => ({
@@ -94,5 +94,28 @@ describe('classifyHttpFailure documented provider rules', () => {
 
   it('DuckDuckGo: 403 is a bot wall, not auth', () => {
     expect(classifyHttpFailure('duckduckgo', parts(403), now).kind).toBe('blocked');
+  });
+});
+
+describe('classifyEnvelopeFailure', () => {
+  it('reads the documented 1504 code as retryable even when the wording says nothing about it', () => {
+    // The wording decides nothing here on purpose: no timeout/upstream phrase, so the code is
+    // what makes this call worth a retry instead of a non-retryable bad_response.
+    expect(classifyEnvelopeFailure({ status: 1504, error: 'Failed to fetch search results' })).toEqual({
+      failure: { kind: 'transient', httpStatus: 200, providerCode: '1504' },
+      message: '"Failed to fetch search results" (provider status 1504)'
+    });
+  });
+
+  it('falls back to the wording, then to bad_response, and reports success as no failure', () => {
+    expect(classifyEnvelopeFailure({ status: 1001, error: 'Unauthorized' })?.failure).toMatchObject({
+      kind: 'auth_failed',
+      providerCode: '1001'
+    });
+    expect(classifyEnvelopeFailure({ status: 2000, message: 'Upstream timeout' })?.failure.kind).toBe('transient');
+    expect(classifyEnvelopeFailure({ status: 9999 })?.failure.kind).toBe('bad_response');
+    expect(classifyEnvelopeFailure({ status: 9999 })?.message).toBe('provider status 9999');
+    expect(classifyEnvelopeFailure({ status: 0, error: 'ignored' })).toBeUndefined();
+    expect(classifyEnvelopeFailure({ organic: [] })).toBeUndefined();
   });
 });

@@ -117,9 +117,22 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
   return info;
 }
 
+/**
+ * Envelope codes whose meaning the vendor documents. Checked before the wording, because a
+ * code is unambiguous where prose is not. 1504 is the upstream-timeout code SerpBase documents
+ * (https://serpbase.dev/docs): the search engine behind the API timed out, so the call is worth
+ * one retry instead of being written off as a malformed response.
+ */
+const ENVELOPE_CODES: Record<string, FailureKind> = {
+  '1504': 'transient'
+};
+
 const ENVELOPE_KINDS: Array<[RegExp, FailureKind]> = [
   [/quota|credit|billing|insufficient|payment|exhaust/i, 'quota_exhausted'],
   [/rate.?limit|too many/i, 'rate_limited'],
+  // A timeout or an error the vendor passes through from upstream stays retryable: it is the
+  // one envelope kind the fallback policy retries instead of writing the provider off.
+  [/timeout|timed out|temporarily unavailable|upstream/i, 'transient'],
   [/unauthor|forbidden|denied|api.?key|token/i, 'auth_failed'],
   [/invalid|required|missing/i, 'bad_request']
 ];
@@ -127,13 +140,14 @@ const ENVELOPE_KINDS: Array<[RegExp, FailureKind]> = [
 /**
  * Some vendors answer HTTP 200 with the failure in the body instead of a 4xx, e.g.
  * `{"status": 1001, "error": "unauthorized"}`. Returns undefined when the body
- * reports success (`status: 0`) or does not carry a status envelope at all, so
- * this is only consulted after the response failed to normalize.
+ * reports success (`status: 0`) or does not carry a status envelope at all. Callers
+ * check it before trusting a normalized body, so an error envelope can never be read
+ * as a successful search that happens to have results.
  *
- * The numeric codes are vendor-specific and not documented consistently, so the
- * kind comes from the vendor's own wording and the code is only kept for the
- * message. Anything unrecognized stays `bad_response`, which the fallback policy
- * already treats as non-retryable against that provider.
+ * The numeric codes are mostly vendor-specific and not documented consistently, so the
+ * kind comes from the vendor's own wording (or a documented code, see ENVELOPE_CODES)
+ * and the code is kept for the message. Anything unrecognized stays `bad_response`,
+ * which the fallback policy already treats as non-retryable against that provider.
  */
 export function classifyEnvelopeFailure(json: unknown): EnvelopeFailure | undefined {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return undefined;
@@ -141,7 +155,8 @@ export function classifyEnvelopeFailure(json: unknown): EnvelopeFailure | undefi
   const status = body.status;
   if (typeof status !== 'number' || status === 0) return undefined;
   const wording = [body.error, body.message].find((value): value is string => typeof value === 'string');
-  const kind = ENVELOPE_KINDS.find(([pattern]) => pattern.test(wording ?? ''))?.[1] ?? 'bad_response';
+  const kind =
+    ENVELOPE_CODES[String(status)] ?? ENVELOPE_KINDS.find(([pattern]) => pattern.test(wording ?? ''))?.[1] ?? 'bad_response';
   const message = wording ? `"${wording}" (provider status ${status})` : `provider status ${status}`;
   return { failure: { kind, httpStatus: 200, providerCode: String(status) }, message };
 }

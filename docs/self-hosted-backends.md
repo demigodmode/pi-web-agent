@@ -380,6 +380,23 @@ To select which providers fan out, set the fanout mode from **Settings → Backe
 
 Each provider gets a short timeout during fanout, so one slow or unreachable backend (for example a self-hosted SearXNG that is down) is skipped instead of stalling the whole research pass.
 
+`searxng` and `google-serp` are the two providers that need an endpoint, and each reads its own: `backends.search.baseUrl` belongs to the provider you selected, and `backends.search.baseUrls.<provider>` gives one to another provider. So a fanout set that mixes both looks like this:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "searxng",
+      "baseUrl": "http://localhost:8080",
+      "baseUrls": { "google-serp": "https://google.serper.dev/search" },
+      "fanout": { "mode": "on", "providers": ["duckduckgo", "searxng", "google-serp"] }
+    }
+  }
+}
+```
+
+A provider with no endpoint of its own stays out of the set instead of being pointed at the other one's URL, so your Google key never travels to SearXNG (or the other way round). `/web-agent doctor` names the key each provider is missing.
+
 The equivalent config is:
 
 ```json
