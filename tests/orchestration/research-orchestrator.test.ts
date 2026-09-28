@@ -771,3 +771,46 @@ describe('research orchestrator types', () => {
     expect(result.metadata?.fanoutSkipped).not.toContain('exa');
   });
 });
+
+describe('orchestrator cancellation', () => {
+  const weakPass = {
+    searchQueries: ['q'],
+    evidence: [],
+    gaps: [],
+    lowValueOutcomes: [],
+    suggestedHeadlessUrl: 'https://spa.test/',
+    exhaustedBudget: false
+  };
+
+  it('starts no further pass and no headless escalation after a cancel', async () => {
+    const controller = new AbortController();
+    const worker = {
+      run: vi.fn(async () => {
+        controller.abort();
+        return weakPass;
+      })
+    };
+    const headlessFetch = vi.fn();
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch });
+
+    await expect(orchestrator.run({ query: 'q', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(worker.run).toHaveBeenCalledTimes(1);
+    expect(headlessFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch a direct url when already cancelled', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchDirect = vi.fn();
+    const orchestrator = createResearchOrchestrator({ worker: { run: vi.fn() }, fetchDirect, headlessFetch: vi.fn() });
+    await expect(orchestrator.run({ query: 'read https://example.com/page', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(fetchDirect).not.toHaveBeenCalled();
+  });
+
+  it('passes the signal to the worker', async () => {
+    const controller = new AbortController();
+    const worker = { run: vi.fn(async () => ({ ...weakPass, suggestedHeadlessUrl: undefined })) };
+    await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'q', signal: controller.signal });
+    expect(worker.run).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+  });
+});
