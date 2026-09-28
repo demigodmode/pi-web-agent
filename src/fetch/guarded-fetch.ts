@@ -53,6 +53,8 @@ export function createGuardedFetch(baseFetch: typeof fetch, guard: NetworkGuard)
     let url = requestUrl(input);
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+      // A redirect chain can outlive a cancel; stop before the next hop.
+      currentInit.signal?.throwIfAborted();
       assertHttpProtocol(url);
       await guard.assertUrlAllowed(url);
       const response = await baseFetch(url, { ...currentInit, redirect: 'manual' });

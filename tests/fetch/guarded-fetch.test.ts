@@ -166,3 +166,15 @@ describe('createGuardedFetch', () => {
     expect(base).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('guarded fetch cancellation', () => {
+  it('stops before the first hop when the signal is already aborted', async () => {
+    const baseFetch = vi.fn(async () => new Response('x'));
+    const guard = createNetworkGuard({ allowRanges: [] }, { lookup: fakeLookup({ 'ok.test': ['93.184.216.34'] }) });
+    const controller = new AbortController();
+    controller.abort();
+    const guarded = createGuardedFetch(baseFetch as unknown as typeof fetch, guard);
+    await expect(guarded('https://ok.test/', { signal: controller.signal })).rejects.toThrow();
+    expect(baseFetch).not.toHaveBeenCalled();
+  });
+});

@@ -250,7 +250,7 @@ describe('backend factory', () => {
       status: 'ok',
       metadata: { method: 'http', fallbackFrom: 'firecrawl', fallbackReason: 'weak' }
     });
-    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section');
+    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section', undefined);
     expect(httpFetch).toHaveBeenCalledWith({ url: 'https://example.com', query: 'relevant section' });
   });
 

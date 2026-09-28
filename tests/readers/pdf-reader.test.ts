@@ -78,3 +78,14 @@ describe('createPdfReader', () => {
     expect(res.metadata.truncated).toBe(false);
   });
 });
+
+describe('pdf reader cancellation', () => {
+  it('gives the download a signal tied to the caller', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('not found', { status: 404 }));
+    const controller = new AbortController();
+    await createPdfReader({ fetchImpl: fetchImpl as unknown as typeof fetch }).read('https://example.com/a.pdf', controller.signal);
+    const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal!;
+    controller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+});
