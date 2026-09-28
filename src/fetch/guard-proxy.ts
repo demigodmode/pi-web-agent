@@ -338,7 +338,9 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
     }
 
     const destination = await decide(authority.host);
-    if (closed) {
+    // The lookup can take seconds. A client that left meanwhile (a cancelled
+    // fetch) must not get an outbound connection opened on its behalf.
+    if (closed || clientSocket.destroyed || clientSocket.readableEnded) {
       clientSocket.destroy();
       return;
     }
@@ -407,7 +409,7 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
     const host = target.hostname.replace(/^\[|\]$/g, '');
     const port = Number(target.port) || 80;
     const destination = await decide(host);
-    if (closed) {
+    if (closed || response.destroyed) {
       response.destroy();
       return;
     }
@@ -445,6 +447,13 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
         return;
       }
       response.writeHead(502, { 'content-length': '0' }).end();
+      return;
+    }
+
+    if (closed || response.destroyed) {
+      // The client left while the socket was opening: nothing will ever close it otherwise.
+      socket.destroy();
+      response.destroy();
       return;
     }
 

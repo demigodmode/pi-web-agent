@@ -6,7 +6,8 @@ import {
   BlockedAddressError,
   UnverifiedDestinationError,
   UpstreamProxyRefusedError,
-  createNetworkGuard
+  createNetworkGuard,
+  type LookupFn
 } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
 import { rawConnect, startRecordingUpstream, startServerPair } from './guard-proxy-fixtures.js';
@@ -21,6 +22,23 @@ const MALFORMED_AUTHORITIES = ['evil.test@127.0.0.1:443', '127.0.0.1%25eth0:443'
 function guardFor(table: Record<string, string[]>, allowRanges = ['127.0.0.1/32']) {
   return createNetworkGuard({ allowRanges }, { lookup: fakeLookup(table) });
 }
+
+/** A lookup that only answers once the test releases it. */
+function gatedLookup() {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const fn = vi.fn<LookupFn>(async () => {
+    await gate;
+    return [{ address: '127.0.0.1', family: 4 }];
+  });
+  return { fn, release };
+}
+
+function basicAuth(auth: { username: string; password: string }) {
+  return `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString('base64')}`;
+}
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function proxyWith(options: Parameters<typeof startGuardProxy>[0]): Promise<GuardProxy> {
   const proxy = await startGuardProxy(options);
@@ -418,6 +436,55 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
 
       expect(pending.destroyed).toBe(true);
       await attempt;
+    });
+
+    it('does not open a tunnel for a CONNECT client that left during the lookup', async () => {
+      const lookup = gatedLookup();
+      const openSocket = vi.fn(() => new Socket());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: lookup.fn }),
+        openSocket
+      });
+      const url = new URL(proxy.url);
+      const client = netConnect({ host: url.hostname, port: Number(url.port) });
+      client.on('error', () => undefined);
+      await new Promise((resolve) => client.once('connect', resolve));
+      client.write(`CONNECT slow.test:443 HTTP/1.1\r\nHost: slow.test:443\r\nProxy-Authorization: ${basicAuth(proxy.client('t'))}\r\n\r\n`);
+
+      await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
+      client.destroy();
+      await pause(50);
+      lookup.release();
+      await pause(50);
+
+      expect(openSocket).not.toHaveBeenCalled();
+    });
+
+    it('does not connect out for a forwarded request dropped during the lookup', async () => {
+      const lookup = gatedLookup();
+      const openSocket = vi.fn(() => new Socket());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: lookup.fn }),
+        openSocket
+      });
+      const url = new URL(proxy.url);
+      const request = httpRequest({
+        host: url.hostname,
+        port: Number(url.port),
+        method: 'GET',
+        path: 'http://slow.test/',
+        headers: { host: 'slow.test', 'proxy-authorization': basicAuth(proxy.client('t')) }
+      });
+      request.on('error', () => undefined);
+      request.end();
+
+      await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
+      request.destroy();
+      await pause(50);
+      lookup.release();
+      await pause(50);
+
+      expect(openSocket).not.toHaveBeenCalled();
     });
   });
 });
