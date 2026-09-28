@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createFanoutSearch } from '../../src/search/fanout.js';
+import { createFanoutSearch, withCallTimeout } from '../../src/search/fanout.js';
 import type { SearchProviderName, WebSearchResponse } from '../../src/types.js';
 
 function ok(backend: SearchProviderName, urls: string[]): WebSearchResponse {
@@ -219,5 +219,46 @@ describe('fanout outcomes and precedence (#55)', () => {
     const result = await createFanoutSearch({ providers: [failP('brave', 'config_global'), { name: 'exa', search: other }], mode: 'auto' })({ query: 'q' });
     expect(other).not.toHaveBeenCalled();
     expect(result.error?.failure?.kind).toBe('config_global');
+  });
+});
+
+describe('fanout cancellation (#59)', () => {
+  it('aborts the provider request when its call timeout fires', async () => {
+    let seen: AbortSignal | undefined;
+    const slow = vi.fn(({ signal }: { query: string; signal?: AbortSignal }) => {
+      seen = signal;
+      return new Promise<WebSearchResponse>(() => undefined);
+    });
+    const result = await withCallTimeout(slow, 20, 'brave')({ query: 'q' });
+    expect(result.error?.failure?.kind).toBe('transient');
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('passes the caller signal into the provider call', async () => {
+    let seen: AbortSignal | undefined;
+    const search = vi.fn(async ({ signal }: { query: string; signal?: AbortSignal }) => {
+      seen = signal;
+      return ok('brave', ['https://a.com/']);
+    });
+    const controller = new AbortController();
+    await withCallTimeout(search, 1_000, 'brave')({ query: 'q', signal: controller.signal });
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('throws instead of aggregating when the caller cancels mid-fanout', async () => {
+    const controller = new AbortController();
+    const waitForCancel = ({ signal }: { query: string; signal?: AbortSignal }) =>
+      new Promise<WebSearchResponse>((resolve) =>
+        signal?.addEventListener('abort', () => resolve(err('brave')), { once: true })
+      );
+    const providers = [
+      { name: 'duckduckgo' as const, search: vi.fn(waitForCancel) },
+      { name: 'brave' as const, search: vi.fn(waitForCancel) }
+    ];
+    const pending = createFanoutSearch({ providers, mode: 'on' })({ query: 'q', signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+    expect(providers[0].search).toHaveBeenCalledWith({ query: 'q', signal: controller.signal });
   });
 });
