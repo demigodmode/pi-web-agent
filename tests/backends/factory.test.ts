@@ -5,6 +5,7 @@ import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { SearchProviderName } from '../../src/types.js';
+import { startSilentUpstream } from '../fetch/guard-proxy-fixtures.js';
 
 /**
  * Keeps factory tests offline now that model-chosen fetches go through the
@@ -1388,5 +1389,34 @@ describe('backend factory failure-aware fallback (#55)', () => {
 
       await expect(backends.fetchPage({ url: 'https://example.com', signal: controller.signal })).rejects.toThrow('Operation aborted');
     });
+  });
+});
+
+describe('cancelling through the real guard proxy (#59)', () => {
+  it('closes the upstream tunnel when a page fetch is cancelled mid-CONNECT', async () => {
+    // Real guard proxy and real undici, chained to an upstream proxy that takes
+    // the CONNECT and never answers. The fake lookup keeps DNS offline.
+    const upstream = await startSilentUpstream();
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: `http://127.0.0.1:${upstream.port}` } },
+      { networkGuard: offlineNetworkDeps().networkGuard, policy: { sleep: async () => undefined, random: () => 0 } }
+    );
+    try {
+      const controller = new AbortController();
+      const pending = backends.fetchPage({ url: 'https://ok.test:9443/', signal: controller.signal });
+      pending.catch(() => undefined);
+
+      await upstream.sawConnect;
+      controller.abort();
+
+      await expect(pending).rejects.toThrow('Operation aborted');
+      await Promise.race([
+        upstream.closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close within 1s')), 1000))
+      ]);
+    } finally {
+      await backends.close();
+      await upstream.close();
+    }
   });
 });

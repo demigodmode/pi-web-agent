@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createProxyFetch, resolveProxyCredentials } from '../../src/fetch/proxy-fetch.js';
+import { startSilentUpstream } from './guard-proxy-fixtures.js';
 
 type ProxyRequest = { url: string; method: string; proxyAuthorization?: string };
 
@@ -160,6 +161,28 @@ describe('proxy fetch', () => {
     expect(response.status).toBe(200);
     expect(proxy.requests).toHaveLength(1);
     expect(proxy.requests[0].proxyAuthorization).toBeUndefined();
+  });
+
+  it('aborting a fetch while the CONNECT is pending closes the upstream socket, not just the fetch', async () => {
+    const upstream = await startSilentUpstream();
+    cleanups.push(upstream.close);
+
+    const fetchViaProxy = createProxyFetch({ url: `http://127.0.0.1:${upstream.port}` });
+    const controller = new AbortController();
+    const fetchPromise = fetchViaProxy('https://example.invalid/', { signal: controller.signal });
+    fetchPromise.catch(() => undefined);
+
+    await upstream.sawConnect;
+    controller.abort();
+
+    const error = await fetchPromise.catch((e) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).name).toBe('AbortError');
+
+    await Promise.race([
+      upstream.closed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close within 1s')), 1000))
+    ]);
   });
 
   it('aborting one fetch through the proxy does not disturb a concurrent one', async () => {

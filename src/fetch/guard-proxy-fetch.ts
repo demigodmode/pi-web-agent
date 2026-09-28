@@ -57,10 +57,10 @@ export function createGuardProxyFetch(
   const guardedFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     if (closed) throw new Error('Guard proxy fetch is closed.');
     const signal = init?.signal ?? undefined;
-    throwIfAborted(signal ?? undefined);
+    throwIfAborted(signal);
     const { proxy, client } = await ensure();
     if (closed) throw new Error('Guard proxy fetch is closed.');
-    throwIfAborted(signal ?? undefined);
+    throwIfAborted(signal);
     const host = hostOf(input);
     const since = proxy.sequence();
 
@@ -105,9 +105,13 @@ export function createGuardProxyFetch(
     // gracefully (undici's close() waits for in-flight requests, meaning the
     // body can still be read) rather than destroying it out from under the
     // caller. Don't await: the caller is still reading the body.
-    inFlight.delete(agent);
+    // Keep it tracked until that close settles, so close() below can still
+    // destroy an agent whose body nobody ever read.
     if (signal && onAbort) signal.removeEventListener('abort', onAbort);
-    agent.close().catch(() => undefined);
+    agent
+      .close()
+      .catch(() => undefined)
+      .finally(() => inFlight.delete(agent));
 
     const blockedHeader = response.headers.get(BLOCKED_HEADER);
     if (blockedHeader) {

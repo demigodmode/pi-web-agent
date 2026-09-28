@@ -38,6 +38,8 @@ export function resolveProxyCredentials(
  * the agent's connector, and aborting a dispatched request doesn't reach in
  * and destroy that tunnel socket, so a proxy that never answers CONNECT would
  * otherwise keep the connection open well past the caller's abort (#59).
+ * The cost is no connection reuse between calls, which is fine at a few
+ * searches or scrapes per research run.
  */
 export function createProxyFetch(proxy: ProxyConfig, options: ProxyFetchOptions = {}): typeof fetch {
   const credentials = resolveProxyCredentials(proxy);

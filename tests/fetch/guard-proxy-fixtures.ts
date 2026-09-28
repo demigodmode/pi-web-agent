@@ -255,3 +255,67 @@ export async function rawConnect(
     socket.once('close', () => reject(new Error('proxy closed before responding')));
   });
 }
+
+export type SilentUpstream = { port: number; sawConnect: Promise<void>; closed: Promise<void>; close(): Promise<void> };
+
+/**
+ * A stand-in for an upstream proxy that accepts the TCP connection, reads a
+ * CONNECT, and never answers it, but forwards plain absolute-form HTTP
+ * requests normally, so a concurrent request that doesn't need CONNECT isn't
+ * also stuck behind the hang.
+ */
+export async function startSilentUpstream(): Promise<SilentUpstream> {
+  const sockets = new Set<Socket>();
+  let resolveSawConnect!: () => void;
+  const sawConnect = new Promise<void>((resolve) => {
+    resolveSawConnect = resolve;
+  });
+  let resolveClosed!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
+
+  const server = createNetServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => {
+      sockets.delete(socket);
+      resolveClosed();
+    });
+    socket.on('error', () => undefined);
+    let buffered = Buffer.alloc(0);
+    const onData = (chunk: Buffer) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      const end = buffered.indexOf('\r\n\r\n');
+      if (end === -1) return;
+      const head = buffered.subarray(0, end).toString('latin1');
+      const [method, target] = head.split('\r\n')[0].split(' ');
+      if (method === 'CONNECT') {
+        // Read it, and stop; never answer. That's the hang the fix has to notice.
+        resolveSawConnect();
+        return;
+      }
+      socket.off('data', onData);
+      const url = new URL(target);
+      const outbound = netConnect({ host: url.hostname, port: Number(url.port) || 80 }, () => {
+        outbound.write(`${head.replace(/^(\S+) \S+ /, `$1 ${url.pathname}${url.search} `)}\r\n\r\n`);
+        outbound.pipe(socket);
+        socket.pipe(outbound);
+      });
+      sockets.add(outbound);
+      outbound.on('error', () => socket.destroy());
+    };
+    socket.on('data', onData);
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  return {
+    port,
+    sawConnect,
+    closed,
+    close() {
+      for (const socket of sockets) socket.destroy();
+      return new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  };
+}

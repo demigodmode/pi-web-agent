@@ -1,4 +1,3 @@
-import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGuardedFetch } from '../../src/fetch/guarded-fetch.js';
 import { startGuardProxy, type GuardProxyOptions } from '../../src/fetch/guard-proxy.js';
@@ -11,69 +10,7 @@ import {
   findGuardError
 } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
-import { FIXTURE_CERT, startRecordingUpstream, startServerPair } from './guard-proxy-fixtures.js';
-
-/**
- * A stand-in for an upstream proxy that accepts the TCP connection, reads a
- * CONNECT, and never answers it — but forwards plain absolute-form HTTP
- * requests normally, so a concurrent request that doesn't need CONNECT isn't
- * also stuck behind the hang.
- */
-async function startSilentUpstream(): Promise<{ port: number; sawConnect: Promise<void>; closed: Promise<void>; close(): Promise<void> }> {
-  const sockets = new Set<net.Socket>();
-  let resolveSawConnect!: () => void;
-  const sawConnect = new Promise<void>((resolve) => {
-    resolveSawConnect = resolve;
-  });
-  let resolveClosed!: () => void;
-  const closed = new Promise<void>((resolve) => {
-    resolveClosed = resolve;
-  });
-
-  const server = net.createServer((socket) => {
-    sockets.add(socket);
-    socket.on('close', () => {
-      sockets.delete(socket);
-      resolveClosed();
-    });
-    socket.on('error', () => undefined);
-    let buffered = Buffer.alloc(0);
-    const onData = (chunk: Buffer) => {
-      buffered = Buffer.concat([buffered, chunk]);
-      const end = buffered.indexOf('\r\n\r\n');
-      if (end === -1) return;
-      const head = buffered.subarray(0, end).toString('latin1');
-      const [method, target] = head.split('\r\n')[0].split(' ');
-      if (method === 'CONNECT') {
-        // Read it, and stop; never answer. That's the hang the fix has to notice.
-        resolveSawConnect();
-        return;
-      }
-      socket.off('data', onData);
-      const url = new URL(target);
-      const outbound = net.connect({ host: url.hostname, port: Number(url.port) || 80 }, () => {
-        outbound.write(`${head.replace(/^(\S+) \S+ /, `$1 ${url.pathname}${url.search} `)}\r\n\r\n`);
-        outbound.pipe(socket);
-        socket.pipe(outbound);
-      });
-      sockets.add(outbound);
-      outbound.on('error', () => socket.destroy());
-    };
-    socket.on('data', onData);
-  });
-
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = (server.address() as net.AddressInfo).port;
-  return {
-    port,
-    sawConnect,
-    closed,
-    close() {
-      for (const socket of sockets) socket.destroy();
-      return new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  };
-}
+import { FIXTURE_CERT, startRecordingUpstream, startServerPair, startSilentUpstream } from './guard-proxy-fixtures.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
