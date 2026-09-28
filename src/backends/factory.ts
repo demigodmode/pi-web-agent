@@ -333,8 +333,8 @@ export function createBackendSet(
     fallback: fetchPage
   });
 
-  const headlessPage = ({ url, query }: ResearchFetchInput) =>
-    headlessFetch(url, { query, guard: networkGuard, guardProxy: getGuardProxy });
+  const headlessPage = ({ url, query, signal }: ResearchFetchInput) =>
+    headlessFetch(url, { query, signal, guard: networkGuard, guardProxy: getGuardProxy });
 
   return {
     search,
