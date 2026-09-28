@@ -262,3 +262,17 @@ describe('fanout cancellation (#59)', () => {
     expect(providers[0].search).toHaveBeenCalledWith({ query: 'q', signal: controller.signal });
   });
 });
+
+describe('withCallTimeout rejects properly on a caller cancel', () => {
+  it('rejects with abortError instead of a transient result when the caller aborts', async () => {
+    const controller = new AbortController();
+    const search = vi.fn(({ signal }: { query: string; signal?: AbortSignal }) => {
+      return new Promise<WebSearchResponse>((resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('provider aborted')), { once: true });
+      });
+    });
+    const pending = withCallTimeout(search, 1_000, 'brave')({ query: 'q', signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+  });
+});

@@ -1,4 +1,4 @@
-import { throwIfAborted } from '../abort.js';
+import { abortError, throwIfAborted } from '../abort.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { canonicalizeUrl } from '../orchestration/url.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
@@ -75,12 +75,42 @@ type SearchFn = FanoutProvider['search'];
 /**
  * Per-call timeout. Wrap it INSIDE the retry policy so a stalled call is a transient
  * failure the policy can retry once (#55). The timeout aborts the request itself (#59).
+ *
+ * If the CALLER's signal (not the combined one used for the timeout) is aborted by the
+ * time the call settles, whichever way it settles, reject with abortError() instead of
+ * handing back a synthetic transient result: that's a cancel, not a provider failure.
  */
 export function withCallTimeout(search: SearchFn, timeoutMs: number, name: SearchProviderName): SearchFn {
   return (input) => {
+    const callerSignal = input.signal;
     const timeout = new AbortController();
-    const signal = input.signal ? AbortSignal.any([input.signal, timeout.signal]) : timeout.signal;
-    return withTimeout(search({ ...input, signal }), timeoutMs, name, () => timeout.abort());
+    const signal = callerSignal ? AbortSignal.any([callerSignal, timeout.signal]) : timeout.signal;
+    const timedOut = (): WebSearchResponse => ({
+      status: 'error',
+      results: [],
+      metadata: { backend: name, cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: `${name} did not answer in time.`, failure: { kind: 'transient' } }
+    });
+    return new Promise<WebSearchResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        timeout.abort();
+        if (callerSignal?.aborted) reject(abortError());
+        else resolve(timedOut());
+      }, timeoutMs);
+      timer.unref?.();
+      search({ ...input, signal }).then(
+        (value) => {
+          clearTimeout(timer);
+          if (callerSignal?.aborted) reject(abortError());
+          else resolve(value);
+        },
+        () => {
+          clearTimeout(timer);
+          if (callerSignal?.aborted) reject(abortError());
+          else resolve(timedOut());
+        }
+      );
+    });
   };
 }
 
