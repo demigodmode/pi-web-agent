@@ -1,12 +1,14 @@
 import { request as httpRequest } from 'node:http';
 import { Socket, connect as netConnect, createServer as createNetServer, type AddressInfo } from 'node:net';
+import { once } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BLOCKED_HEADER, startGuardProxy, type GuardProxy } from '../../src/fetch/guard-proxy.js';
 import {
   BlockedAddressError,
   UnverifiedDestinationError,
   UpstreamProxyRefusedError,
-  createNetworkGuard
+  createNetworkGuard,
+  type LookupFn
 } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
 import { rawConnect, startRecordingUpstream, startServerPair } from './guard-proxy-fixtures.js';
@@ -21,6 +23,23 @@ const MALFORMED_AUTHORITIES = ['evil.test@127.0.0.1:443', '127.0.0.1%25eth0:443'
 function guardFor(table: Record<string, string[]>, allowRanges = ['127.0.0.1/32']) {
   return createNetworkGuard({ allowRanges }, { lookup: fakeLookup(table) });
 }
+
+/** A lookup that only answers once the test releases it. */
+function gatedLookup(address = '127.0.0.1') {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const fn = vi.fn<LookupFn>(async () => {
+    await gate;
+    return [{ address, family: 4 }];
+  });
+  return { fn, release };
+}
+
+function basicAuth(auth: { username: string; password: string }) {
+  return `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString('base64')}`;
+}
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function proxyWith(options: Parameters<typeof startGuardProxy>[0]): Promise<GuardProxy> {
   const proxy = await startGuardProxy(options);
@@ -419,5 +438,143 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
       expect(pending.destroyed).toBe(true);
       await attempt;
     });
+
+    it('does not open a tunnel for a CONNECT client that left during the lookup', async () => {
+      const lookup = gatedLookup();
+      const openSocket = vi.fn(() => new Socket());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: lookup.fn }),
+        openSocket
+      });
+      const url = new URL(proxy.url);
+      const client = netConnect({ host: url.hostname, port: Number(url.port) });
+      client.on('error', () => undefined);
+      await new Promise((resolve) => client.once('connect', resolve));
+      client.write(`CONNECT slow.test:443 HTTP/1.1\r\nHost: slow.test:443\r\nProxy-Authorization: ${basicAuth(proxy.client('t'))}\r\n\r\n`);
+
+      await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
+      client.destroy();
+      // Wait for the disconnect to actually land, not a guessed delay: the
+      // proxy only sees it once the FIN has gone out and the socket closes.
+      await new Promise((resolve) => client.once('close', resolve));
+      lookup.release();
+      await pause(50);
+
+      expect(openSocket).not.toHaveBeenCalled();
+    });
+
+    it('records the refusal for a CONNECT client that left while the lookup resolved to a blocked address', async () => {
+      const lookup = gatedLookup('10.0.0.1');
+      const openSocket = vi.fn(() => new Socket());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: lookup.fn }),
+        openSocket
+      });
+      const client = proxy.client('t');
+      const url = new URL(proxy.url);
+      const socket = netConnect({ host: url.hostname, port: Number(url.port) });
+      socket.on('error', () => undefined);
+      await new Promise((resolve) => socket.once('connect', resolve));
+      socket.write(`CONNECT private.test:443 HTTP/1.1\r\nHost: private.test:443\r\nProxy-Authorization: ${basicAuth(client)}\r\n\r\n`);
+
+      await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
+      socket.destroy();
+      await new Promise((resolve) => socket.once('close', resolve));
+      lookup.release();
+      await pause(50);
+
+      expect(openSocket).not.toHaveBeenCalled();
+      expect(proxy.refusalsSince(client.username, 0)).toHaveLength(1);
+    });
+
+    it('does not connect out for a forwarded request dropped during the lookup', async () => {
+      const lookup = gatedLookup();
+      const openSocket = vi.fn(() => new Socket());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: lookup.fn }),
+        openSocket
+      });
+      const url = new URL(proxy.url);
+      const request = httpRequest({
+        host: url.hostname,
+        port: Number(url.port),
+        method: 'GET',
+        path: 'http://slow.test/',
+        headers: { host: 'slow.test', 'proxy-authorization': basicAuth(proxy.client('t')) }
+      });
+      request.on('error', () => undefined);
+      request.end();
+
+      await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
+      request.destroy();
+      await new Promise((resolve) => request.once('close', resolve));
+      lookup.release();
+      await pause(50);
+
+      expect(openSocket).not.toHaveBeenCalled();
+    });
+
+    it('drops the pending CONNECT handshake promptly when the client disconnects', async () => {
+      // Accepts the TCP connection but never answers CONNECT, so the only thing
+      // that should end this is the client leaving, not the handshake timeout.
+      const sockets: Socket[] = [];
+      const upstream = createNetServer((socket) => {
+        sockets.push(socket);
+        // resume() so the socket actually sees the FIN and emits close, rather than
+        // sitting paused with the EOF buffered.
+        socket.on('error', () => undefined).resume();
+      });
+      await new Promise<void>((resolve, reject) => {
+        upstream.once('error', reject);
+        upstream.listen(0, '127.0.0.1', () => resolve());
+      });
+      cleanups.push(() => new Promise<void>((resolve) => upstream.close(() => resolve())));
+
+      const proxy = await proxyWith({
+        guard: guardFor({ 'ok.test': ['127.0.0.1'] }),
+        upstream: { url: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}` },
+        handshakeTimeoutMs: 10_000
+      });
+
+      const url = new URL(proxy.url);
+      const client = netConnect({ host: url.hostname, port: Number(url.port) });
+      client.on('error', () => undefined);
+      await new Promise((resolve) => client.once('connect', resolve));
+      client.write(
+        `CONNECT ok.test:443 HTTP/1.1\r\nHost: ok.test:443\r\nProxy-Authorization: ${basicAuth(proxy.client('t'))}\r\n\r\n`
+      );
+
+      await vi.waitFor(() => expect(sockets.length).toBeGreaterThan(0));
+      client.destroy();
+
+      await Promise.race([
+        once(sockets[0], 'close'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close promptly')), 1000))
+      ]);
+    }, 5000);
+
+    it('drops a pending outbound connect promptly when the client aborts a forward request', async () => {
+      const pending = new Socket();
+      const proxy = await proxyWith({
+        guard: guardFor({ 'ok.test': ['127.0.0.1'] }),
+        connectTimeoutMs: 10_000,
+        openSocket: () => pending
+      });
+      const url = new URL(proxy.url);
+      const request = httpRequest({
+        host: url.hostname,
+        port: Number(url.port),
+        method: 'GET',
+        path: 'http://ok.test/',
+        headers: { host: 'ok.test', 'proxy-authorization': basicAuth(proxy.client('t')) }
+      });
+      request.on('error', () => undefined);
+      request.end();
+
+      await vi.waitFor(() => expect(pending.listenerCount('close')).toBeGreaterThan(0));
+      request.destroy();
+
+      await vi.waitFor(() => expect(pending.destroyed).toBe(true), { timeout: 1000 });
+    }, 5000);
   });
 });

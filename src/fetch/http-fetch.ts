@@ -1,6 +1,7 @@
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { findGuardError } from './network-guard.js';
+import { PAGE_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
 import type { WebFetchResponse } from '../types.js';
 
 function looksLikeScriptShell(html: string): boolean {
@@ -22,28 +23,46 @@ function isWeakHttpContent(options: { html: string; title?: string; text: string
   return veryShortBody && (lowDensity || hasGenericShellMarker);
 }
 
+function timedOut(url: string, timeoutMs: number): WebFetchResponse {
+  return {
+    status: 'error',
+    url,
+    metadata: { method: 'http', cacheHit: false },
+    error: { code: 'FETCH_TIMEOUT', message: `${url} did not respond within ${timeoutMs / 1000}s.`, failure: { kind: 'transient' } }
+  };
+}
+
 export function createHttpFetcher({
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  timeoutMs = PAGE_FETCH_TIMEOUT_MS
 }: {
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 } = {}) {
-  return async function httpFetch(url: string, query?: string): Promise<WebFetchResponse> {
+  return async function httpFetch(url: string, query?: string, signal?: AbortSignal): Promise<WebFetchResponse> {
+    throwIfAborted(signal);
+    const requestAbort = requestSignal(signal, timeoutMs);
     let response: Response;
     try {
-      response = await fetchImpl(url);
+      response = await fetchImpl(url, { signal: requestAbort });
     } catch (error) {
+      if (signal?.aborted) throw abortError();
       const blocked = findGuardError(error);
-      if (!blocked) throw error;
-      return {
-        status: 'error',
-        url,
-        metadata: { method: 'http', cacheHit: false },
-        error: { code: blocked.code, message: blocked.message, failure: { kind: 'guard_refused' } }
-      };
+      if (blocked) {
+        return {
+          status: 'error',
+          url,
+          metadata: { method: 'http', cacheHit: false },
+          error: { code: blocked.code, message: blocked.message, failure: { kind: 'guard_refused' } }
+        };
+      }
+      if (requestAbort.aborted) return timedOut(url, timeoutMs);
+      throw error;
     }
     const contentType = response.headers.get('content-type') ?? '';
 
     if (!contentType.includes('text/html')) {
+      await response.body?.cancel().catch(() => undefined);
       return {
         status: 'unsupported',
         url: response.url,
@@ -51,7 +70,14 @@ export function createHttpFetcher({
       };
     }
 
-    const html = await response.text();
+    let html: string;
+    try {
+      html = await response.text();
+    } catch (error) {
+      if (signal?.aborted) throw abortError();
+      if (requestAbort.aborted) return timedOut(url, timeoutMs);
+      throw error;
+    }
     const baselineExtraction = extractReadableContentSafely(html);
     const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
     const extraction = queryExtraction ?? baselineExtraction;

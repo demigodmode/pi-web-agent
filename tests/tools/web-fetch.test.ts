@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWebFetchTool } from '../../src/tools/web-fetch.js';
+import * as httpFetch from '../../src/fetch/http-fetch.js';
 
 describe('web_fetch tool', () => {
   it('rejects unsupported URL schemes before fetching', async () => {
@@ -40,5 +41,26 @@ describe('web_fetch tool', () => {
 
   it('can be constructed without dependency arguments', () => {
     expect(typeof createWebFetchTool()).toBe('function');
+  });
+
+  it('passes the caller signal to fetchPage', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ status: 'ok', url: 'https://example.com', content: { text: 'x' }, metadata: { method: 'http', cacheHit: false } });
+    const controller = new AbortController();
+    await createWebFetchTool({ fetchPage })({ url: 'https://example.com', query: 'q', signal: controller.signal });
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com', query: 'q', signal: controller.signal });
+  });
+
+  it('the default fetchPage forwards the signal to createHttpFetcher', async () => {
+    const httpFetcher = vi.fn().mockResolvedValue({ status: 'ok', url: 'https://example.com', metadata: { method: 'http', cacheHit: false } });
+    const spy = vi.spyOn(httpFetch, 'createHttpFetcher').mockReturnValue(httpFetcher);
+    const controller = new AbortController();
+
+    try {
+      await createWebFetchTool()({ url: 'https://example.com', query: 'q', signal: controller.signal });
+
+      expect(httpFetcher).toHaveBeenCalledWith('https://example.com', 'q', controller.signal);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

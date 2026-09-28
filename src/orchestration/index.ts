@@ -1,6 +1,6 @@
 import { createBackendSet } from '../backends/factory.js';
 import type { BackendConfig } from '../backends/config.js';
-import type { ResearchFetchInput, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { ResearchFetchInput, SearchInput, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { createResearchOrchestrator } from './research-orchestrator.js';
 import { createResearchWorker } from './research-worker.js';
 
@@ -11,7 +11,7 @@ export function createResearchWorkflow({
   headlessFetch
 }: {
   backendConfig?: BackendConfig;
-  search?: (input: { query: string }) => Promise<WebSearchResponse>;
+  search?: (input: SearchInput) => Promise<WebSearchResponse>;
   fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
   headlessFetch?: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 } = {}) {

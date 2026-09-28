@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { abortableSleep } from '../../src/abort.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from '../../src/backends/fallback-policy.js';
 import { createProviderHealth } from '../../src/backends/provider-health.js';
 import type { FailureInfo, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../../src/types.js';
@@ -26,7 +27,7 @@ describe('withSearchPolicy', () => {
     const result = await withSearchPolicy('brave', search, d)({ query: 'q' });
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(d.sleep).toHaveBeenCalledWith(500);
+    expect(d.sleep).toHaveBeenCalledWith(500, undefined);
     expect(result.status).toBe('ok');
     expect(result.metadata.attempts?.map((a) => a.outcome)).toEqual(['retried', 'results']);
   });
@@ -215,5 +216,70 @@ describe('withFetchPolicy', () => {
     expect(primary).toHaveBeenNthCalledWith(1, input);
     expect(primary).toHaveBeenNthCalledWith(2, input);
     expect(fallback).toHaveBeenCalledWith(input);
+  });
+});
+
+describe('policy cancellation (#59)', () => {
+  it('stops during the backoff: no second attempt and no health change', async () => {
+    const d = deps();
+    const controller = new AbortController();
+    d.sleep.mockImplementation((ms: number, signal?: AbortSignal) => abortableSleep(10_000, signal));
+    const search = vi.fn(async () => {
+      setTimeout(() => controller.abort(), 5);
+      return fail('brave', { kind: 'transient' });
+    });
+
+    await expect(withSearchPolicy('brave', search, d)({ query: 'q', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(d.health.get('brave').state).toBe('available');
+  });
+
+  it('does not classify or record a failure that came back after the cancel', async () => {
+    const d = deps();
+    const controller = new AbortController();
+    const search = vi.fn(async () => {
+      controller.abort();
+      return fail('brave', { kind: 'rate_limited', httpStatus: 429 });
+    });
+
+    await expect(withSearchPolicy('brave', search, d)({ query: 'q', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(d.health.get('brave').state).toBe('available');
+    expect(d.sleep).not.toHaveBeenCalled();
+  });
+
+  it('does not call a provider when the run is already cancelled', async () => {
+    const d = deps();
+    const controller = new AbortController();
+    controller.abort();
+    const search = vi.fn();
+    await expect(withSearchPolicy('brave', search, d)({ query: 'q', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it('chainSearch does not fall back once cancelled', async () => {
+    const d = deps();
+    const controller = new AbortController();
+    const first = vi.fn(async () => {
+      controller.abort();
+      return fail('brave', { kind: 'blocked' });
+    });
+    const second = vi.fn(async () => ok('duckduckgo'));
+
+    await expect(chainSearch([first, second], d)({ query: 'q', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('withFetchPolicy does not fall back to http once cancelled', async () => {
+    const d = deps();
+    const controller = new AbortController();
+    const primary = vi.fn(async (): Promise<WebFetchResponse> => {
+      controller.abort();
+      return { status: 'error', url: 'https://a.test/', metadata: { method: 'firecrawl', cacheHit: false }, error: { code: 'FETCH_FAILED', message: 'x', failure: { kind: 'blocked' } } };
+    });
+    const fallback = vi.fn();
+
+    await expect(withFetchPolicy(primary, fallback, d)({ url: 'https://a.test/', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(fallback).not.toHaveBeenCalled();
+    expect(d.health.get('firecrawl').state).toBe('available');
   });
 });

@@ -92,6 +92,14 @@ export type FetchMethod = 'http' | 'headless' | 'firecrawl' | 'github' | 'pdf' |
 export type ResearchFetchInput = {
   url: string;
   query?: string;
+  /** Cancels the fetch (#59). */
+  signal?: AbortSignal;
+};
+
+export type SearchInput = {
+  query: string;
+  /** Cancels the search (#59). */
+  signal?: AbortSignal;
 };
 
 export type FetchMetadata = {

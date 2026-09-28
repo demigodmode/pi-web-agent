@@ -1,4 +1,5 @@
 import type { Attempt, ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
+import { throwIfAborted } from '../abort.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { rankEvidence } from './evidence-ranker.js';
 import { planSearchQueries } from './query-planner.js';
@@ -178,13 +179,14 @@ export function createResearchOrchestrator({
       query: string;
       maxSearchRounds: number;
       maxFetches: number;
+      signal?: AbortSignal;
     }) => Promise<ResearchWorkerResult>;
   };
   fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
   headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 }) {
   return {
-    async run({ query }: { query: string }) {
+    async run({ query, signal }: { query: string; signal?: AbortSignal }) {
       const allEvidence: ResearchEvidence[] = [];
       const allGaps: ResearchGap[] = [];
       const allLowValueOutcomes: ResearchLowValueOutcome[] = [];
@@ -206,7 +208,9 @@ export function createResearchOrchestrator({
 
       if (fetchDirect) {
         for (const url of extractDirectUrls(query).slice(0, 3)) {
-          const directResult = await fetchDirect({ url, query });
+          throwIfAborted(signal);
+          const directResult = await fetchDirect({ url, query, signal });
+          throwIfAborted(signal);
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
           const directEvidence = evidenceFromFetch(directResult, query);
           if (directEvidence) {
@@ -225,7 +229,9 @@ export function createResearchOrchestrator({
           if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
               headlessAttempts++;
-              const headlessResult = await headlessFetch({ url: directResult.url, query });
+              throwIfAborted(signal);
+              const headlessResult = await headlessFetch({ url: directResult.url, query, signal });
+              throwIfAborted(signal);
               const headlessEvidence = evidenceFromHeadless(headlessResult, query);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
@@ -287,11 +293,14 @@ export function createResearchOrchestrator({
 
         for (const plannedQuery of queries) {
           previousQueries.push(plannedQuery);
+          throwIfAborted(signal);
           const pass = await worker.run({
             query: plannedQuery,
             maxSearchRounds: 1,
-            maxFetches: DEFAULT_MAX_FETCHES_PER_PASS
+            maxFetches: DEFAULT_MAX_FETCHES_PER_PASS,
+            signal
           });
+          throwIfAborted(signal);
 
           lastPass = pass;
           if (pass.searchAttempts) runAttempts.push(...pass.searchAttempts);
@@ -332,7 +341,9 @@ export function createResearchOrchestrator({
 
           if (decision.action === 'headless') {
             headlessAttempts++;
-            const headlessResult = await headlessFetch({ url: decision.url, query });
+            throwIfAborted(signal);
+            const headlessResult = await headlessFetch({ url: decision.url, query, signal });
+            throwIfAborted(signal);
             const headlessEvidence = evidenceFromHeadless(headlessResult, query);
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);

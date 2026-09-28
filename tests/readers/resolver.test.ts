@@ -36,6 +36,14 @@ describe('createSpecialContentResolver', () => {
     const resolve = createSpecialContentResolver({ readers: [pdf], fallback });
     const res = await resolve({ url: 'https://h/download' });
     expect(res.content?.title).toBe('pdf');
-    expect(pdf.read).toHaveBeenCalledWith('https://h/download');
+    expect(pdf.read).toHaveBeenCalledWith('https://h/download', undefined);
+  });
+
+  it('passes the caller signal to the matched reader', async () => {
+    const gh = reader('github', (u) => new URL(u).hostname === 'github.com');
+    const resolve = createSpecialContentResolver({ readers: [gh], fallback: vi.fn() });
+    const controller = new AbortController();
+    await resolve({ url: 'https://github.com/o/r', signal: controller.signal });
+    expect(gh.read).toHaveBeenCalledWith('https://github.com/o/r', controller.signal);
   });
 });

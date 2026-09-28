@@ -532,3 +532,50 @@ describe('research worker', () => {
     expect(evidence?.summary).toBe(pdfText);
   });
 });
+
+describe('research worker cancellation', () => {
+  const results = {
+    status: 'ok' as const,
+    results: [
+      { title: 'A', url: 'https://a.test/', snippet: '' },
+      { title: 'B', url: 'https://b.test/', snippet: '' }
+    ],
+    metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+  };
+
+  it('does not fetch candidates once the run is cancelled during the search', async () => {
+    const controller = new AbortController();
+    const fetchPage = vi.fn();
+    const worker = createResearchWorker({
+      search: vi.fn(async () => {
+        controller.abort();
+        return results;
+      }),
+      fetchPage
+    });
+
+    await expect(worker.run({ query: 'q', maxSearchRounds: 1, maxFetches: 2, signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(fetchPage).not.toHaveBeenCalled();
+  });
+
+  it('turns a fetch result that arrives after the cancel into the cancel error', async () => {
+    const controller = new AbortController();
+    const fetchPage = vi.fn(async () => {
+      controller.abort();
+      return { status: 'error' as const, url: 'https://a.test/', metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'X', message: 'x' } };
+    });
+    const worker = createResearchWorker({ search: vi.fn(async () => results), fetchPage });
+
+    await expect(worker.run({ query: 'q', maxSearchRounds: 1, maxFetches: 2, signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the signal to search and fetch', async () => {
+    const controller = new AbortController();
+    const search = vi.fn(async () => results);
+    const fetchPage = vi.fn(async ({ url }: { url: string }) => ({ status: 'error' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'X', message: 'x' } }));
+    await createResearchWorker({ search, fetchPage }).run({ query: 'q', maxSearchRounds: 1, maxFetches: 1, signal: controller.signal });
+    expect(search).toHaveBeenCalledWith({ query: 'q', signal: controller.signal });
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://a.test/', query: 'q', signal: controller.signal });
+  });
+});

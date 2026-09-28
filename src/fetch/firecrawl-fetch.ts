@@ -2,6 +2,7 @@ import type { FirecrawlOptions } from '../backends/config.js';
 import { classifyHttpFailure, readResponseParts } from '../backends/provider-failure.js';
 import { selectRelevantContent } from '../extract/section-selector.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import { FIRECRAWL_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
 import type { FailureInfo, WebFetchResponse } from '../types.js';
 
 type FirecrawlResponse = {
@@ -29,14 +30,17 @@ export function createFirecrawlFetcher({
   baseUrl,
   apiKey,
   options,
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  timeoutMs = FIRECRAWL_FETCH_TIMEOUT_MS
 }: {
   baseUrl: string;
   apiKey?: string;
   options?: FirecrawlOptions;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 }) {
-  return async function firecrawlFetch(url: string, query?: string): Promise<WebFetchResponse> {
+  return async function firecrawlFetch(url: string, query?: string, signal?: AbortSignal): Promise<WebFetchResponse> {
+    throwIfAborted(signal);
     const failed = (message: string, failure: FailureInfo): WebFetchResponse => ({
       status: 'error',
       url,
@@ -55,17 +59,21 @@ export function createFirecrawlFetcher({
       ...(options?.onlyMainContent !== undefined ? { onlyMainContent: options.onlyMainContent } : {})
     };
 
+    const requestAbort = requestSignal(signal, timeoutMs);
     let response: Response;
     try {
-      response = await fetchImpl(buildScrapeUrl(baseUrl), { method: 'POST', headers, body: JSON.stringify(body) });
+      response = await fetchImpl(buildScrapeUrl(baseUrl), { method: 'POST', headers, body: JSON.stringify(body), signal: requestAbort });
     } catch (error) {
-      return failed(`Firecrawl scrape failed: ${errorMessage(error)}`, { kind: 'transient' });
+      if (signal?.aborted) throw abortError();
+      const message = requestAbort.aborted ? `Firecrawl did not answer within ${timeoutMs / 1000}s.` : `Firecrawl scrape failed: ${errorMessage(error)}`;
+      return failed(message, { kind: 'transient' });
     }
 
     let parts: Awaited<ReturnType<typeof readResponseParts>>;
     try {
       parts = await readResponseParts(response);
     } catch (error) {
+      if (signal?.aborted) throw abortError();
       return failed(`Firecrawl scrape response could not be read: ${errorMessage(error)}`, { kind: 'transient' });
     }
     if (!response.ok) {

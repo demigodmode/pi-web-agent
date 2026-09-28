@@ -228,3 +228,33 @@ describe('web_explore tool', () => {
     expect(result.presentation?.views.preview).toContain('- [web_fetch] Community/practical context: A concise summary.');
   });
 });
+
+describe('web_explore cancellation (#59)', () => {
+  it('rejects as soon as the run is cancelled, even if the workflow ignores the signal', async () => {
+    const explore = vi.fn(() => new Promise<never>(() => undefined));
+    const controller = new AbortController();
+    const pending = createWebExploreTool({ explore })({ query: 'q', signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+  });
+
+  it('does not start a run that is already cancelled', async () => {
+    const explore = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(createWebExploreTool({ explore })({ query: 'q', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    expect(explore).not.toHaveBeenCalled();
+  });
+
+  it('passes the signal to the workflow', async () => {
+    const explore = vi.fn().mockResolvedValue({
+      decision: { action: 'answer' },
+      evidence: [],
+      workerPass: {},
+      metadata: { searchPasses: 0, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false }
+    });
+    const controller = new AbortController();
+    await createWebExploreTool({ explore })({ query: 'q', signal: controller.signal });
+    expect(explore).toHaveBeenCalledWith({ query: 'q', signal: controller.signal });
+  });
+});

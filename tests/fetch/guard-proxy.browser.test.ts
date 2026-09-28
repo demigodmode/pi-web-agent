@@ -272,4 +272,33 @@ describe.skipIf(!browserAvailable || process.platform !== 'linux')('guard proxy 
     expect(upstream.targets.every((target) => target === `127.0.0.1:${pair.port}`)).toBe(true);
     expect(pair.ok.requests[0]).toMatchObject({ host: `ok.test:${pair.port}`, servername: 'ok.test' });
   }, 60_000);
+
+  it('closes the real browser when the run is cancelled mid-navigation', async () => {
+    const pair = await startServerPair({ okHandler: () => undefined }); // never answers
+    cleanups.push(() => pair.close());
+    const guard = createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: pairLookup() });
+    const proxy = await startGuardProxy({ guard });
+    cleanups.push(() => proxy.close());
+
+    let launched: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+    const controller = new AbortController();
+    const pending = headlessFetch(`http://ok.test:${pair.port}/`, {
+      guard,
+      guardProxy: async () => proxy,
+      signal: controller.signal,
+      launchBrowser: async ({ executablePath, proxy: launchProxy }) => {
+        launched = await chromium.launch({
+          ...(executablePath ? { executablePath } : {}),
+          headless: true,
+          ...(launchProxy ? { proxy: launchProxy } : {})
+        });
+        return launched;
+      }
+    });
+
+    await vi.waitFor(() => expect(pair.ok.requests.length).toBeGreaterThanOrEqual(1), { timeout: 30_000 });
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+    expect(launched?.isConnected()).toBe(false);
+  }, 60_000);
 });

@@ -5,6 +5,7 @@ import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { SearchProviderName } from '../../src/types.js';
+import { startSilentUpstream } from '../fetch/guard-proxy-fixtures.js';
 
 /**
  * Keeps factory tests offline now that model-chosen fetches go through the
@@ -250,7 +251,7 @@ describe('backend factory', () => {
       status: 'ok',
       metadata: { method: 'http', fallbackFrom: 'firecrawl', fallbackReason: 'weak' }
     });
-    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section');
+    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section', undefined);
     expect(httpFetch).toHaveBeenCalledWith({ url: 'https://example.com', query: 'relevant section' });
   });
 
@@ -1239,5 +1240,183 @@ describe('backend factory failure-aware fallback (#55)', () => {
     expect(first.error?.message).toContain('requires backends.search.baseUrl');
     expect(second.metadata.attempts?.[0]).toMatchObject({ outcome: 'skipped', detail: 'SearXNG search requires backends.search.baseUrl.' });
     expect(second.error?.message).toContain('requires backends.search.baseUrl');
+  });
+
+  // #59: Pi's AbortSignal has to make it all the way down to the fetch that
+  // actually hits the network, through every wiring path in this file.
+  describe('signal wiring (#59)', () => {
+    it('hands the caller signal to DuckDuckGo html fetch', async () => {
+      const controller = new AbortController();
+      let capturedSignal: AbortSignal | undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          capturedSignal = init?.signal ?? undefined;
+          return new Promise<Response>(() => undefined);
+        })
+      );
+
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      void backends.search({ query: 'docs', signal: controller.signal });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal?.aborted).toBe(false);
+      controller.abort();
+      expect(capturedSignal?.aborted).toBe(true);
+    });
+
+    it('hands the caller signal to each provider under fanout', async () => {
+      let sawSignal: AbortSignal | undefined;
+      const duck = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+        sawSignal = signal;
+        expect(signal?.aborted).toBe(false);
+        return {
+          status: 'ok' as const,
+          results: [{ title: 't', url: 'https://a.com/x', snippet: 's' }],
+          metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+        };
+      });
+      const backends = createBackendSet(
+        { search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo'] } }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const controller = new AbortController();
+      const res = await backends.search({ query: 'q', signal: controller.signal });
+
+      expect(res.status).toBe('ok');
+      expect(duck).toHaveBeenCalledWith(expect.objectContaining({ query: 'q' }));
+      // Fanout wraps the caller signal with its own per-provider timeout (AbortSignal.any),
+      // so the provider doesn't get the exact same object, but it must still see the abort.
+      expect(sawSignal?.aborted).toBe(false);
+      controller.abort();
+      expect(sawSignal?.aborted).toBe(true);
+    });
+
+    it('rejects search with an already-aborted signal', async () => {
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(backends.search({ query: 'docs', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    });
+
+    it('hands the caller signal to the http fetch', async () => {
+      const controller = new AbortController();
+      let capturedSignal: AbortSignal | undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          capturedSignal = init?.signal ?? undefined;
+          return new Promise<Response>(() => undefined);
+        })
+      );
+
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      void backends.fetchPage({ url: 'https://example.com', signal: controller.signal });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal?.aborted).toBe(false);
+      controller.abort();
+      expect(capturedSignal?.aborted).toBe(true);
+    });
+
+    it('hands the caller signal to firecrawl, and to the http fallback on weak extraction', async () => {
+      const controller = new AbortController();
+      const firecrawl = vi.fn(async (_url: string, _query?: string, signal?: AbortSignal) => {
+        expect(signal).toBe(controller.signal);
+        return {
+          status: 'needs_headless' as const,
+          url: 'https://example.com',
+          metadata: { method: 'firecrawl' as const, cacheHit: false },
+          error: { code: 'WEAK_EXTRACTION', message: 'weak' }
+        };
+      });
+      const httpFallback = vi.fn(async ({ signal }: { url: string; query?: string; signal?: AbortSignal }) => {
+        expect(signal).toBe(controller.signal);
+        return {
+          status: 'ok' as const,
+          url: 'https://example.com',
+          content: { text: 'HTTP content' },
+          metadata: { method: 'http' as const, cacheHit: false }
+        };
+      });
+      let createdFetchTools = 0;
+      const createHttpFetch = (options?: { fetchPage?: (input: { url: string; query?: string; signal?: AbortSignal }) => Promise<any> }) => {
+        const isHttpFallback = createdFetchTools++ === 0;
+        return async ({ url, query, signal }: { url: string; query?: string; signal?: AbortSignal }) => {
+          if (isHttpFallback) return httpFallback({ url, query, signal });
+          return options!.fetchPage!({ url, query, signal });
+        };
+      };
+
+      const backends = createBackendSet(
+        { search: { provider: 'duckduckgo' }, fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }, headless: { provider: 'local-browser' } },
+        { ...offlineNetworkDeps(), createFirecrawlFetch: () => firecrawl, createHttpFetch: createHttpFetch as never }
+      );
+
+      const result = await backends.fetchPage({ url: 'https://example.com', signal: controller.signal });
+      expect(result.status).toBe('ok');
+      expect(firecrawl).toHaveBeenCalledWith('https://example.com', undefined, controller.signal);
+      expect(httpFallback).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+    });
+
+    it('hands the caller signal to the headless fetcher', async () => {
+      const controller = new AbortController();
+      const headlessTool = vi.fn(async ({ url, signal }: { url: string; query?: string; signal?: AbortSignal }) => {
+        expect(signal).toBe(controller.signal);
+        return {
+          status: 'ok' as const,
+          url,
+          content: { text: '' },
+          metadata: { method: 'headless' as const, cacheHit: false }
+        };
+      });
+      const createHeadlessFetch = vi.fn(() => headlessTool);
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, { ...offlineNetworkDeps(), createHeadlessFetch: createHeadlessFetch as never });
+
+      await backends.headlessFetch({ url: 'https://example.com', signal: controller.signal });
+
+      expect(headlessTool).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com', signal: controller.signal }));
+    });
+
+    it('rejects fetchPage with an already-aborted signal (withTargetGuard)', async () => {
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(backends.fetchPage({ url: 'https://example.com', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    });
+  });
+});
+
+describe('cancelling through the real guard proxy (#59)', () => {
+  it('closes the upstream tunnel when a page fetch is cancelled mid-CONNECT', async () => {
+    // Real guard proxy and real undici, chained to an upstream proxy that takes
+    // the CONNECT and never answers. The fake lookup keeps DNS offline.
+    const upstream = await startSilentUpstream();
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: `http://127.0.0.1:${upstream.port}` } },
+      { networkGuard: offlineNetworkDeps().networkGuard, policy: { sleep: async () => undefined, random: () => 0 } }
+    );
+    try {
+      const controller = new AbortController();
+      const pending = backends.fetchPage({ url: 'https://ok.test:9443/', signal: controller.signal });
+      pending.catch(() => undefined);
+
+      await upstream.sawConnect;
+      controller.abort();
+
+      await expect(pending).rejects.toThrow('Operation aborted');
+      await Promise.race([
+        upstream.closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close within 1s')), 1000))
+      ]);
+    } finally {
+      await backends.close();
+      await upstream.close();
+    }
   });
 });
