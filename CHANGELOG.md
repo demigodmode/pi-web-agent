@@ -13,7 +13,9 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Fixed
-- None.
+- Pressing Esc on a running `web_explore` now actually stops it (#59). Searches, page fetches and the headless browser all stop, the browser gets closed, and nothing retries or falls back after you cancel. A cancel also never puts a search provider on cooldown. Before this, Pi sat there until the whole research run had finished on its own.
+- Page fetches and the GitHub, PDF and YouTube readers give up after 15 seconds instead of hanging on a server that never answers, and Firecrawl scrapes after 45 seconds. A timed out fetch counts as a temporary failure, so the usual retry rules apply.
+- The guard proxy no longer opens an outbound connection for a request whose client hung up while the address was still being looked up.
 
 ### Breaking
 - None.
