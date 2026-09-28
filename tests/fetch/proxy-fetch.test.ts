@@ -162,6 +162,28 @@ describe('proxy fetch', () => {
     expect(proxy.requests[0].proxyAuthorization).toBeUndefined();
   });
 
+  it('aborting one fetch through the proxy does not disturb a concurrent one', async () => {
+    const target = await startHttpServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      setTimeout(() => res.end('slow but fine'), 50);
+    });
+    const proxy = await startProxyServer();
+    cleanups.push(target.close, proxy.close);
+
+    const fetchViaProxy = createProxyFetch({ url: `http://127.0.0.1:${proxy.port}` });
+    const controller = new AbortController();
+    const aborted = fetchViaProxy(`http://127.0.0.1:${target.port}/slow`, { signal: controller.signal });
+    aborted.catch(() => undefined);
+    controller.abort();
+
+    const response = await fetchViaProxy(`http://127.0.0.1:${target.port}/fine`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('slow but fine');
+
+    const error = await aborted.catch((e) => e);
+    expect((error as Error).name).toBe('AbortError');
+  });
+
   it('resolves credentials from the config first, then environment variables', () => {
     const env = {
       PI_WEB_AGENT_PROXY_USERNAME: 'env-user',

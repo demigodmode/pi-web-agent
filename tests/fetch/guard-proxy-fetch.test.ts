@@ -1,3 +1,4 @@
+import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGuardedFetch } from '../../src/fetch/guarded-fetch.js';
 import { startGuardProxy, type GuardProxyOptions } from '../../src/fetch/guard-proxy.js';
@@ -11,6 +12,68 @@ import {
 } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
 import { FIXTURE_CERT, startRecordingUpstream, startServerPair } from './guard-proxy-fixtures.js';
+
+/**
+ * A stand-in for an upstream proxy that accepts the TCP connection, reads a
+ * CONNECT, and never answers it — but forwards plain absolute-form HTTP
+ * requests normally, so a concurrent request that doesn't need CONNECT isn't
+ * also stuck behind the hang.
+ */
+async function startSilentUpstream(): Promise<{ port: number; sawConnect: Promise<void>; closed: Promise<void>; close(): Promise<void> }> {
+  const sockets = new Set<net.Socket>();
+  let resolveSawConnect!: () => void;
+  const sawConnect = new Promise<void>((resolve) => {
+    resolveSawConnect = resolve;
+  });
+  let resolveClosed!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
+
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => {
+      sockets.delete(socket);
+      resolveClosed();
+    });
+    socket.on('error', () => undefined);
+    let buffered = Buffer.alloc(0);
+    const onData = (chunk: Buffer) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      const end = buffered.indexOf('\r\n\r\n');
+      if (end === -1) return;
+      const head = buffered.subarray(0, end).toString('latin1');
+      const [method, target] = head.split('\r\n')[0].split(' ');
+      if (method === 'CONNECT') {
+        // Read it, and stop; never answer. That's the hang the fix has to notice.
+        resolveSawConnect();
+        return;
+      }
+      socket.off('data', onData);
+      const url = new URL(target);
+      const outbound = net.connect({ host: url.hostname, port: Number(url.port) || 80 }, () => {
+        outbound.write(`${head.replace(/^(\S+) \S+ /, `$1 ${url.pathname}${url.search} `)}\r\n\r\n`);
+        outbound.pipe(socket);
+        socket.pipe(outbound);
+      });
+      sockets.add(outbound);
+      outbound.on('error', () => socket.destroy());
+    };
+    socket.on('data', onData);
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as net.AddressInfo).port;
+  return {
+    port,
+    sawConnect,
+    closed,
+    close() {
+      for (const socket of sockets) socket.destroy();
+      return new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  };
+}
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -274,6 +337,51 @@ describe.skipIf(process.platform !== 'linux')('guard proxy fetch', () => {
 
       expect(findGuardError(error)).toBeInstanceOf(UpstreamProxyRefusedError);
       expect(upstream.targets).toEqual(['127.0.0.1:8443']);
+    });
+  });
+
+  describe('cancellation (#59)', () => {
+    it('aborting a fetch closes the upstream tunnel instead of leaving it open until the handshake timeout', async () => {
+      const upstream = await startSilentUpstream();
+      cleanups.push(() => upstream.close());
+      // A long handshake timeout so the old "wait for the timer" behavior would obviously fail this test.
+      const { proxyFetch } = await setup({ upstream: { url: `http://127.0.0.1:${upstream.port}` }, handshakeTimeoutMs: 10_000 });
+
+      const controller = new AbortController();
+      const fetchPromise = proxyFetch(`https://ok.test:9443/`, { signal: controller.signal });
+      // Swallow the eventual rejection so it isn't reported as unhandled while we wait below.
+      fetchPromise.catch(() => undefined);
+
+      await upstream.sawConnect;
+      controller.abort();
+
+      const error = await fetchPromise.catch((e) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).name).toBe('AbortError');
+
+      await Promise.race([
+        upstream.closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close within 1s')), 1000))
+      ]);
+    });
+
+    it('does not let an aborted fetch interfere with a concurrent one', async () => {
+      const pair = await startServerPair();
+      const upstream = await startSilentUpstream();
+      cleanups.push(() => pair.close(), () => upstream.close());
+      const { proxyFetch } = await setup({ upstream: { url: `http://127.0.0.1:${upstream.port}` }, handshakeTimeoutMs: 10_000 });
+
+      const controller = new AbortController();
+      const hangingFetch = proxyFetch(`https://ok.test:9443/`, { signal: controller.signal });
+      hangingFetch.catch(() => undefined);
+
+      const okResponse = await proxyFetch(`http://ok.test:${pair.port}/`);
+      expect(okResponse.status).toBe(200);
+
+      await upstream.sawConnect;
+      controller.abort();
+      const error = await hangingFetch.catch((e) => e);
+      expect((error as Error).name).toBe('AbortError');
     });
   });
 });
