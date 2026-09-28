@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createPdfReader } from '../../src/readers/pdf-reader.js';
+import { PDF_FETCH_TIMEOUT_MS, PAGE_FETCH_TIMEOUT_MS } from '../../src/abort.js';
 
 function pdfResponse(bytes = new Uint8Array([1, 2, 3])) {
   return { ok: true, status: 200, arrayBuffer: async () => bytes.buffer, headers: new Headers({ 'content-type': 'application/pdf' }) };
@@ -87,5 +88,17 @@ describe('pdf reader cancellation', () => {
     const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal!;
     controller.abort();
     expect(signal.aborted).toBe(true);
+  });
+
+  it('gives the download the longer PDF timeout, not the plain page timeout', async () => {
+    expect(PDF_FETCH_TIMEOUT_MS).toBe(60_000);
+    expect(PDF_FETCH_TIMEOUT_MS).toBeGreaterThan(PAGE_FETCH_TIMEOUT_MS);
+
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('not found', { status: 404 }));
+    await createPdfReader({ fetchImpl: fetchImpl as unknown as typeof fetch }).read('https://example.com/a.pdf');
+
+    expect(timeoutSpy).toHaveBeenCalledWith(PDF_FETCH_TIMEOUT_MS);
+    timeoutSpy.mockRestore();
   });
 });

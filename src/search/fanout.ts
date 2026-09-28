@@ -116,7 +116,7 @@ export function withCallTimeout(search: SearchFn, timeoutMs: number, name: Searc
 
 /** A provider that doesn't answer in time (or throws) counts as a transient failure, so one
  *  slow/unreachable provider (e.g. a down self-hosted SearXNG) can't stall the whole fanout. */
-function withTimeout(promise: Promise<WebSearchResponse>, ms: number, name: SearchProviderName, onTimeout?: () => void): Promise<WebSearchResponse> {
+function withTimeout(promise: Promise<WebSearchResponse>, ms: number, name: SearchProviderName): Promise<WebSearchResponse> {
   const timedOut = (): WebSearchResponse => ({
     status: 'error',
     results: [],
@@ -125,7 +125,6 @@ function withTimeout(promise: Promise<WebSearchResponse>, ms: number, name: Sear
   });
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      onTimeout?.();
       resolve(timedOut());
     }, ms);
     timer.unref?.();

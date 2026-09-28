@@ -10,6 +10,9 @@ export const PAGE_FETCH_TIMEOUT_MS = 15_000;
 /** Firecrawl renders the page on its side, so it gets longer than a plain fetch. */
 export const FIRECRAWL_FETCH_TIMEOUT_MS = 45_000;
 
+/** PDFs can be large and the timer stays armed through the whole download, so they get more room than a plain page fetch. */
+export const PDF_FETCH_TIMEOUT_MS = 60_000;
+
 export function abortError(): Error {
   const error = new Error('Operation aborted');
   error.name = 'AbortError';
