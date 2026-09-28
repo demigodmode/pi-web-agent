@@ -341,6 +341,9 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
     // The lookup can take seconds. A client that left meanwhile (a cancelled
     // fetch) must not get an outbound connection opened on its behalf.
     if (closed || clientSocket.destroyed || clientSocket.readableEnded) {
+      // Still record a would-be refusal so headless can attribute the failed
+      // navigation to the guard, even though there's no one left to answer.
+      if (destination.action === 'refuse') refuse(client, destination.error.host, destination.error);
       clientSocket.destroy();
       return;
     }
@@ -371,7 +374,7 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
       return;
     }
 
-    if (closed || clientSocket.destroyed) {
+    if (closed || clientSocket.destroyed || clientSocket.readableEnded) {
       outbound.destroy();
       clientSocket.destroy();
       return;
@@ -410,6 +413,9 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
     const port = Number(target.port) || 80;
     const destination = await decide(host);
     if (closed || response.destroyed) {
+      // Still record a would-be refusal so headless can attribute the failed
+      // navigation to the guard, even though there's no one left to answer.
+      if (destination.action === 'refuse') refuse(client, destination.error.host, destination.error);
       response.destroy();
       return;
     }

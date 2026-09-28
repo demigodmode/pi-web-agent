@@ -24,12 +24,12 @@ function guardFor(table: Record<string, string[]>, allowRanges = ['127.0.0.1/32'
 }
 
 /** A lookup that only answers once the test releases it. */
-function gatedLookup() {
+function gatedLookup(address = '127.0.0.1') {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   const fn = vi.fn<LookupFn>(async () => {
     await gate;
-    return [{ address: '127.0.0.1', family: 4 }];
+    return [{ address, family: 4 }];
   });
   return { fn, release };
 }
@@ -453,11 +453,37 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
 
       await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
       client.destroy();
-      await pause(50);
+      // Wait for the disconnect to actually land, not a guessed delay: the
+      // proxy only sees it once the FIN has gone out and the socket closes.
+      await new Promise((resolve) => client.once('close', resolve));
       lookup.release();
       await pause(50);
 
       expect(openSocket).not.toHaveBeenCalled();
+    });
+
+    it('records the refusal for a CONNECT client that left while the lookup resolved to a blocked address', async () => {
+      const lookup = gatedLookup('10.0.0.1');
+      const openSocket = vi.fn(() => new Socket());
+      const proxy = await proxyWith({
+        guard: createNetworkGuard({ allowRanges: ['127.0.0.1/32'] }, { lookup: lookup.fn }),
+        openSocket
+      });
+      const client = proxy.client('t');
+      const url = new URL(proxy.url);
+      const socket = netConnect({ host: url.hostname, port: Number(url.port) });
+      socket.on('error', () => undefined);
+      await new Promise((resolve) => socket.once('connect', resolve));
+      socket.write(`CONNECT private.test:443 HTTP/1.1\r\nHost: private.test:443\r\nProxy-Authorization: ${basicAuth(client)}\r\n\r\n`);
+
+      await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
+      socket.destroy();
+      await new Promise((resolve) => socket.once('close', resolve));
+      lookup.release();
+      await pause(50);
+
+      expect(openSocket).not.toHaveBeenCalled();
+      expect(proxy.refusalsSince(client.username, 0)).toHaveLength(1);
     });
 
     it('does not connect out for a forwarded request dropped during the lookup', async () => {
@@ -480,7 +506,7 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
 
       await vi.waitFor(() => expect(lookup.fn).toHaveBeenCalled());
       request.destroy();
-      await pause(50);
+      await new Promise((resolve) => request.once('close', resolve));
       lookup.release();
       await pause(50);
 
