@@ -45,4 +45,11 @@ describe('web_fetch_headless tool', () => {
       }
     });
   });
+
+  it('passes the caller signal to fetchPage', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ status: 'ok', url: 'https://example.com', content: { text: 'x' }, metadata: { method: 'headless', cacheHit: false } });
+    const controller = new AbortController();
+    await createWebFetchHeadlessTool({ fetchPage })({ url: 'https://example.com', signal: controller.signal });
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com', signal: controller.signal });
+  });
 });

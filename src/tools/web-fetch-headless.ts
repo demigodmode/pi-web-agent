@@ -7,7 +7,7 @@ export function createWebFetchHeadlessTool({
 }: {
   fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 } = {}) {
-  return async function webFetchHeadless({ url, query }: ResearchFetchInput): Promise<WebFetchHeadlessResponse> {
+  return async function webFetchHeadless({ url, query, signal }: ResearchFetchInput): Promise<WebFetchHeadlessResponse> {
     if (!/^https?:\/\//.test(url)) {
       const result: WebFetchHeadlessResponse = {
         status: 'unsupported',
@@ -22,7 +22,7 @@ export function createWebFetchHeadlessTool({
       };
     }
 
-    const result = await fetchPage({ url, ...(query ? { query } : {}) });
+    const result = await fetchPage({ url, ...(query ? { query } : {}), ...(signal ? { signal } : {}) });
     return {
       ...result,
       presentation: buildFetchPresentation(result)

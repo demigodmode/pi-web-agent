@@ -10,14 +10,14 @@ export function createSpecialContentResolver({ readers, fallback }: ResolverDeps
   return async function resolve(input: ResearchFetchInput): Promise<WebFetchResponse> {
     const matched = readers.find((reader) => reader.canHandle(input.url));
     if (matched) {
-      return matched.read(input.url);
+      return matched.read(input.url, input.signal);
     }
 
     const response = await fallback(input);
     if (response.status === 'unsupported' && response.metadata.contentType) {
       const byContentType = readers.find((reader) => reader.canHandleContentType?.(response.metadata.contentType!));
       if (byContentType) {
-        return byContentType.read(input.url);
+        return byContentType.read(input.url, input.signal);
       }
     }
     return response;

@@ -41,4 +41,11 @@ describe('web_fetch tool', () => {
   it('can be constructed without dependency arguments', () => {
     expect(typeof createWebFetchTool()).toBe('function');
   });
+
+  it('passes the caller signal to fetchPage', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ status: 'ok', url: 'https://example.com', content: { text: 'x' }, metadata: { method: 'http', cacheHit: false } });
+    const controller = new AbortController();
+    await createWebFetchTool({ fetchPage })({ url: 'https://example.com', query: 'q', signal: controller.signal });
+    expect(fetchPage).toHaveBeenCalledWith({ url: 'https://example.com', query: 'q', signal: controller.signal });
+  });
 });
