@@ -3,7 +3,7 @@ import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import type { ResearchFetchInput, WebFetchHeadlessResponse } from '../types.js';
 
 export function createWebFetchHeadlessTool({
-  fetchPage = ({ url, query }) => headlessFetch(url, { query })
+  fetchPage = ({ url, query, signal }) => headlessFetch(url, { query, signal })
 }: {
   fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 } = {}) {

@@ -3,7 +3,7 @@ import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import type { ResearchFetchInput, WebFetchResponse } from '../types.js';
 
 export function createWebFetchTool({
-  fetchPage = ({ url, query }) => createHttpFetcher()(url, query)
+  fetchPage = ({ url, query, signal }) => createHttpFetcher()(url, query, signal)
 }: {
   fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 } = {}) {
