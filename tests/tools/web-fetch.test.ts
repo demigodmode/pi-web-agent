@@ -55,9 +55,12 @@ describe('web_fetch tool', () => {
     const spy = vi.spyOn(httpFetch, 'createHttpFetcher').mockReturnValue(httpFetcher);
     const controller = new AbortController();
 
-    await createWebFetchTool()({ url: 'https://example.com', query: 'q', signal: controller.signal });
+    try {
+      await createWebFetchTool()({ url: 'https://example.com', query: 'q', signal: controller.signal });
 
-    expect(httpFetcher).toHaveBeenCalledWith('https://example.com', 'q', controller.signal);
-    spy.mockRestore();
+      expect(httpFetcher).toHaveBeenCalledWith('https://example.com', 'q', controller.signal);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

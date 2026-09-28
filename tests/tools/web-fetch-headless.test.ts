@@ -63,9 +63,12 @@ describe('web_fetch_headless tool', () => {
     });
     const controller = new AbortController();
 
-    await createWebFetchHeadlessTool()({ url: 'https://example.com', query: 'q', signal: controller.signal });
+    try {
+      await createWebFetchHeadlessTool()({ url: 'https://example.com', query: 'q', signal: controller.signal });
 
-    expect(spy).toHaveBeenCalledWith('https://example.com', { query: 'q', signal: controller.signal });
-    spy.mockRestore();
+      expect(spy).toHaveBeenCalledWith('https://example.com', { query: 'q', signal: controller.signal });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
