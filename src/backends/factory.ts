@@ -20,7 +20,7 @@ import { buildSearchPresentation } from '../presentation/search-presentation.js'
 import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
-import type { ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { ResearchFetchInput, SearchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
 import { createGithubReader } from '../readers/github-reader.js';
@@ -28,7 +28,7 @@ import { createPdfReader } from '../readers/pdf-reader.js';
 import { createYoutubeReader } from '../readers/youtube-reader.js';
 
 export type BackendSet = {
-  search: (input: { query: string }) => Promise<WebSearchResponse>;
+  search: (input: SearchInput) => Promise<WebSearchResponse>;
   fetchPage: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
   headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
   /** Releases the guard proxy and its agents. Idempotent; never starts the proxy. */
@@ -239,7 +239,7 @@ export function createBackendSet(
     withSearchPolicy(name, search, policyDeps, healthKey);
 
   const createDuckDuckGo = () =>
-    createDuckDuckGoSearch({ searchHtml: (query) => fetchDuckDuckGoHtml(query, { fetchImpl }) });
+    createDuckDuckGoSearch({ searchHtml: (query, signal) => fetchDuckDuckGoHtml(query, { fetchImpl, signal }) });
 
   function buildProviderSearch(name: SearchProviderName): BackendSet['search'] {
     switch (name) {

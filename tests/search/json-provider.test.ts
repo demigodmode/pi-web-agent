@@ -108,3 +108,22 @@ describe('createJsonSearchProvider', () => {
     expect(result.presentation).toBeDefined();
   });
 });
+
+describe('json provider cancellation', () => {
+  it('hands the caller signal to fetch', async () => {
+    const fetchImpl = vi.fn(async () => json({ results: [] }));
+    const controller = new AbortController();
+    await provider(fetchImpl as unknown as typeof fetch)({ query: 'q', signal: controller.signal });
+    expect(fetchImpl).toHaveBeenCalledWith('https://api.test/search', expect.objectContaining({ method: 'POST', signal: controller.signal }));
+  });
+
+  it('adds init only for the signal on a plain GET', async () => {
+    const fetchImpl = vi.fn(async () => json({ results: [] }));
+    const controller = new AbortController();
+    const search = provider(fetchImpl as unknown as typeof fetch, { request: () => ({ url: 'https://api.test/get' }) });
+    await search({ query: 'q' });
+    await search({ query: 'q', signal: controller.signal });
+    expect(fetchImpl.mock.calls[0]).toEqual(['https://api.test/get']);
+    expect(fetchImpl.mock.calls[1]).toEqual(['https://api.test/get', { signal: controller.signal }]);
+  });
+});

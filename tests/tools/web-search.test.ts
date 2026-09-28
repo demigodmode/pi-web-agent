@@ -264,3 +264,12 @@ describe('duckduckgo classification (#55)', () => {
     expect(result.results).toHaveLength(1);
   });
 });
+
+describe('web search cancellation', () => {
+  it('passes the caller signal to searchHtml', async () => {
+    const searchHtml = vi.fn(async () => '<div class="result"><a class="result__a" href="https://a.test/">A</a></div>');
+    const controller = new AbortController();
+    await createWebSearchTool({ searchHtml })({ query: 'q', signal: controller.signal });
+    expect(searchHtml).toHaveBeenCalledWith('q', controller.signal);
+  });
+});

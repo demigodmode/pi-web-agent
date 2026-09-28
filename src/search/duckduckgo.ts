@@ -53,9 +53,9 @@ export class DuckDuckGoHttpError extends Error {
 /** One request. Retries belong to the fallback policy (#55), which only retries transient failures. */
 export async function fetchDuckDuckGoHtml(
   query: string,
-  { fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {}
+  { fetchImpl = fetch, signal }: { fetchImpl?: typeof fetch; signal?: AbortSignal } = {}
 ): Promise<string> {
-  const response = await fetchImpl(buildSearchUrl(query), { headers: { ...DUCKDUCKGO_HEADERS } });
+  const response = await fetchImpl(buildSearchUrl(query), { headers: { ...DUCKDUCKGO_HEADERS }, ...(signal ? { signal } : {}) });
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     throw new DuckDuckGoHttpError(response.status, response.headers);

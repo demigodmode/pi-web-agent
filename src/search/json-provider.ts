@@ -1,6 +1,6 @@
 import { classifyHttpFailure, readResponseParts } from '../backends/provider-failure.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import type { FailureInfo, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
+import type { FailureInfo, SearchInput, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
 
 export type Normalized = { rawCount: number; results: SearchResult[] };
 
@@ -35,7 +35,7 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
   const error = (code: string, message: string, failure: FailureInfo) =>
     respond({ status: 'error', results: [], metadata: { backend: name, cacheHit: false }, error: { code, message, failure } });
 
-  return async function search({ query }: { query: string }): Promise<WebSearchResponse> {
+  return async function search({ query, signal }: SearchInput): Promise<WebSearchResponse> {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
       return error('INVALID_QUERY', 'Query must not be empty.', { kind: 'bad_request' });
@@ -47,10 +47,11 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
     }
 
     const { url, init } = options.request(normalizedQuery);
+    const requestInit = signal ? { ...init, signal } : init;
     let response: Response;
     try {
       // No init for plain GETs, so callers and tests see fetch(url) exactly.
-      response = await (init ? fetchImpl(url, init) : fetchImpl(url));
+      response = await (requestInit ? fetchImpl(url, requestInit) : fetchImpl(url));
     } catch (thrown) {
       const message = thrown instanceof Error ? thrown.message : String(thrown);
       return error('FETCH_FAILED', `${label} search request failed: ${message}`, { kind: 'transient' });

@@ -2,7 +2,7 @@ import { createCacheKey, createTtlCache } from '../cache/ttl-cache.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { classifyHttpFailure } from '../backends/provider-failure.js';
 import { DuckDuckGoHttpError, fetchDuckDuckGoHtml, parseDuckDuckGoResults } from '../search/duckduckgo.js';
-import type { WebSearchResponse } from '../types.js';
+import type { SearchInput, WebSearchResponse } from '../types.js';
 
 function respond(result: WebSearchResponse): WebSearchResponse {
   return { ...result, presentation: buildSearchPresentation(result) };
@@ -25,16 +25,16 @@ function htmlLooksBlocked(html: string) {
 }
 
 export function createWebSearchTool({
-  searchHtml = fetchDuckDuckGoHtml,
+  searchHtml = (query, signal) => fetchDuckDuckGoHtml(query, { signal }),
   cache = createTtlCache<WebSearchResponse>({ ttlMs: 30_000 })
 }: {
-  searchHtml?: (query: string) => Promise<string>;
+  searchHtml?: (query: string, signal?: AbortSignal) => Promise<string>;
   cache?: {
     get(key: string): WebSearchResponse | undefined;
     set(key: string, value: WebSearchResponse): void;
   };
 } = {}) {
-  return async function webSearch({ query }: { query: string }): Promise<WebSearchResponse> {
+  return async function webSearch({ query, signal }: SearchInput): Promise<WebSearchResponse> {
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
@@ -54,7 +54,7 @@ export function createWebSearchTool({
 
     let html: string;
     try {
-      html = await searchHtml(normalizedQuery);
+      html = await searchHtml(normalizedQuery, signal);
     } catch (error) {
       const failure =
         error instanceof DuckDuckGoHttpError
