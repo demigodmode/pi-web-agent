@@ -57,9 +57,10 @@ export function fetchWithSignal(fetchImpl: typeof fetch, signal: AbortSignal): t
  * `work` keeps running after a cancel; whoever owns it still has to wait for it.
  */
 export async function raceAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  throwIfAborted(signal);
   // The abandoned work may still reject later; that is not an unhandled rejection.
+  // Attach this before the early throw below, since the signal may already be aborted.
   work.catch(() => undefined);
+  throwIfAborted(signal);
   let onAbort = () => {};
   const aborted = new Promise<never>((_, reject) => {
     onAbort = () => reject(abortError());

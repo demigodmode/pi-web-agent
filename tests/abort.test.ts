@@ -88,4 +88,15 @@ describe('abort helpers', () => {
     fail();
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
+
+  it('raceAbort does not leave an unhandled rejection when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let fail!: () => void;
+    const work = new Promise<string>((_, reject) => (fail = () => reject(new Error('boom'))));
+    const raced = raceAbort(work, controller.signal);
+    await expect(raced).rejects.toThrow('Operation aborted');
+    fail();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
 });
