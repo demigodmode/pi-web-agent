@@ -345,6 +345,53 @@ describe('Pi extension entrypoint', () => {
     expect(second.close).not.toHaveBeenCalled();
   });
 
+  it('hands Pi the abort right away but keeps a cancelled run leased until it settles', async () => {
+    vi.resetModules();
+    let releaseRun!: () => void;
+    let seenSignal: AbortSignal | undefined;
+    const first = {
+      run: vi.fn(({ signal }: { signal?: AbortSignal }) => {
+        seenSignal = signal;
+        return new Promise((resolve) => (releaseRun = () => resolve(answer)));
+      }),
+      close: vi.fn(async () => undefined)
+    };
+    const second = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    const createResearchWorkflow = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+
+    const configs = [
+      { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
+      { search: { provider: 'brave' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+    ];
+    let current = 0;
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __presentationConfigStore: configStore(() => configs[current])
+    };
+
+    dynamicExtension(pi as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+
+    const controller = new AbortController();
+    const cancelled = webExplore.execute('call-1', { query: 'first' }, controller.signal);
+    await vi.waitFor(() => expect(first.run).toHaveBeenCalled());
+    expect(seenSignal).toBe(controller.signal);
+    controller.abort();
+    await expect(cancelled).rejects.toThrow('Operation aborted');
+
+    current = 1;
+    await webExplore.execute('call-2', { query: 'second' });
+    expect(first.close).not.toHaveBeenCalled();
+
+    releaseRun();
+    await vi.waitFor(() => expect(first.close).toHaveBeenCalledTimes(1));
+  });
+
   it('closes the current workflow on session shutdown', async () => {
     vi.resetModules();
     const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };

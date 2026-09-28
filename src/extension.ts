@@ -161,9 +161,9 @@ export default function extension(pi: ExtensionAPI) {
     parameters: Type.Object({
       query: Type.String({ description: 'Web research question to explore.' })
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, signal) {
       const webExplore = await getConfiguredWebExplore();
-      const result: WebExploreResponse = await webExplore({ query: params.query });
+      const result: WebExploreResponse = await webExplore({ query: params.query, ...(signal ? { signal } : {}) });
 
       // Terminal display honors the user's presentation mode; the model gets the full findings.
       // The fallback must stay terse: never fall back to serializeForModel here, or a missing
