@@ -54,6 +54,14 @@ export type GuardProxyOptions = {
 
 export type GuardProxyClient = { server: string; username: string; password: string };
 
+/** Thrown when the client left while a connect or handshake was still pending. Never surfaced to the client. */
+class ClientGoneError extends Error {
+  constructor() {
+    super('Client disconnected while connecting.');
+    this.name = 'ClientGoneError';
+  }
+}
+
 export type Refusal = { seq: number; client: string; host: string; error: GuardError };
 
 export type GuardProxy = {
@@ -185,8 +193,9 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
   }
 
   /** Tracked from creation, so close() also destroys sockets that are still connecting. */
-  function openSocket(host: string, port: number, useTls: boolean, servername?: string): Promise<Socket> {
+  function openSocket(host: string, port: number, useTls: boolean, servername?: string, signal?: AbortSignal): Promise<Socket> {
     if (closed) return Promise.reject(new Error('Guard proxy is closed.'));
+    if (signal?.aborted) return Promise.reject(new ClientGoneError());
     const socket = (options.openSocket ?? defaultOpenSocket)(host, port, useTls, servername);
     track(socket);
     const connectEvent = useTls ? 'secureConnect' : 'connect';
@@ -197,6 +206,7 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
         socket.off(connectEvent, onConnect);
         socket.off('error', onError);
         socket.off('close', onClose);
+        signal?.removeEventListener('abort', onAbort);
       };
       const onConnect = () => {
         finish();
@@ -211,6 +221,11 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
         finish();
         reject(new Error(`Connection to ${host}:${port} closed before it opened.`));
       };
+      const onAbort = () => {
+        finish();
+        socket.destroy();
+        reject(new ClientGoneError());
+      };
       const timer = setTimeout(() => {
         finish();
         socket.destroy();
@@ -219,17 +234,23 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
       socket.once(connectEvent, onConnect);
       socket.once('error', onError);
       socket.once('close', onClose);
+      signal?.addEventListener('abort', onAbort);
     });
   }
 
-  function readConnectResponse(socket: Socket): Promise<{ status: number; rest: Buffer }> {
+  function readConnectResponse(socket: Socket, signal?: AbortSignal): Promise<{ status: number; rest: Buffer }> {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new ClientGoneError());
+        return;
+      }
       let buffered = Buffer.alloc(0);
       const finish = () => {
         clearTimeout(timer);
         socket.off('data', onData);
         socket.off('error', onError);
         socket.off('close', onClose);
+        signal?.removeEventListener('abort', onAbort);
       };
       const onData = (chunk: Buffer) => {
         buffered = Buffer.concat([buffered, chunk]);
@@ -256,6 +277,10 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
         finish();
         reject(new Error('Upstream proxy closed the connection before responding.'));
       };
+      const onAbort = () => {
+        finish();
+        reject(new ClientGoneError());
+      };
       const timer = setTimeout(() => {
         finish();
         reject(new Error('Upstream proxy did not answer the CONNECT in time.'));
@@ -263,15 +288,20 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
       socket.on('data', onData);
       socket.once('error', onError);
       socket.once('close', onClose);
+      signal?.addEventListener('abort', onAbort);
     });
   }
 
-  async function openTunnel(destination: Exclude<Destination, { action: 'refuse' }>, port: number): Promise<Socket> {
+  async function openTunnel(
+    destination: Exclude<Destination, { action: 'refuse' }>,
+    port: number,
+    signal?: AbortSignal
+  ): Promise<Socket> {
     const target = destination.action === 'connect' ? destination.address : destination.host;
 
     if (!upstream) {
       // Only 'connect' reaches here: delegation needs an upstream. `target` is an IP, so no lookup happens.
-      return openSocket(target, port, false);
+      return openSocket(target, port, false, undefined, signal);
     }
 
     const endpoint = upstreamEndpoint();
@@ -282,9 +312,11 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
         endpoint.host,
         endpoint.port,
         endpoint.url.protocol === 'https:',
-        isIP(endpoint.host) ? undefined : endpoint.host
+        isIP(endpoint.host) ? undefined : endpoint.host,
+        signal
       );
     } catch (error) {
+      if (error instanceof ClientGoneError) throw error;
       throw new UpstreamProxyRefusedError(destination.host, authority, error instanceof Error ? error.message : 'error');
     }
 
@@ -296,9 +328,10 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
 
     let response: { status: number; rest: Buffer };
     try {
-      response = await readConnectResponse(socket);
+      response = await readConnectResponse(socket, signal);
     } catch (error) {
       socket.destroy();
+      if (error instanceof ClientGoneError) throw error;
       throw new UpstreamProxyRefusedError(destination.host, authority, error instanceof Error ? error.message : 'error');
     }
     if (response.status < 200 || response.status >= 300) {
@@ -355,11 +388,24 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
       return;
     }
 
+    // The connect (and, with an upstream, the handshake) can also take a while.
+    // If the client leaves meanwhile, abort it instead of waiting out the timeout.
+    const tunnelAbort = new AbortController();
+    const onClientGone = () => tunnelAbort.abort();
+    if (clientSocket.destroyed || clientSocket.readableEnded) {
+      tunnelAbort.abort();
+    } else {
+      clientSocket.once('close', onClientGone);
+      clientSocket.once('end', onClientGone);
+    }
+
     let outbound: Socket;
     try {
-      outbound = await openTunnel(destination, authority.port);
+      outbound = await openTunnel(destination, authority.port, tunnelAbort.signal);
     } catch (error) {
-      if (closed) {
+      clientSocket.off('close', onClientGone);
+      clientSocket.off('end', onClientGone);
+      if (closed || error instanceof ClientGoneError) {
         clientSocket.destroy();
         return;
       }
@@ -373,6 +419,8 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
       clientSocket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
       return;
     }
+    clientSocket.off('close', onClientGone);
+    clientSocket.off('end', onClientGone);
 
     if (closed || clientSocket.destroyed || clientSocket.readableEnded) {
       outbound.destroy();
@@ -432,13 +480,23 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
     const useTls = endpoint?.url.protocol === 'https:';
 
     // The socket is opened (and timed, and tracked) here, then handed to http.request.
+    // If the client leaves while that connect is pending, abort it rather than waiting it out.
+    const openAbort = new AbortController();
+    const onResponseGone = () => openAbort.abort();
+    if (response.destroyed) {
+      openAbort.abort();
+    } else {
+      response.once('close', onResponseGone);
+    }
+
     let socket: Socket;
     try {
       socket = endpoint
-        ? await openSocket(endpoint.host, endpoint.port, useTls, isIP(endpoint.host) ? undefined : endpoint.host)
-        : await openSocket(address, port, false);
+        ? await openSocket(endpoint.host, endpoint.port, useTls, isIP(endpoint.host) ? undefined : endpoint.host, openAbort.signal)
+        : await openSocket(address, port, false, undefined, openAbort.signal);
     } catch (error) {
-      if (closed) {
+      response.off('close', onResponseGone);
+      if (closed || error instanceof ClientGoneError) {
         response.destroy();
         return;
       }
@@ -455,6 +513,7 @@ export async function startGuardProxy(options: GuardProxyOptions): Promise<Guard
       response.writeHead(502, { 'content-length': '0' }).end();
       return;
     }
+    response.off('close', onResponseGone);
 
     if (closed || response.destroyed) {
       // The client left while the socket was opening: nothing will ever close it otherwise.

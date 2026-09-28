@@ -1,5 +1,6 @@
 import { request as httpRequest } from 'node:http';
 import { Socket, connect as netConnect, createServer as createNetServer, type AddressInfo } from 'node:net';
+import { once } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BLOCKED_HEADER, startGuardProxy, type GuardProxy } from '../../src/fetch/guard-proxy.js';
 import {
@@ -512,5 +513,68 @@ describe.skipIf(process.platform !== 'linux')('guard proxy', () => {
 
       expect(openSocket).not.toHaveBeenCalled();
     });
+
+    it('drops the pending CONNECT handshake promptly when the client disconnects', async () => {
+      // Accepts the TCP connection but never answers CONNECT, so the only thing
+      // that should end this is the client leaving, not the handshake timeout.
+      const sockets: Socket[] = [];
+      const upstream = createNetServer((socket) => {
+        sockets.push(socket);
+        // resume() so the socket actually sees the FIN and emits close, rather than
+        // sitting paused with the EOF buffered.
+        socket.on('error', () => undefined).resume();
+      });
+      await new Promise<void>((resolve, reject) => {
+        upstream.once('error', reject);
+        upstream.listen(0, '127.0.0.1', () => resolve());
+      });
+      cleanups.push(() => new Promise<void>((resolve) => upstream.close(() => resolve())));
+
+      const proxy = await proxyWith({
+        guard: guardFor({ 'ok.test': ['127.0.0.1'] }),
+        upstream: { url: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}` },
+        handshakeTimeoutMs: 10_000
+      });
+
+      const url = new URL(proxy.url);
+      const client = netConnect({ host: url.hostname, port: Number(url.port) });
+      client.on('error', () => undefined);
+      await new Promise((resolve) => client.once('connect', resolve));
+      client.write(
+        `CONNECT ok.test:443 HTTP/1.1\r\nHost: ok.test:443\r\nProxy-Authorization: ${basicAuth(proxy.client('t'))}\r\n\r\n`
+      );
+
+      await vi.waitFor(() => expect(sockets.length).toBeGreaterThan(0));
+      client.destroy();
+
+      await Promise.race([
+        once(sockets[0], 'close'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close promptly')), 1000))
+      ]);
+    }, 5000);
+
+    it('drops a pending outbound connect promptly when the client aborts a forward request', async () => {
+      const pending = new Socket();
+      const proxy = await proxyWith({
+        guard: guardFor({ 'ok.test': ['127.0.0.1'] }),
+        connectTimeoutMs: 10_000,
+        openSocket: () => pending
+      });
+      const url = new URL(proxy.url);
+      const request = httpRequest({
+        host: url.hostname,
+        port: Number(url.port),
+        method: 'GET',
+        path: 'http://ok.test/',
+        headers: { host: 'ok.test', 'proxy-authorization': basicAuth(proxy.client('t')) }
+      });
+      request.on('error', () => undefined);
+      request.end();
+
+      await vi.waitFor(() => expect(pending.listenerCount('close')).toBeGreaterThan(0));
+      request.destroy();
+
+      await vi.waitFor(() => expect(pending.destroyed).toBe(true), { timeout: 1000 });
+    }, 5000);
   });
 });
