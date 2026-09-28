@@ -20,6 +20,15 @@ jobs:
       TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # releases are cut on develop and merged into main before the tag is pushed
+      - name: Tag must be on main
+        run: |
+          if ! git merge-base --is-ancestor "refs/tags/$TAG_NAME" origin/main; then
+            echo "::error::$TAG_NAME is not on main. Merge the release PR first, then push the tag."
+            exit 1
+          fi
       - run: node scripts/release-notes.mjs "$TAG_NAME" release-notes.md
       - run: gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --title "$TAG_NAME" --notes-file release-notes.md
         env:
