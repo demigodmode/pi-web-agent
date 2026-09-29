@@ -985,7 +985,10 @@ describe('backend factory guard proxy wiring', () => {
       createGuardProxy
     });
 
-    await expect(backends.fetchPage({ url: 'https://example.com/a' })).rejects.toThrow('listen EADDRINUSE');
+    // The page isn't fetched; since #76 that's a failed page, not a thrown run.
+    const first = await backends.fetchPage({ url: 'https://example.com/a' });
+    expect(first).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED' } });
+    expect(first.error?.message).toContain('listen EADDRINUSE');
     expect(createGuardProxy).toHaveBeenCalledTimes(1);
 
     await backends.fetchPage({ url: 'https://example.com/b' }).catch(() => undefined);
