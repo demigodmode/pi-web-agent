@@ -1,5 +1,6 @@
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import { RedirectError } from './guarded-fetch.js';
 import { findGuardError } from './network-guard.js';
 import { PAGE_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
 import type { WebFetchResponse } from '../types.js';
@@ -32,6 +33,32 @@ function timedOut(url: string, timeoutMs: number): WebFetchResponse {
   };
 }
 
+// undici's own messages ("fetch failed", "terminated") say little; the cause says what happened.
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? error.cause.message : undefined;
+  return cause && cause !== error.message ? `${error.message} (${cause})` : error.message;
+}
+
+/**
+ * A dropped connection, refused port, DNS or TLS failure, or a bad redirect is
+ * a problem with this one page, not the whole run: report it like any other
+ * failed read so the worker moves on to the next source (#76). A redirect loop
+ * won't fix itself, so it isn't called transient.
+ */
+function fetchFailed(url: string, error: unknown): WebFetchResponse {
+  return {
+    status: 'error',
+    url,
+    metadata: { method: 'http', cacheHit: false },
+    error: {
+      code: 'FETCH_FAILED',
+      message: `${url} could not be fetched: ${describeError(error)}.`,
+      failure: { kind: error instanceof RedirectError ? 'bad_response' : 'transient' }
+    }
+  };
+}
+
 export function createHttpFetcher({
   fetchImpl = fetch,
   timeoutMs = PAGE_FETCH_TIMEOUT_MS
@@ -57,7 +84,7 @@ export function createHttpFetcher({
         };
       }
       if (requestAbort.aborted) return timedOut(url, timeoutMs);
-      throw error;
+      return fetchFailed(url, error);
     }
     const contentType = response.headers.get('content-type') ?? '';
 
@@ -76,7 +103,7 @@ export function createHttpFetcher({
     } catch (error) {
       if (signal?.aborted) throw abortError();
       if (requestAbort.aborted) return timedOut(url, timeoutMs);
-      throw error;
+      return fetchFailed(url, error);
     }
     const baselineExtraction = extractReadableContentSafely(html);
     const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;

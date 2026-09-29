@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
+import { createGuardedFetch } from '../../src/fetch/guarded-fetch.js';
 import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
-import { BlockedAddressError } from '../../src/fetch/network-guard.js';
+import { BlockedAddressError, createNetworkGuard } from '../../src/fetch/network-guard.js';
+import { fakeLookup } from './fake-lookup.js';
 
 describe('http fetch blocked redirect', () => {
   it('reports a blocked redirect hop as a private address error', async () => {
@@ -21,12 +23,63 @@ describe('http fetch blocked redirect', () => {
     expect(result.error?.failure).toEqual({ kind: 'guard_refused' });
   });
 
-  it('still throws unrelated errors', async () => {
+  it('reports other network errors as a failed page instead of throwing (#76)', async () => {
     const fetchImpl = (async () => {
-      throw new Error('socket hang up');
+      throw new TypeError('fetch failed', { cause: new Error('socket hang up') });
     }) as unknown as typeof fetch;
 
-    await expect(createHttpFetcher({ fetchImpl })('https://example.com/')).rejects.toThrow('socket hang up');
+    const result = await createHttpFetcher({ fetchImpl })('https://example.com/');
+
+    expect(result).toMatchObject({
+      status: 'error',
+      url: 'https://example.com/',
+      metadata: { method: 'http', cacheHit: false },
+      error: { code: 'FETCH_FAILED', failure: { kind: 'transient' } }
+    });
+    // The cause is the useful part; undici's own message is just "fetch failed".
+    expect(result.error?.message).toContain('socket hang up');
+  });
+
+  it('reports a refused connection as a failed page (#76)', async () => {
+    // Grab a free port, then close it so nothing is listening there.
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const { port } = server.address() as AddressInfo;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    const result = await createHttpFetcher()(`http://127.0.0.1:${port}/`);
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind: 'transient' } } });
+    expect(result.error?.message).toContain('ECONNREFUSED');
+  });
+
+  it('reports a redirect loop as a failed page that is not worth retrying (#76)', async () => {
+    const base = vi.fn(async () => new Response(null, { status: 302, headers: { location: 'https://example.com/loop' } }));
+    const guarded = createGuardedFetch(
+      base as unknown as typeof fetch,
+      createNetworkGuard({}, { lookup: fakeLookup({ 'example.com': ['93.184.216.34'] }) })
+    );
+
+    const result = await createHttpFetcher({ fetchImpl: guarded })('https://example.com/loop');
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind: 'bad_response' } } });
+    expect(result.error?.message).toContain('Too many redirects');
+  });
+
+  it('reports a body that fails mid-read as a failed page (#76)', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('<html><body>partial'));
+        controller.error(new TypeError('terminated', { cause: new Error('other side closed') }));
+      }
+    });
+    const fetchImpl = (async () =>
+      new Response(body, { headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch;
+
+    const result = await createHttpFetcher({ fetchImpl })('https://example.com/');
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind: 'transient' } } });
+    expect(result.error?.message).toContain('other side closed');
   });
 });
 
