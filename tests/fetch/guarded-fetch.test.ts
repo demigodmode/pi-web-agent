@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGuardedFetch, MAX_REDIRECTS } from '../../src/fetch/guarded-fetch.js';
+import { createGuardedFetch, MAX_REDIRECTS, RedirectError } from '../../src/fetch/guarded-fetch.js';
 import { BlockedAddressError, createNetworkGuard } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
 
@@ -62,7 +62,8 @@ describe('createGuardedFetch', () => {
     const guarded = createGuardedFetch(base as unknown as typeof fetch, createNetworkGuard({}, { lookup }));
 
     await expect(guarded('https://example.com/loop')).rejects.toThrow(/Too many redirects/);
-    expect(base).toHaveBeenCalledTimes(MAX_REDIRECTS + 1);
+    await expect(guarded('https://example.com/loop')).rejects.toBeInstanceOf(RedirectError);
+    expect(base).toHaveBeenCalledTimes(2 * (MAX_REDIRECTS + 1));
   });
 
   it('switches to GET without a body after a 303', async () => {

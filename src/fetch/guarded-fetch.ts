@@ -15,6 +15,11 @@ function originOf(url: string): string {
   return `${parsed.protocol}//${parsed.host}`;
 }
 
+/** A redirect chain we won't follow: a loop past the hop limit, or a hop to a non-http(s) URL. */
+export class RedirectError extends Error {
+  override name = 'RedirectError';
+}
+
 /** Every hop must be plain http/https. Unparseable URLs are left to fail naturally, as before. */
 function assertHttpProtocol(url: string): void {
   let parsed: URL;
@@ -24,7 +29,7 @@ function assertHttpProtocol(url: string): void {
     return;
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`Unsupported protocol: ${parsed.protocol}`);
+    throw new RedirectError(`Unsupported protocol: ${parsed.protocol}`);
   }
 }
 
@@ -84,6 +89,6 @@ export function createGuardedFetch(baseFetch: typeof fetch, guard: NetworkGuard)
       url = nextUrl;
     }
 
-    throw new Error(`Too many redirects (more than ${MAX_REDIRECTS}).`);
+    throw new RedirectError(`Too many redirects (more than ${MAX_REDIRECTS}).`);
   }) as typeof fetch;
 }

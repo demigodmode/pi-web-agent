@@ -54,6 +54,12 @@ describe('a page whose connection drops (#76)', () => {
 
       const result = await workflow.run({ query: 'connection pooling' });
       expect(result.evidence.map((item) => item.url)).toContain(`${base}/good`);
+      // The dead page is kept as a failed read with its reason, not silently dropped.
+      const gaps = (result.workerPass as { gaps: Array<{ kind: string; message: string }> }).gaps;
+      expect(gaps).toContainEqual({
+        kind: 'fetch-failed',
+        message: expect.stringContaining(`${base}${dropPath} could not be fetched`)
+      });
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
