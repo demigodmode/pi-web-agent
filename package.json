@@ -74,7 +74,7 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.99.1",
-    "@earendil-works/pi-tui": "^0.80.10",
+    "@earendil-works/pi-tui": "^0.99.2",
     "@types/jsdom": "^21.1.7",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^4.1.11",
