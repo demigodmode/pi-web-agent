@@ -64,7 +64,7 @@ const GENERATED = /\.min\.(js|css)$|(^|\/)(generated|__generated__)(\/|$)|\.(gen
 const SCORE_WINDOW_LINES = 41;
 
 type Candidate = { path: string; score: number; text: string };
-type ReadCandidate = { candidate?: Candidate; bytesRead: number };
+type ReadCandidate = { candidate?: Candidate; bytesRead: number; incomplete?: boolean };
 
 function inside(base: string, target: string): boolean {
   return target === base || target.startsWith(base + sep);
@@ -228,14 +228,28 @@ async function readCandidate(base: string, abs: string, terms: QueryTerm[], rema
     await handle.close().catch(() => undefined);
   }
   throwIfAborted(signal);
-  if (expiredDuringRead || readFailed || !buffer || bytesRead === undefined || requested !== buffer.length || bytesRead === buffer.length || buffer.subarray(0, Math.min(bytesRead, 512)).includes(0)) {
+  if (expiredDuringRead || readFailed || !buffer || bytesRead === undefined) {
     return { bytesRead: bytesRead ?? 0 };
+  }
+  const incomplete = requested !== buffer.length;
+  if (incomplete || bytesRead === buffer.length || buffer.subarray(0, Math.min(bytesRead, 512)).includes(0)) {
+    return { bytesRead, ...(incomplete ? { incomplete: true } : {}) };
   }
 
   const path = relative(base, real).split(sep).join('/');
   const text = buffer.subarray(0, bytesRead).toString('utf8');
   const score = scoreFile(path, text, terms);
   return { candidate: score > 0 ? { path, score, text } : undefined, bytesRead };
+}
+
+function eligibleForSearch(item: { name: string; isFile(): boolean }): boolean {
+  const extension = extname(item.name).toLowerCase();
+  return item.isFile() && !LOCKFILES.has(item.name) && !SKIPPED_EXTENSIONS.has(extension) && !BINARY_EXTENSIONS.has(extension);
+}
+
+function leavesWalkWork(item: { name: string; isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean }, dir: string, start: string): boolean {
+  if (item.isSymbolicLink() || isGitAlias(item.name)) return false;
+  return eligibleForSearch(item) || (item.isDirectory() && !SKIP_DIRS.has(item.name) && !(dir === start && ROOT_SKIP_DIRS.has(item.name)));
 }
 
 async function safeDirectory(base: string, dir: string, timedOut: () => boolean, signal?: AbortSignal): Promise<string | undefined> {
@@ -307,33 +321,67 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   let scanned = 0;
   let scannedBytes = 0;
   const stack = [start];
+  let stoppedBy: RepoSearchBudget | undefined;
 
-  while (stack.length && scanned < maxScannedFiles && scannedBytes < maxScannedBytes && !timedOut()) {
+  while (stack.length) {
+    if (timedOut()) {
+      stoppedBy = 'time';
+      break;
+    }
+    if (scanned >= maxScannedFiles || scannedBytes >= maxScannedBytes) {
+      stoppedBy = scanned >= maxScannedFiles ? 'files' : 'bytes';
+      break;
+    }
     throwIfAborted(options.signal);
     const dir = await safeDirectory(base, stack.pop()!, timedOut, options.signal);
-    if (timedOut()) break;
+    if (timedOut()) {
+      stoppedBy = 'time';
+      break;
+    }
     if (!dir) continue;
     const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
     throwIfAborted(options.signal);
-    if (timedOut()) break;
+    if (timedOut()) {
+      stoppedBy = 'time';
+      break;
+    }
     items.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-    for (const item of items) {
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
       if (item.isSymbolicLink() || isGitAlias(item.name)) continue;
       const abs = join(dir, item.name);
       if (item.isDirectory()) {
         if (!SKIP_DIRS.has(item.name) && !(dir === start && ROOT_SKIP_DIRS.has(item.name))) stack.push(abs);
         continue;
       }
-      const extension = extname(item.name).toLowerCase();
-      if (!item.isFile() || LOCKFILES.has(item.name) || SKIPPED_EXTENSIONS.has(extension) || BINARY_EXTENSIONS.has(extension)) continue;
-      if (scanned >= maxScannedFiles || scannedBytes >= maxScannedBytes || timedOut()) break;
+      if (!eligibleForSearch(item)) continue;
+      if (timedOut()) {
+        stoppedBy = 'time';
+        break;
+      }
+      if (scanned >= maxScannedFiles || scannedBytes >= maxScannedBytes) {
+        stoppedBy = scanned >= maxScannedFiles ? 'files' : 'bytes';
+        break;
+      }
       scanned++;
       throwIfAborted(options.signal);
       const read = await readCandidate(base, abs, terms, maxScannedBytes - scannedBytes, timedOut, options.signal);
       scannedBytes += read.bytesRead;
-      if (timedOut()) break;
+      if (timedOut()) {
+        stoppedBy = 'time';
+        break;
+      }
+      if (read.incomplete) {
+        stoppedBy = 'bytes';
+        break;
+      }
       if (read.candidate) keepTop(top, read.candidate, maxFiles);
+      if (scanned >= maxScannedFiles || scannedBytes >= maxScannedBytes) {
+        if (stack.length || items.slice(index + 1).some((remaining) => leavesWalkWork(remaining, dir, start))) stoppedBy = scanned >= maxScannedFiles ? 'files' : 'bytes';
+        break;
+      }
     }
+    if (stoppedBy) break;
   }
 
   const files = top.map((candidate) => ({
@@ -341,6 +389,5 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
     score: candidate.score,
     excerpts: buildExcerpts(candidate.text, terms, options.contextLines)
   }));
-  const budget = timedOut() ? 'time' : scanned >= maxScannedFiles ? 'files' : scannedBytes >= maxScannedBytes ? 'bytes' : undefined;
-  return result(true, fitToBudget(files, options.charBudget ?? Number.POSITIVE_INFINITY), budget, scanned);
+  return result(true, fitToBudget(files, options.charBudget ?? Number.POSITIVE_INFINITY), stoppedBy, scanned);
 }

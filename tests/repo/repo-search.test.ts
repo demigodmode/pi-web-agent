@@ -10,6 +10,7 @@ const handleCalls = vi.hoisted(() => ({
   openEntered: undefined as (() => void) | undefined,
   releaseOpen: undefined as (() => void) | undefined,
   onRead: undefined as (() => void) | undefined,
+  onReaddir: undefined as (() => void) | undefined,
   openPaths: [] as string[],
   realpathPaths: [] as string[],
   onRealpath: undefined as (() => void) | undefined,
@@ -22,6 +23,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...original,
     readdir: async (...args: Parameters<typeof original.readdir>) => {
       const entries = await original.readdir(...args);
+      handleCalls.onReaddir?.();
       return handleCalls.reverseReaddir && Array.isArray(entries) ? [...entries].reverse() : entries;
     },
     realpath: async (...args: Parameters<typeof original.realpath>) => {
@@ -67,6 +69,7 @@ afterEach(() => {
   handleCalls.openEntered = undefined;
   handleCalls.releaseOpen = undefined;
   handleCalls.onRead = undefined;
+  handleCalls.onReaddir = undefined;
   handleCalls.openPaths.length = 0;
   handleCalls.realpathPaths.length = 0;
   handleCalls.onRealpath = undefined;
@@ -374,6 +377,52 @@ describe('searchRepo walk and scoring', () => {
     expect(handleCalls.lengths).toHaveLength(1);
     expect(handleCalls.closed).toBe(1);
     expect(result).toMatchObject({ partial: true, budget: 'files', scannedFiles: 1 });
+  });
+
+  it('does not mark a completed walk partial when its deadline lands after the last read', async () => {
+    const root = tree({ 'a.ts': impl });
+    let clockCalls = 0;
+    const result = await searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      maxSearchMs: 10,
+      now: () => ++clockCalls >= 16 ? 10 : 0
+    });
+
+    expect(result).not.toHaveProperty('partial');
+    expect(result.files.map((file) => file.path)).toEqual(['a.ts']);
+  });
+
+  it('does not mark an exact file cap partial when no eligible work remains', async () => {
+    const root = tree({ 'a.ts': impl });
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedFiles: 1 });
+
+    expect(result).not.toHaveProperty('partial');
+    expect(result.scannedFiles).toBeUndefined();
+  });
+
+  it('marks an exact file cap partial when another eligible file remains', async () => {
+    const root = tree({ 'a.ts': impl, 'b.ts': impl });
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedFiles: 1 });
+
+    expect(result).toMatchObject({ partial: true, budget: 'files', scannedFiles: 1 });
+  });
+
+  it('marks an exact file cap partial when a later directory remains to walk', async () => {
+    const root = tree({ 'a.ts': impl, 'z/next.ts': impl });
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedFiles: 1 });
+
+    expect(result).toMatchObject({ partial: true, budget: 'files', scannedFiles: 1 });
+  });
+
+  it('marks the scan partial when the deadline expires after reading a directory', async () => {
+    const root = tree({ 'a.ts': impl });
+    let elapsed = 0;
+    handleCalls.onReaddir = () => {
+      elapsed = 10;
+    };
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxSearchMs: 10, now: () => elapsed });
+
+    expect(result).toMatchObject({ partial: true, budget: 'time', scannedFiles: 0 });
   });
 
   it('bounds a read by the remaining byte budget and skips its incomplete candidate', async () => {
