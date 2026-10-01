@@ -453,4 +453,21 @@ describe('git runner', () => {
       expect(result.failure.message).not.toContain('u:p@@');
     }
   });
+
+  it('does not redact ordinary text for a percent-encoded short proxy username', async () => {
+    const proxyUrl = 'http://%75%75:longpass@proxy.local:3128/';
+    vi.stubEnv('FAKE_GIT_ERROR_TEXT', `fatal: vacuum connected through ${proxyUrl}; credential %75%75:longpass@ decoded uu:longpass@`);
+    const result = await runGit(['fetch'], {
+      timeoutMs: 10_000,
+      env: { proxyUrl, ...fakeGit(FAKE_GIT_ERROR) }
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure.message).toBe('vacuum connected through ***; credential *** decoded ***');
+      expect(result.failure.message).not.toContain(proxyUrl);
+      expect(result.failure.message).not.toContain('%75%75:longpass@');
+      expect(result.failure.message).not.toContain('uu:longpass@');
+    }
+  });
 });

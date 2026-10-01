@@ -108,7 +108,7 @@ function proxyCredentialValues(proxyUrl: string | undefined): string[] {
     return [
       ...rawAndDecoded(proxyUrl),
       ...(userinfo ? rawAndDecoded(userinfo) : []),
-      ...[url.username, url.password].filter((value) => value.length >= 4).flatMap(rawAndDecoded)
+      ...[url.username, url.password].flatMap(rawAndDecoded).filter((value) => value.length >= 4)
     ].filter(Boolean);
   } catch {
     return [];
