@@ -49,7 +49,7 @@ When you put a repo link in your question yourself (`https://github.com/owner/re
 
 - Very large repos may be searched only partially; paste a tree or folder link to narrow the search to that directory.
 - The search is plain keyword matching, with no model calls. Nearby terms rank higher. It skips vendored folders, lockfiles, source maps, snapshots, standalone SVGs, binaries, and files over 512KB. `dist`, `build`, `target`, and `out` are skipped only at the clone root or at the directory named by a tree or folder link.
-- It prefers code over docs and tests. JSON, CSV, TSV, and all-caps project documents rank lower, as do generated and minified files. It returns up to four files within the usual reader budget.
+- It prefers code over docs and tests. JSON, CSV, TSV, and extensionless project documents named `CHANGELOG`, `LICENSE`, `NOTICE`, `AUTHORS`, `COPYING`, or `CONTRIBUTING` rank lower, as do generated and minified files. It returns up to four files within the usual reader budget.
 - The README is added when the search finds little (fewer than two files), and the folder listing when it finds nothing. A general question like "what is this repo?" therefore still gets the README.
 
 - It fetches one exact commit at depth 1, over HTTPS only, and never runs anything from the repo. Folder links limit the folder listing to that folder. They use that folder's README when it has one, or the repository root README otherwise.
