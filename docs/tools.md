@@ -47,7 +47,7 @@ These run behind `web_explore`, so there's still nothing extra to call. When you
 
 When you put a repo link in your question yourself (`https://github.com/owner/repo`, or a folder link like `https://github.com/owner/repo/tree/main/src/auth`), `web_explore` downloads that repo and reads it locally instead of guessing from the README.
 
-- It fetches one exact commit at depth 1, over HTTPS only, and never runs anything from the repo. Folder links limit the answer to that folder.
+- It fetches one exact commit at depth 1, over HTTPS only, and never runs anything from the repo. Folder links limit the folder listing to that folder. They use that folder's README when it has one, or the repository root README otherwise.
 - Clones live for your Pi session in your temp folder (`pi-web-agent-repos`), so follow-up questions about the same repo are instant. They're deleted when the session ends (quit, `/new`, `/resume`, `/fork`, reload), and anything left behind by a crash is cleaned up the next time Pi starts. Idle clones are capped at 1GB in total.
 - Limits: repos over 300MB are refused, the clone gives up after 60 seconds, and at most two repo links per question.
 - If the repo can't be read (too big, private without access, `git` missing, clone timed out), the answer says so and stops there. It doesn't fall back to the README, because that would look like an answer about the code without being one.
