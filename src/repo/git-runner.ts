@@ -167,6 +167,7 @@ type VersionCheck = {
 };
 
 const versionChecks = new Map<string, VersionCheck>();
+const GIT_VERSION_TIMEOUT_MS = 10_000;
 
 function versionCheckKey(env: GitEnv): string {
   return [env.gitBinary ?? 'git', ...(env.gitArgsPrefix ?? [])].join('\0');
@@ -211,6 +212,7 @@ function waitForVersion(key: string, check: VersionCheck, signal: AbortSignal | 
   return new Promise((resolve, reject) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let forcedResult: GitResult | Error | undefined;
     const finish = (result: GitResult | Error) => {
       if (settled) return;
       settled = true;
@@ -228,26 +230,20 @@ function waitForVersion(key: string, check: VersionCheck, signal: AbortSignal | 
       check.waiters.delete(waiter);
       if (check.waiters.size !== 0) return finish(abortError());
       if (versionChecks.get(key) === check) versionChecks.delete(key);
+      forcedResult = abortError();
       check.controller.abort();
-      void check.promise.then(
-        () => finish(abortError()),
-        () => finish(abortError())
-      );
     };
     signal?.addEventListener('abort', onAbort, { once: true });
     timer = setTimeout(() => {
       check.waiters.delete(waiter);
       if (check.waiters.size !== 0) return finish(timeoutFailure());
       if (versionChecks.get(key) === check) versionChecks.delete(key);
+      forcedResult = timeoutFailure();
       check.controller.abort();
-      void check.promise.then(
-        () => finish(timeoutFailure()),
-        () => finish(timeoutFailure())
-      );
     }, timeoutMs);
     void check.promise.then(
-      (result) => finish(result),
-      (error: unknown) => finish(error instanceof Error ? error : new Error(String(error)))
+      (result) => finish(forcedResult ?? result),
+      (error: unknown) => finish(forcedResult ?? (error instanceof Error ? error : new Error(String(error))) )
     );
   });
 }
@@ -256,7 +252,7 @@ function waitForVersion(key: string, check: VersionCheck, signal: AbortSignal | 
 export function ensureGitVersion(env: GitEnv, signal?: AbortSignal, timeoutMs = 10_000): Promise<GitResult> {
   if (signal?.aborted) return Promise.reject(abortError());
   const key = versionCheckKey(env);
-  return waitForVersion(key, versionChecks.get(key) ?? startVersionCheck(key, env, timeoutMs), signal, timeoutMs);
+  return waitForVersion(key, versionChecks.get(key) ?? startVersionCheck(key, env, GIT_VERSION_TIMEOUT_MS), signal, timeoutMs);
 }
 
 /** The one way repo research runs git (#72). Throws only abortError(); everything else is a result. */

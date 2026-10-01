@@ -158,6 +158,43 @@ describe('git runner', () => {
     await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
   });
 
+  it("returns a last waiter's timeout after the remaining caller cancels the shared version check", async () => {
+    const pidFile = join(tempDir(), 'pids.json');
+    vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
+    vi.stubEnv('FAKE_GIT_SLEEP_VERSION', '1');
+    const env = sleepingVersionGit('last-timeout');
+    const firstController = new AbortController();
+    const first = runGit(['fetch'], { timeoutMs: 30_000, signal: firstController.signal, env });
+    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
+    const second = runGit(['fetch'], { timeoutMs: 400, env });
+    firstController.abort();
+    await expect(first).rejects.toThrow('Operation aborted');
+    await expect(second).resolves.toMatchObject({ ok: false, failure: { code: 'GIT_TIMEOUT' } });
+    const pids = readPids(pidFile)!;
+    expect(isAlive(pids.pid)).toBe(false);
+    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+  });
+
+  it('keeps a shared version check alive past the first caller timeout', async () => {
+    const pidFile = join(tempDir(), 'pids.json');
+    vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
+    vi.stubEnv('FAKE_GIT_SLEEP_VERSION', '1');
+    const env = sleepingVersionGit('first-timeout');
+    const first = runGit(['fetch'], { timeoutMs: 400, env });
+    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
+    const controller = new AbortController();
+    const second = runGit(['fetch'], { timeoutMs: 30_000, signal: controller.signal, env });
+    await expect(first).resolves.toMatchObject({ ok: false, failure: { code: 'GIT_TIMEOUT' } });
+    const state = await Promise.race([second.then(() => 'settled'), new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 900))]);
+    expect(state).toBe('waiting');
+    const pids = readPids(pidFile)!;
+    expect(isAlive(pids.pid)).toBe(true);
+    controller.abort();
+    await expect(second).rejects.toThrow('Operation aborted');
+    expect(isAlive(pids.pid)).toBe(false);
+    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+  });
+
   it('spends the caller timeout budget on an uncached version check', async () => {
     const pidFile = join(tempDir(), 'pids.json');
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
