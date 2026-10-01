@@ -169,8 +169,34 @@ describe('searchRepo walk and scoring', () => {
   it('reads at most the configured cap and closes each handle', async () => {
     const root = tree({ 'src/auth/token-refresh.ts': impl });
     await searchRepo(root, { query: 'refresh OAuth tokens' });
-    expect(handleCalls.lengths).toEqual([MAX_SEARCH_FILE_BYTES + 1]);
+    expect(handleCalls.lengths).toEqual([Buffer.byteLength(impl) + 1]);
     expect(handleCalls.closed).toBe(1);
+  });
+
+  it('stops before opening files beyond the scanned-file budget', async () => {
+    const root = tree({ 'a.ts': impl, 'b.ts': impl });
+    await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedFiles: 1 });
+    expect(handleCalls.lengths).toHaveLength(1);
+    expect(handleCalls.closed).toBe(1);
+  });
+
+  it('bounds a read by the remaining byte budget and skips its incomplete candidate', async () => {
+    const root = tree({ 'a.ts': impl });
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedBytes: 12 });
+    expect(handleCalls.lengths).toEqual([12]);
+    expect(handleCalls.closed).toBe(1);
+    expect(result.files).toEqual([]);
+  });
+
+  it('stops before opening files after the search time budget expires', async () => {
+    const root = tree({ 'a.ts': impl });
+    let calls = 0;
+    await searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      maxSearchMs: 10,
+      now: () => calls++ === 0 ? 0 : 10
+    });
+    expect(handleCalls.lengths).toEqual([]);
   });
 
   it('closes a handle when cancellation arrives while it is opening', async () => {

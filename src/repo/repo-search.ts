@@ -1,7 +1,7 @@
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { throwIfAborted } from '../abort.js';
-import { REPO_MAX_FILES } from './limits.js';
+import { MAX_SCANNED_BYTES, MAX_SEARCH_MS, REPO_MAX_FILES } from './limits.js';
 import { resolveInside } from './repo-overview.js';
 import { queryTerms, type QueryTerm } from './repo-terms.js';
 
@@ -17,6 +17,11 @@ export type RepoSearchOptions = {
   /** Total characters of excerpt text across all files. */
   charBudget?: number;
   contextLines?: number;
+  /** Internal scan bounds used by focused tests. */
+  maxScannedFiles?: number;
+  maxScannedBytes?: number;
+  maxSearchMs?: number;
+  now?: () => number;
 };
 
 export const MAX_SEARCH_FILE_BYTES = 512 * 1024;
@@ -43,6 +48,7 @@ const TEST_OR_DOC = /(^|\/)(tests?|__tests__|specs?|fixtures?|docs?|examples?)(\
 const GENERATED = /\.min\.(js|css)$|(^|\/)(generated|__generated__)(\/|$)|\.(generated|gen)\.[a-z0-9]+$/i;
 
 type Candidate = { path: string; score: number; text: string };
+type ReadCandidate = { candidate?: Candidate; bytesRead: number };
 
 function inside(base: string, target: string): boolean {
   return target === base || target.startsWith(base + sep);
@@ -145,28 +151,33 @@ function keepTop(top: Candidate[], candidate: Candidate, limit: number): void {
   if (top.length > limit) top.length = limit;
 }
 
-async function readCandidate(base: string, abs: string, terms: QueryTerm[], signal?: AbortSignal): Promise<Candidate | undefined> {
+async function readCandidate(base: string, abs: string, terms: QueryTerm[], remainingBytes: number, timedOut: () => boolean, signal?: AbortSignal): Promise<ReadCandidate> {
   const info = await lstat(abs).catch(() => undefined);
   throwIfAborted(signal);
-  if (!info?.isFile() || info.size > MAX_SEARCH_FILE_BYTES) return undefined;
+  if (timedOut()) return { bytesRead: 0 };
+  if (!info?.isFile() || info.size > MAX_SEARCH_FILE_BYTES) return { bytesRead: 0 };
 
   const real = await realpath(abs).catch(() => undefined);
   throwIfAborted(signal);
-  if (!real || !inside(base, real)) return undefined;
+  if (timedOut()) return { bytesRead: 0 };
+  if (!real || !inside(base, real)) return { bytesRead: 0 };
 
   const handle = await open(real, 'r').catch(() => undefined);
   if (!handle) {
     throwIfAborted(signal);
-    return undefined;
+    return { bytesRead: 0 };
   }
 
   let bytesRead: number | undefined;
   let buffer: Buffer | undefined;
+  let requested = 0;
   let readFailed = false;
   try {
     throwIfAborted(signal);
-    buffer = Buffer.alloc(MAX_SEARCH_FILE_BYTES + 1);
-    ({ bytesRead } = await handle.read(buffer, 0, buffer.length, 0));
+    if (timedOut()) return { bytesRead: 0 };
+    buffer = Buffer.alloc(Math.min(info.size, MAX_SEARCH_FILE_BYTES) + 1);
+    requested = Math.min(buffer.length, remainingBytes);
+    ({ bytesRead } = await handle.read(buffer, 0, requested, 0));
   } catch {
     // A clone can be pruned while searching it; skip that one file.
     readFailed = true;
@@ -174,12 +185,14 @@ async function readCandidate(base: string, abs: string, terms: QueryTerm[], sign
     await handle.close().catch(() => undefined);
   }
   throwIfAborted(signal);
-  if (readFailed || !buffer || bytesRead === undefined || bytesRead > MAX_SEARCH_FILE_BYTES || buffer.subarray(0, Math.min(bytesRead, 512)).includes(0)) return undefined;
+  if (readFailed || !buffer || bytesRead === undefined || requested !== buffer.length || bytesRead === buffer.length || buffer.subarray(0, Math.min(bytesRead, 512)).includes(0)) {
+    return { bytesRead: bytesRead ?? 0 };
+  }
 
   const path = relative(base, real).split(sep).join('/');
   const text = buffer.subarray(0, bytesRead).toString('utf8');
   const score = scoreFile(path, text, terms);
-  return score > 0 ? { path, score, text } : undefined;
+  return { candidate: score > 0 ? { path, score, text } : undefined, bytesRead };
 }
 
 async function safeDirectory(base: string, dir: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -213,6 +226,8 @@ async function scopeHasSymlink(root: string, pathScope: string | undefined, sign
  */
 export async function searchRepo(root: string, options: RepoSearchOptions): Promise<RepoSearchResult> {
   throwIfAborted(options.signal);
+  const now = options.now ?? performance.now.bind(performance);
+  const searchStartedAt = now();
   const terms = queryTerms(options.query);
   if (await scopeHasSymlink(root, options.pathScope, options.signal)) {
     return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
@@ -225,11 +240,16 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   const base = await realpath(root);
   throwIfAborted(options.signal);
   const maxFiles = options.maxFiles ?? REPO_MAX_FILES;
+  const maxScannedFiles = options.maxScannedFiles ?? MAX_SCANNED_FILES;
+  const maxScannedBytes = options.maxScannedBytes ?? MAX_SCANNED_BYTES;
+  const maxSearchMs = options.maxSearchMs ?? MAX_SEARCH_MS;
+  const timedOut = () => now() - searchStartedAt >= maxSearchMs;
   const top: Candidate[] = [];
   let scanned = 0;
+  let scannedBytes = 0;
   const stack = [start];
 
-  while (stack.length && scanned < MAX_SCANNED_FILES) {
+  while (stack.length && scanned < maxScannedFiles && scannedBytes < maxScannedBytes && !timedOut()) {
     throwIfAborted(options.signal);
     const dir = await safeDirectory(base, stack.pop()!, options.signal);
     if (!dir) continue;
@@ -243,10 +263,12 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
         continue;
       }
       if (!item.isFile() || LOCKFILES.has(item.name) || BINARY_EXTENSIONS.has(extname(item.name).toLowerCase())) continue;
-      if (++scanned > MAX_SCANNED_FILES) break;
+      if (scanned >= maxScannedFiles || scannedBytes >= maxScannedBytes || timedOut()) break;
+      scanned++;
       throwIfAborted(options.signal);
-      const candidate = await readCandidate(base, abs, terms, options.signal);
-      if (candidate) keepTop(top, candidate, maxFiles);
+      const read = await readCandidate(base, abs, terms, maxScannedBytes - scannedBytes, timedOut, options.signal);
+      scannedBytes += read.bytesRead;
+      if (read.candidate) keepTop(top, read.candidate, maxFiles);
     }
   }
 
