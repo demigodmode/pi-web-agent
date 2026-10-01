@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortError } from '../../src/abort.js';
 import { createRepoCache, type CloneFn, type RepoCache } from '../../src/repo/repo-cache.js';
@@ -88,6 +88,17 @@ function deferred() {
 }
 
 describe('repo cache', () => {
+  it('uses a per-user default cache base', async () => {
+    const c = cache({});
+    const user = typeof process.getuid === 'function' ? String(process.getuid()) : undefined;
+    try {
+      expect(dirname(c.root)).toBe(join(tmpdir(), `pi-web-agent-repos-${user}`));
+      expect(basename(c.root)).toMatch(/^testboot-\d+-[0-9a-f]+$/);
+    } finally {
+      await c.close();
+    }
+  });
+
   it('reuses a clone for the same key', async () => {
     const c = cache({ baseDir: baseDir() });
     const clone = fakeClone();
@@ -299,6 +310,85 @@ describe('repo cache', () => {
     await a.close();
     expect(existsSync(a.root)).toBe(false);
     expect(existsSync(rb.lease.dir)).toBe(true);
+  });
+
+  it('creates the cache base and instance folders private to this user', async () => {
+    const parent = baseDir();
+    const base = join(parent, 'cache');
+    const c = cache({ baseDir: base });
+    const result = await c.acquire('k', fakeClone());
+    if (!result.ok) throw new Error('acquire failed');
+    try {
+      expect(lstatSync(base).mode & 0o777).toBe(0o700);
+      expect(lstatSync(c.root).mode & 0o777).toBe(0o700);
+    } finally {
+      result.lease.release();
+    }
+  });
+
+  it.each([
+    ['a symlink', (base: string, target: string) => symlinkSync(target, base)],
+    ['world-readable permissions', (base: string) => {
+      mkdirSync(base);
+      chmodSync(base, 0o755);
+    }],
+    ['group-readable permissions', (base: string) => {
+      mkdirSync(base);
+      chmodSync(base, 0o750);
+    }]
+  ])('refuses an unsafe cache base with %s', async (_description, makeUnsafe) => {
+    const parent = baseDir();
+    const base = join(parent, 'cache');
+    makeUnsafe(base, parent);
+    const leftover = join(parent, 'otherboot-999999-dead');
+    mkdirSync(leftover);
+    const c = cache({ baseDir: base });
+    const clone = fakeClone();
+
+    const result = await c.acquire('k', clone);
+    try {
+      expect(result).toEqual({
+        ok: false,
+        failure: {
+          code: 'REPO_CACHE_UNSAFE',
+          message: `the repo cache folder ${base} isn't private to this user`,
+          failure: { kind: 'not_configured' }
+        }
+      });
+      expect(clone.calls).toHaveLength(0);
+      await c.sweepLeftovers();
+      await c.close();
+      expect(existsSync(leftover)).toBe(true);
+    } finally {
+      if (result.ok) result.lease.release();
+    }
+  });
+
+  it('sweeps safe leftovers when the cache is created', async () => {
+    const base = baseDir();
+    const leftover = join(base, 'otherboot-999999-dead');
+    mkdirSync(leftover);
+    const c = cache({ baseDir: base });
+
+    await vi.waitFor(() => expect(existsSync(leftover)).toBe(false));
+    await c.close();
+  });
+
+  it('retries after an unsafe cache base is repaired', async () => {
+    const parent = baseDir();
+    const base = join(parent, 'cache');
+    mkdirSync(base);
+    chmodSync(base, 0o750);
+    const c = cache({ baseDir: base });
+
+    await expect(c.acquire('k', fakeClone())).resolves.toEqual({ ok: false, failure: expect.objectContaining({ code: 'REPO_CACHE_UNSAFE' }) });
+    chmodSync(base, 0o700);
+    const result = await c.acquire('k', fakeClone());
+    try {
+      expect(result.ok).toBe(true);
+    } finally {
+      if (result.ok) result.lease.release();
+    }
   });
 
   it('closes in order: no new work, clones aborted, readers told to stop and awaited, then the folder goes', async () => {

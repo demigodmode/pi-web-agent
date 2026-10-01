@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { lstat, mkdir, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { raceAbort, throwIfAborted } from '../abort.js';
 import { REPO_CLOSE_GRACE_MS, REPO_IDLE_CACHE_MAX_BYTES } from './limits.js';
@@ -52,6 +52,11 @@ const FOLDER = /^([0-9a-z]+)-(\d+)-([0-9a-f]+)$/;
 const closedFailure = () => repoFailure('REPO_CACHE_CLOSED', 'The session is ending, so the repo was not searched.', 'transient');
 const cancelledCloneFailure = () => repoFailure('REPO_CLONE_CANCELLED', 'The clone was cancelled.', 'transient');
 
+function cacheUserName(): string {
+  if (typeof process.getuid === 'function') return String(process.getuid());
+  return userInfo().username.replace(/[^a-z0-9_-]/gi, '-') || 'unknown';
+}
+
 function currentBootId(): string {
   try {
     return readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim().replace(/[^0-9a-z]/gi, '').toLowerCase();
@@ -85,7 +90,7 @@ async function folderSize(dir: string): Promise<number> {
 }
 
 export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
-  const baseDir = options.baseDir ?? join(tmpdir(), 'pi-web-agent-repos');
+  const baseDir = options.baseDir ?? join(tmpdir(), `pi-web-agent-repos-${cacheUserName()}`);
   const bootId = options.bootId ?? currentBootId();
   const pid = options.pid ?? process.pid;
   const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
@@ -104,10 +109,39 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   let leaseCount = 0;
   let onLeasesDrained: (() => void) | undefined;
 
+  const unsafeBaseFailure = () => repoFailure('REPO_CACHE_UNSAFE', `the repo cache folder ${baseDir} isn't private to this user`, 'not_configured');
+
+  const hasPrivateBase = async (): Promise<boolean> => {
+    try {
+      const info = await lstat(baseDir);
+      const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+      return info.isDirectory()
+        && !info.isSymbolicLink()
+        && (uid === undefined || info.uid === uid)
+        && (info.mode & 0o077) === 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const preparePrivateBase = async (): Promise<RepoFailure | undefined> => {
+    try {
+      await lstat(baseDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return unsafeBaseFailure();
+      try {
+        await mkdir(baseDir, { recursive: true, mode: 0o700 });
+      } catch {
+        return unsafeBaseFailure();
+      }
+    }
+    return (await hasPrivateBase()) ? undefined : unsafeBaseFailure();
+  };
+
   const remove = (dir: string) => {
     const existing = removalsByDir.get(dir);
     if (existing) return existing;
-    const removal: Promise<void> = rm(dir, { recursive: true, force: true })
+    const removal: Promise<void> = hasPrivateBase().then((safe) => safe ? rm(dir, { recursive: true, force: true }) : undefined)
       .catch(() => undefined)
       .finally(() => {
         removals.delete(removal);
@@ -119,6 +153,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   };
 
   const sweepLeftovers = async () => {
+    if (await preparePrivateBase()) return;
     let names: string[];
     try {
       names = await readdir(baseDir);
@@ -187,6 +222,10 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   const acquire = async (key: string, clone: CloneFn, signal?: AbortSignal): Promise<AcquireResult> => {
     if (closed) return { ok: false, failure: closedFailure() };
     throwIfAborted(signal);
+    const unsafe = await preparePrivateBase();
+    if (unsafe) return { ok: false, failure: unsafe };
+    if (closed) return { ok: false, failure: closedFailure() };
+    throwIfAborted(signal);
     const existing = entries.get(key);
     if (existing?.controller.signal.aborted) {
       if (signal) await raceAbort(existing.ready, signal);
@@ -212,10 +251,15 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
     entry.ready = (async (): Promise<Outcome> => {
       try {
         await initialSweep;
+        const unsafe = await preparePrivateBase();
+        if (unsafe) {
+          entries.delete(key);
+          return { ok: false, failure: unsafe };
+        }
         await sweepLeftovers();
         const priorRemoval = removalsByDir.get(entry.dir);
         if (priorRemoval) await raceAbort(priorRemoval, controller.signal);
-        await mkdir(root, { recursive: true });
+        await mkdir(root, { recursive: true, mode: 0o700 });
         throwIfAborted(controller.signal);
         const result = await clone(entry.dir, controller.signal);
         if (!result.ok) {
@@ -266,7 +310,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
     }
     await Promise.allSettled([...removals]);
     entries.clear();
-    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    if (await hasPrivateBase()) await rm(root, { recursive: true, force: true }).catch(() => undefined);
   })());
 
   return { root, acquire, sweepLeftovers, close };
