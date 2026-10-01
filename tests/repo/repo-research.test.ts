@@ -486,6 +486,13 @@ describe('readRepoOverview', () => {
     }
   });
 
+  it('backs away from an emoji at the README reader cap', async () => {
+    const { repo } = setup({ 'README.md': `${'x'.repeat(READER_TEXT_CAP - 1)}😀tail` });
+    const overview = await readRepoOverview(repo.work, {});
+    expect(overview?.readme).toBe('x'.repeat(READER_TEXT_CAP - 1));
+    expect(overview?.readme).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
   it('closes the README handle when its bounded read fails', async () => {
     const { repo } = setup({ 'README.md': 'root' });
     const failure = new Error('read failed');

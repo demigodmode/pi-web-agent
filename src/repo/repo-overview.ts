@@ -2,6 +2,7 @@ import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { throwIfAborted } from '../abort.js';
 import { READER_TEXT_CAP } from '../readers/limits.js';
+import { safeSlice } from './safe-slice.js';
 
 export type RepoOverview = {
   readmePath?: string;
@@ -74,7 +75,7 @@ export async function readRepoOverview(
   try {
     const buffer = Buffer.alloc(READER_TEXT_CAP * 4);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    readme = buffer.subarray(0, bytesRead).toString('utf8').slice(0, READER_TEXT_CAP);
+    readme = safeSlice(buffer.subarray(0, bytesRead).toString('utf8'), READER_TEXT_CAP);
   } finally {
     await handle.close();
   }
