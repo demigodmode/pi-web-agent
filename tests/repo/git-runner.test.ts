@@ -235,13 +235,18 @@ describe('git runner', () => {
   it('kills the whole process group on timeout and returns only after git exited', async () => {
     const pidFile = join(tempDir(), 'pids.json');
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
-    const result = await runGit(['fetch'], { timeoutMs: 400, env: fakeGit(FAKE_GIT_SLEEP) });
+    const env = fakeGit(FAKE_GIT_SLEEP);
+    await expect(runGit(['--version'], { timeoutMs: 10_000, env })).resolves.toMatchObject({ ok: true });
+    const running = runGit(['fetch'], { timeoutMs: 2_000, env });
+    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
+    const pids = readPids(pidFile)!;
+    expect(isAlive(pids.pid)).toBe(true);
+    const result = await running;
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.failure.code).toBe('GIT_TIMEOUT');
       expect(result.failure.failure.kind).toBe('transient');
     }
-    const pids = readPids(pidFile)!;
     expect(isAlive(pids.pid)).toBe(false);
     await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
   });
