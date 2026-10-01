@@ -57,7 +57,8 @@ const SOURCE_EXTENSIONS = new Set([
   '.vue', '.svelte', '.zig', '.hs', '.ml', '.sql'
 ]);
 const PROJECT_DOCUMENT_NAMES = new Set(['CHANGELOG', 'LICENSE', 'NOTICE', 'AUTHORS', 'COPYING', 'CONTRIBUTING']);
-const TEST_OR_DOC = /(^|\/)(tests?|__tests__|specs?|fixtures?|docs?|examples?)(\/|$)|\.(test|spec)\.[a-z0-9]+$|\.(md|markdown|rst|txt|adoc)$/i;
+const TEST_OR_DOC = /(^|\/)(tests?|__tests__|specs?|fixtures?|docs?|examples?)(\/|$)|\.(test|spec)\.[a-z0-9]+$|\.(md|markdown|rst|adoc)$/i;
+const EXEMPT_TEXT_FILES = /^(CMakeLists\.txt|requirements.*\.txt)$/;
 const GENERATED = /\.min\.(js|css)$|(^|\/)(generated|__generated__)(\/|$)|\.(generated|gen)\.[a-z0-9]+$/i;
 const SCORE_WINDOW_LINES = 41;
 
@@ -117,7 +118,7 @@ export function scoreFile(path: string, text: string, terms: QueryTerm[]): numbe
   let score = contentHits * 10 + pathHits * 6;
   if (SOURCE_EXTENSIONS.has(extname(lowerPath))) score += 3;
   const filename = path.split('/').at(-1) ?? path;
-  if (TEST_OR_DOC.test(path) || DATA_EXTENSIONS.has(extname(lowerPath)) || (extname(filename) === '' && PROJECT_DOCUMENT_NAMES.has(filename))) score -= 5;
+  if (TEST_OR_DOC.test(path) || (extname(lowerPath) === '.txt' && !EXEMPT_TEXT_FILES.test(filename)) || DATA_EXTENSIONS.has(extname(lowerPath)) || (extname(filename) === '' && PROJECT_DOCUMENT_NAMES.has(filename))) score -= 5;
   if (GENERATED.test(path)) score -= 8;
   return Math.max(1, score);
 }

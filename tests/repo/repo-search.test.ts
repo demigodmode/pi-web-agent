@@ -216,6 +216,39 @@ describe('searchRepo walk and scoring', () => {
     expect(scoreFile('CONTRIBUTING', content, terms)).toBe(25);
   });
 
+  it('keeps build and dependency config text above ordinary text while retaining independent documentation penalties', async () => {
+    const terms = queryTerms('refresh oauth tokens');
+    const content = 'refresh oauth tokens';
+    const root = tree({
+      'CMakeLists.txt': content,
+      'requirements.txt': content,
+      'requirements-dev.txt': content,
+      'notes.txt': content,
+      'docs/CMakeLists.txt': content,
+      'tests/requirements.txt': content,
+      'src/requirements.test.txt': content
+    });
+
+    expect(scoreFile('CMakeLists.txt', content, terms)).toBe(30);
+    expect(scoreFile('requirements.txt', content, terms)).toBe(30);
+    expect(scoreFile('requirements-dev.txt', content, terms)).toBe(30);
+    expect(scoreFile('notes.txt', content, terms)).toBe(25);
+    expect(scoreFile('docs/CMakeLists.txt', content, terms)).toBe(25);
+    expect(scoreFile('tests/requirements.txt', content, terms)).toBe(25);
+    expect(scoreFile('src/requirements.test.txt', content, terms)).toBe(25);
+
+    const result = await searchRepo(root, { query: 'refresh oauth tokens', maxFiles: 10 });
+    expect(result.files.map((file) => file.path)).toEqual([
+      'CMakeLists.txt',
+      'requirements-dev.txt',
+      'requirements.txt',
+      'docs/CMakeLists.txt',
+      'notes.txt',
+      'src/requirements.test.txt',
+      'tests/requirements.txt'
+    ]);
+  });
+
   it('never reads through symlinks', async () => {
     const outside = mkdtempSync(join(tmpdir(), 'pwa-outside-'));
     temps.push(outside);
