@@ -214,19 +214,35 @@ describe('researchRepo', () => {
 
   it.each([
     ['files', { maxScannedFiles: 1 }, { 'a.ts': 'needle', 'b.ts': 'needle' }],
-    ['bytes', { maxScannedBytes: 1 }, { 'a.ts': 'needle' }],
-    ['time', { maxSearchMs: 1 }, { 'a.ts': 'needle' }]
+    ['bytes', { maxScannedBytes: 1 }, { 'a.ts': 'needle' }]
   ] as const)('discloses a partial %s scan in the response and metadata', async (_budget, searchLimits, files) => {
     const { deps } = setup(files);
     const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, {
       ...deps,
-      searchLimits,
-      ...('maxSearchMs' in searchLimits ? { searchNow: (() => { let calls = 0; return () => ++calls >= 4 ? 1 : 0; })() } : {})
+      searchLimits
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.response.content!.text).toContain('Searched the first');
     expect(result.response.content!.text).toContain('files only (large repo); paste a /tree/ folder link to narrow it.');
+    expect(result.response.metadata.truncated).toBe(true);
+  });
+
+  it('says a valid scoped search ran out of time before it could start', async () => {
+    const { deps } = setup({ 'src/a.ts': 'needle' });
+    let calls = 0;
+    const result = await researchRepo('https://github.com/acme/widget/tree/main/src', {
+      query: `${'z'.repeat(READER_TEXT_CAP + 100)} needle`
+    }, {
+      ...deps,
+      searchLimits: { maxSearchMs: 1 },
+      searchNow: () => ++calls >= 4 ? 1 : 0
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.content!.text.length).toBeLessThanOrEqual(READER_TEXT_CAP);
+    expect(result.response.content!.text).toContain('The search ran out of time before it could start; paste a /tree/ folder link to narrow it.');
+    expect(result.response.content!.text).not.toContain('Searched the first 0 files only');
     expect(result.response.metadata.truncated).toBe(true);
   });
 

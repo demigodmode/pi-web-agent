@@ -86,7 +86,9 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
 function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: RepoOverview | undefined, reused: boolean): WebFetchResponse {
   const name = `${meta.owner}/${meta.repo}`;
   const partialNotice = search.partial
-    ? `Searched the first ${search.scannedFiles} files only (large repo); paste a /tree/ folder link to narrow it.`
+    ? search.scannedFiles === 0
+      ? 'The search ran out of time before it could start; paste a /tree/ folder link to narrow it.'
+      : `Searched the first ${search.scannedFiles} files only (large repo); paste a /tree/ folder link to narrow it.`
     : undefined;
   const contentCap = READER_TEXT_CAP - (partialNotice ? partialNotice.length + 2 : 0);
   const header =
