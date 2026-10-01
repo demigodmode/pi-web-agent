@@ -6,7 +6,6 @@ describe('queryTerms', () => {
     expect(queryTerms('where does this project refresh OAuth tokens? https://github.com/acme/widget').map(({ term }) => term)).toEqual([
       'refresh',
       'oauth',
-      'auth',
       'tokens'
     ]);
   });
@@ -38,6 +37,18 @@ describe('queryTerms', () => {
       'http',
       'server'
     ]);
+  });
+
+  it.each([
+    ['OAuth', ['oauth']],
+    ['iOS', ['ios']],
+    ['XHttp', ['xhttp']]
+  ])('does not add a clipped camel part for %s', (identifier, terms) => {
+    expect(queryTerms(identifier).map(({ term }) => term)).toEqual(terms);
+  });
+
+  it('keeps underscore parts when the first part is one letter', () => {
+    expect(queryTerms('x_token').map(({ term }) => term)).toEqual(['x_token', 'token']);
   });
 
   it('adds simple singular variants', () => {

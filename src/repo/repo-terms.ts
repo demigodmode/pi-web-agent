@@ -34,11 +34,12 @@ export function queryTerms(query: string): QueryTerm[] {
 
   for (const token of tokens) {
     addWord(words, seen, token);
-    const parts = token
+    const camelSplit = token
       .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .split(/[\s_]+/);
-    if (parts.length > 1) {
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    const camelParts = camelSplit.split(/\s+/);
+    const parts = camelSplit.split(/[\s_]+/);
+    if (parts.length > 1 && !(camelParts.length > 1 && camelParts[0].length === 1)) {
       for (const part of parts) addWord(words, seen, part);
     }
   }

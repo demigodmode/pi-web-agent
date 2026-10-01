@@ -107,7 +107,7 @@ describe('searchRepo walk and scoring', () => {
     });
     const result = await searchRepo(root, { query: 'where does this project refresh OAuth tokens?' });
     expect(result.scopeFound).toBe(true);
-    expect(result.terms).toEqual(['refresh', 'oauth', 'auth', 'tokens']);
+    expect(result.terms).toEqual(['refresh', 'oauth', 'tokens']);
     expect(result.files.map((file) => file.path)).toEqual(['src/auth/token-refresh.ts', 'README.md']);
     expect(result.files[0].score).toBeGreaterThan(result.files[1].score);
   });
@@ -472,7 +472,7 @@ describe('searchRepo walk and scoring', () => {
 
     expect(result).toEqual({
       scopeFound: false,
-      terms: ['refresh', 'oauth', 'auth', 'tokens'],
+      terms: ['refresh', 'oauth', 'tokens'],
       files: [],
       partial: true,
       budget: 'time',
@@ -493,7 +493,7 @@ describe('searchRepo walk and scoring', () => {
       maxSearchMs: 10,
       now: () => elapsed
     });
-    expect(result).toEqual({ scopeFound: true, terms: ['refresh', 'oauth', 'auth', 'tokens'], files: [], partial: true, budget: 'time', scannedFiles: 0 });
+    expect(result).toEqual({ scopeFound: true, terms: ['refresh', 'oauth', 'tokens'], files: [], partial: true, budget: 'time', scannedFiles: 0 });
     expect(handleCalls.realpathPaths).toEqual([root, root, join(root, 'src')]);
     expect(handleCalls.lengths).toEqual([]);
   });
