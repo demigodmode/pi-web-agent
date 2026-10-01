@@ -202,6 +202,22 @@ describe('resolveInside', () => {
     });
   });
 
+  it('refuses Windows-normalized .git path segments', async () => {
+    const { repo } = setup({ 'README.md': 'root' });
+    mkdirSync(join(repo.work, '.git.', 'objects'), { recursive: true });
+    mkdirSync(join(repo.work, '.git ', 'refs'), { recursive: true });
+    mkdirSync(join(repo.work, 'nested', '.GiT.', 'objects'), { recursive: true });
+
+    // Linux permits these names, so the pre-normalization resolver reaches them.
+    expect(await fsPromises.realpath(join(repo.work, '.git.'))).toBe(join(repo.work, '.git.'));
+    expect(await fsPromises.realpath(join(repo.work, '.git '))).toBe(join(repo.work, '.git '));
+    await expect(resolveInside(repo.work, '.git.')).resolves.toBeUndefined();
+    await expect(resolveInside(repo.work, '.git ')).resolves.toBeUndefined();
+    await expect(resolveInside(repo.work, 'nested/.GiT./objects')).resolves.toBeUndefined();
+    await expect(resolveInside(repo.work, 'nested\\.GiT.\\objects')).resolves.toBeUndefined();
+    await expect(readRepoOverview(repo.work, { pathScope: '.git.' })).resolves.toBeUndefined();
+  });
+
   it('refuses paths that climb out of the clone', async () => {
     const { repo } = setup({ 'README.md': 'root', 'src/a.ts': 'a' });
     expect(await resolveInside(repo.work, 'src')).toBe(join(repo.work, 'src'));

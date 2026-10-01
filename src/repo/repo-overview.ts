@@ -16,7 +16,7 @@ function inside(base: string, target: string): boolean {
 }
 
 function hasGitSegment(pathScope: string): boolean {
-  return pathScope.split(/[\\/]+/).some((segment) => segment.toLowerCase() === '.git');
+  return pathScope.split(/[\\/]+/).some((segment) => segment.replace(/[. ]+$/, '').toLowerCase() === '.git');
 }
 
 /** A folder inside the clone, or undefined for anything missing, not a folder, or outside it. */
