@@ -37,6 +37,7 @@ const raceGate = vi.hoisted(() => {
   let release!: () => void;
   const state: {
     enabled: boolean;
+    abortable: boolean;
     reached: Promise<void>;
     allow: Promise<void>;
     reset(): void;
@@ -44,10 +45,12 @@ const raceGate = vi.hoisted(() => {
     release(): void;
   } = {
     enabled: false,
+    abortable: false,
     reached: Promise.resolve(),
     allow: Promise.resolve(),
     reset() {
       this.enabled = false;
+      this.abortable = false;
       this.reached = new Promise<void>((resolve) => { reached = resolve; });
       this.allow = new Promise<void>((resolve) => { release = resolve; });
     },
@@ -80,7 +83,18 @@ vi.mock('../../src/abort.js', async (importOriginal) => {
       const result = await actual.raceAbort(work, signal);
       if (raceGate.enabled) {
         raceGate.reach();
-        await raceGate.allow;
+        if (raceGate.abortable) {
+          await new Promise<void>((resolve, reject) => {
+            const onAbort = () => reject(abortError());
+            signal.addEventListener('abort', onAbort, { once: true });
+            raceGate.allow.then(() => {
+              signal.removeEventListener('abort', onAbort);
+              resolve();
+            });
+          });
+        } else {
+          await raceGate.allow;
+        }
       }
       return result;
     }
@@ -196,6 +210,28 @@ describe('repo cache', () => {
     } finally {
       if (result.ok) result.lease.release();
     }
+  });
+
+  it('evicts a ready clone when its final waiter cancels', async () => {
+    const c = cache({ baseDir: baseDir(), maxIdleBytes: 10 });
+    const held = await c.acquire('held', fakeClone(10));
+    if (!held.ok) throw new Error('acquire failed');
+
+    let secondDir = '';
+    const controller = new AbortController();
+    raceGate.reset();
+    raceGate.enabled = true;
+    raceGate.abortable = true;
+    const second = c.acquire('second', async (dest, signal) => {
+      secondDir = dest;
+      return fakeClone(10)(dest, signal);
+    }, controller.signal);
+    await raceGate.reached;
+    held.lease.release();
+    controller.abort();
+
+    await expect(second).rejects.toThrow('Operation aborted');
+    await vi.waitFor(() => expect(existsSync(secondDir)).toBe(false));
   });
 
   it('lets one caller cancel without stopping the clone for another', async () => {

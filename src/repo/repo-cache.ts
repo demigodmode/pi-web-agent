@@ -216,7 +216,10 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
       return { ok: true, lease };
     } finally {
       entry.waiters--;
-      if (entry.waiters === 0 && entry.state === 'cloning') entry.controller.abort();
+      if (entry.waiters === 0) {
+        if (entry.state === 'cloning') entry.controller.abort();
+        else if (!closed) evictIdle();
+      }
     }
   };
 
