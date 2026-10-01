@@ -47,7 +47,9 @@ These run behind `web_explore`, so there's still nothing extra to call. When you
 
 When you put a repo link in your question yourself (`https://github.com/owner/repo`, or a folder link like `https://github.com/owner/repo/tree/main/src/auth`), `web_explore` downloads that repo, searches the code for the words in your question, and answers from the files that match. Each excerpt comes with a link pinned to the exact commit it read, like `https://github.com/owner/repo/blob/<commit>/src/auth/refresh.ts#L40-L95`, so the link still points at the same code after the repo changes.
 
-- The search is plain keyword matching, with no model calls. It skips `node_modules`, `vendor`, build output, lockfiles, binaries, and files over 512KB; generated and minified files rank lower. It prefers code over docs and tests, and returns up to four files within the usual reader budget.
+- Very large repos may be searched only partially; paste a tree or folder link to narrow the search to that directory.
+- The search is plain keyword matching, with no model calls. Nearby terms rank higher. It skips vendored folders, lockfiles, source maps, snapshots, standalone SVGs, binaries, and files over 512KB. `dist`, `build`, `target`, and `out` are skipped only at the clone root or at the directory named by a tree or folder link.
+- It prefers code over docs and tests. JSON, CSV, TSV, and all-caps project documents rank lower, as do generated and minified files. It returns up to four files within the usual reader budget.
 - The README is added when the search finds little (fewer than two files), and the folder listing when it finds nothing. A general question like "what is this repo?" therefore still gets the README.
 
 - It fetches one exact commit at depth 1, over HTTPS only, and never runs anything from the repo. Folder links limit the folder listing to that folder. They use that folder's README when it has one, or the repository root README otherwise.
