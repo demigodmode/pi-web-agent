@@ -72,3 +72,45 @@ describe('repo research end to end', () => {
     expect(existsSync(cache.root)).toBe(false);
   });
 });
+
+describe('repo code search end to end', () => {
+  it('answers from the nested file with a pinned citation', async () => {
+    const code = [
+      "import { oauthClient } from './client';",
+      '',
+      'export async function refreshToken(session) {',
+      '  // Swap the refresh token for a new OAuth access token.',
+      "  return oauthClient.post('/token', { grant_type: 'refresh_token' });",
+      '}'
+    ].join('\n');
+    const repo = createFixtureRepo({
+      'README.md': '# Widget\nWe refresh OAuth tokens for you.',
+      'src/auth/token-refresh.ts': code,
+      'src/auth/session.ts': 'export const refreshSession = (oauth) => oauth.token;',
+      'node_modules/lib/refresh-token.js': code
+    });
+    fixtures.push(repo);
+    const base = mkdtempSync(join(tmpdir(), 'pwa-e2e-search-'));
+    temps.push(base);
+    const cache = createRepoCache({ baseDir: base, bootId: 'testboot' });
+    caches.push(cache);
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) =>
+      String(input).includes('/commits/') ? new Response(repo.sha) : Response.json({ size: 1, private: false, default_branch: 'main' })
+    ) as unknown as typeof fetch;
+    const search = vi.fn();
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: vi.fn(),
+      headlessFetch: vi.fn(),
+      researchRepo: (input) => researchRepo(input.url, input, { fetchImpl, cache, git: repo.gitEnv(), resolveToken: async () => ({ source: 'none' }) })
+    });
+
+    const result = await workflow.run({ query: 'where does this project refresh OAuth tokens? https://github.com/acme/widget' });
+
+    expect(search).not.toHaveBeenCalled();
+    const summary = result.evidence[0].summary;
+    expect(summary).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L6`);
+    expect(summary).toContain("return oauthClient.post('/token'");
+    expect(summary).not.toContain('node_modules');
+  });
+});
