@@ -172,13 +172,14 @@ async function readCandidate(base: string, abs: string, terms: QueryTerm[], rema
   let buffer: Buffer | undefined;
   let requested = 0;
   let readFailed = false;
+  let expiredDuringRead = false;
   try {
     throwIfAborted(signal);
     if (timedOut()) return { bytesRead: 0 };
     buffer = Buffer.alloc(Math.min(info.size, MAX_SEARCH_FILE_BYTES) + 1);
     requested = Math.min(buffer.length, remainingBytes);
     ({ bytesRead } = await handle.read(buffer, 0, requested, 0));
-    if (timedOut()) return { bytesRead };
+    expiredDuringRead = timedOut();
   } catch {
     // A clone can be pruned while searching it; skip that one file.
     readFailed = true;
@@ -186,7 +187,7 @@ async function readCandidate(base: string, abs: string, terms: QueryTerm[], rema
     await handle.close().catch(() => undefined);
   }
   throwIfAborted(signal);
-  if (readFailed || !buffer || bytesRead === undefined || requested !== buffer.length || bytesRead === buffer.length || buffer.subarray(0, Math.min(bytesRead, 512)).includes(0)) {
+  if (expiredDuringRead || readFailed || !buffer || bytesRead === undefined || requested !== buffer.length || bytesRead === buffer.length || buffer.subarray(0, Math.min(bytesRead, 512)).includes(0)) {
     return { bytesRead: bytesRead ?? 0 };
   }
 

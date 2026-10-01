@@ -217,6 +217,23 @@ describe('searchRepo walk and scoring', () => {
     expect(handleCalls.closed).toBe(1);
   });
 
+  it('still throws when cancellation arrives during a deadline-expiring read', async () => {
+    const root = tree({ 'a.ts': impl });
+    const controller = new AbortController();
+    let elapsed = 0;
+    handleCalls.onRead = () => {
+      elapsed = 10;
+      controller.abort();
+    };
+    await expect(searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      signal: controller.signal,
+      maxSearchMs: 10,
+      now: () => elapsed
+    })).rejects.toThrow('Operation aborted');
+    expect(handleCalls.closed).toBe(1);
+  });
+
   it('closes a handle when cancellation arrives while it is opening', async () => {
     const root = tree({ 'src/auth/token-refresh.ts': impl });
     const controller = new AbortController();
