@@ -57,7 +57,71 @@ describe('researchRepo', () => {
     expect(text).toContain('Makes widgets.');
     expect(text).toContain('[dir] src');
     expect(text).toContain('package.json');
-    expect(text).not.toContain('.git');
+    expect(text).not.toContain('[dir] .git');
+    expect(text).toContain('The question had no specific terms to search the code for.');
+  });
+
+  it('answers from the matching files with citations pinned to the commit', async () => {
+    const code = [
+      "import { oauthClient } from './client';",
+      '',
+      'export async function refreshToken(session) {',
+      '  // Swap the refresh token for a new OAuth access token.',
+      "  return oauthClient.post('/token', { grant_type: 'refresh_token' });",
+      '}'
+    ].join('\n');
+    const { repo, deps } = setup({
+      'README.md': '# Widget\nWe refresh OAuth tokens for you.',
+      'src/auth/token-refresh.ts': code,
+      'src/auth/session.ts': 'export const refreshSession = (oauth) => oauth.token;',
+      'node_modules/lib/refresh-token.js': code
+    });
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'where does this project refresh OAuth tokens?' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = result.response.content!.text;
+    expect(text).toContain('Searched the code for: refresh, oauth, tokens.');
+    expect(text).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L6`);
+    expect(text).toContain("return oauthClient.post('/token'");
+    expect(text).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/session.ts#L1-L1`);
+    expect(text).not.toContain('node_modules');
+    expect(text).not.toContain('README.md:\n');
+    expect(text.indexOf('src/auth/token-refresh.ts')).toBeLessThan(text.indexOf('README.md'));
+    expect(text.length).toBeLessThanOrEqual(24_000);
+  });
+
+  it('adds the README when only one file matched', async () => {
+    const { repo, deps } = setup({ 'README.md': '# Widget\nIntro text.', 'src/cache.ts': 'export const evictIdle = () => 1;' });
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'how is evictIdle done' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = result.response.content!.text;
+    expect(text).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/cache.ts#L1-L1`);
+    expect(text).toContain('README.md:\n# Widget\nIntro text.');
+    expect(text).not.toContain('Contents of');
+  });
+
+  it('says so when nothing matched, with the README and listing', async () => {
+    const { deps } = setup({ 'README.md': '# Widget\nIntro text.', 'src/cache.ts': 'x' });
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'kubernetes operator reconciliation' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = result.response.content!.text;
+    expect(text).toContain('No files matched those terms.');
+    expect(text).toContain('Intro text.');
+    expect(text).toContain('[dir] src');
+  });
+
+  it('searches only inside a /tree/ folder', async () => {
+    const { repo, deps } = setup({
+      'src/auth/token-refresh.ts': 'export const refreshToken = 1;',
+      'lib/other.ts': 'export const refreshToken = 2;'
+    });
+    const result = await researchRepo('https://github.com/acme/widget/tree/main/src/auth', { query: 'refreshToken' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.content!.text).toContain(`/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L1`);
+    expect(result.response.content!.text).not.toContain('lib/other.ts');
   });
 
   it('reuses the clone on a follow-up question', async () => {
@@ -170,6 +234,87 @@ describe('researchRepo', () => {
       releaseRead();
       await expect(run).resolves.toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_CACHE_CLOSED', failure: { kind: 'transient' } }) });
       expect(readmeClosed).toBe(true);
+      await expect(close).resolves.toBeUndefined();
+      await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      releaseRead();
+      open.mockReset();
+      await cache.close();
+    }
+  });
+
+  it('throws and releases the lease when the caller cancels during a matching source read', async () => {
+    const { cache, deps } = setup({ 'README.md': 'root', 'src/refresh.ts': 'export const refresh = () => 1;' });
+    const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let sourceReadStarted!: () => void;
+    const sourceRead = new Promise<void>((resolve) => { sourceReadStarted = resolve; });
+    let sourceClosed = false;
+    const open = vi.mocked(fsPromises.open).mockImplementation(async (path, flags) => {
+      const handle = await originalOpen(path, flags);
+      if (!String(path).endsWith('src/refresh.ts')) return handle;
+      return {
+        read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+          const result = await handle.read(buffer, offset, length, position);
+          sourceReadStarted();
+          await readGate;
+          return result;
+        },
+        close: async () => {
+          sourceClosed = true;
+          await handle.close();
+        }
+      } as never;
+    });
+    const controller = new AbortController();
+    const run = researchRepo('https://github.com/acme/widget', { query: 'refresh', signal: controller.signal }, deps);
+    try {
+      await sourceRead;
+      controller.abort();
+      releaseRead();
+      await expect(run).rejects.toThrow('Operation aborted');
+      expect(sourceClosed).toBe(true);
+      await expect(cache.close()).resolves.toBeUndefined();
+      await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      releaseRead();
+      open.mockReset();
+      await cache.close();
+    }
+  });
+
+  it('returns cache closed and awaits cleanup when shutdown starts during a matching source read', async () => {
+    const { cache, deps } = setup({ 'README.md': 'root', 'src/refresh.ts': 'export const refresh = () => 1;' });
+    const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let sourceReadStarted!: () => void;
+    const sourceRead = new Promise<void>((resolve) => { sourceReadStarted = resolve; });
+    let sourceClosed = false;
+    const open = vi.mocked(fsPromises.open).mockImplementation(async (path, flags) => {
+      const handle = await originalOpen(path, flags);
+      if (!String(path).endsWith('src/refresh.ts')) return handle;
+      return {
+        read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+          const result = await handle.read(buffer, offset, length, position);
+          sourceReadStarted();
+          await readGate;
+          return result;
+        },
+        close: async () => {
+          sourceClosed = true;
+          await handle.close();
+        }
+      } as never;
+    });
+    const run = researchRepo('https://github.com/acme/widget', { query: 'refresh' }, deps);
+    try {
+      await sourceRead;
+      const close = cache.close();
+      releaseRead();
+      await expect(run).resolves.toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_CACHE_CLOSED', failure: { kind: 'transient' } }) });
+      expect(sourceClosed).toBe(true);
       await expect(close).resolves.toBeUndefined();
       await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {

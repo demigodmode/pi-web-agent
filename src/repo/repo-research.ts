@@ -7,6 +7,7 @@ import type { RepoCache } from './repo-cache.js';
 import { cloneRepo } from './repo-clone.js';
 import { fetchRepoMeta, type RepoMeta } from './repo-meta.js';
 import { readRepoOverview, type RepoOverview } from './repo-overview.js';
+import { searchRepo, type RepoSearchResult } from './repo-search.js';
 import { parseRepoUrl } from './repo-url.js';
 import { repoFailure, type RepoFailure } from './types.js';
 
@@ -27,6 +28,10 @@ export type RepoResearchDeps = {
 
 const fail = (failure: RepoFailure): RepoResearchResult => ({ ok: false, error: failure });
 
+/** Room kept for headers, citations and the README when excerpts are fitted into READER_TEXT_CAP. */
+const SEARCH_CHAR_BUDGET = READER_TEXT_CAP - 4_000;
+const README_EXCERPT_CHARS = 2_000;
+
 function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/');
 }
@@ -35,14 +40,33 @@ function treeUrl(meta: RepoMeta): string {
   return `https://github.com/${meta.owner}/${meta.repo}/tree/${meta.sha}${meta.pathScope ? `/${encodePath(meta.pathScope)}` : ''}`;
 }
 
-function overviewResponse(meta: RepoMeta, overview: RepoOverview, reused: boolean): WebFetchResponse {
+function blobUrl(meta: RepoMeta, path: string, startLine: number, endLine: number): string {
+  return `https://github.com/${meta.owner}/${meta.repo}/blob/${meta.sha}/${encodePath(path)}#L${startLine}-L${endLine}`;
+}
+
+function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: RepoOverview | undefined, reused: boolean): WebFetchResponse {
   const name = `${meta.owner}/${meta.repo}`;
-  const listing = overview.entries.map((entry) => (entry.dir ? `[dir] ${entry.name}` : entry.name)).join('\n');
-  const text = [
-    `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.`,
-    overview.readme ? `${overview.readmePath}:\n${overview.readme}` : 'No README here.',
-    `Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`
-  ].join('\n\n');
+  const sections = [
+    `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.` +
+      (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '')
+  ];
+  for (const file of search.files) {
+    for (const excerpt of file.excerpts) {
+      sections.push(`${file.path} (lines ${excerpt.startLine}-${excerpt.endLine})\n${blobUrl(meta, file.path, excerpt.startLine, excerpt.endLine)}\n${excerpt.text}`);
+    }
+  }
+  if (search.files.length === 0) {
+    sections.push(search.terms.length ? 'No files matched those terms.' : 'The question had no specific terms to search the code for.');
+  }
+  // The README only fills in when the code search found little (#70).
+  if (search.files.length < 2 && overview) {
+    if (overview.readme) sections.push(`${overview.readmePath}:\n${overview.readme.slice(0, README_EXCERPT_CHARS)}`);
+    if (search.files.length === 0) {
+      const listing = overview.entries.map((entry) => (entry.dir ? `[dir] ${entry.name}` : entry.name)).join('\n');
+      sections.push(`Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`);
+    }
+  }
+  const text = sections.join('\n\n');
   return {
     status: 'ok',
     url: treeUrl(meta),
@@ -53,10 +77,10 @@ function overviewResponse(meta: RepoMeta, overview: RepoOverview, reused: boolea
 
 /**
  * A typed GitHub repo URL (#72): token, metadata, a leased clone from the session cache, then the
- * clone's README and listing. Throws only abortError(); every other problem is { ok: false } and
- * the orchestrator ends the run with it.
+ * clone's keyword search for the question (#70), with the README when little matched. Throws only
+ * abortError(); every other problem is { ok: false } and the orchestrator ends the run with it.
  */
-export async function researchRepo(url: string, { query: _query, signal }: { query: string; signal?: AbortSignal }, deps: RepoResearchDeps): Promise<RepoResearchResult> {
+export async function researchRepo(url: string, { query, signal }: { query: string; signal?: AbortSignal }, deps: RepoResearchDeps): Promise<RepoResearchResult> {
   throwIfAborted(signal);
   const target = parseRepoUrl(url);
   if (!target) return fail(repoFailure('REPO_URL_INVALID', `${url} isn't a GitHub repo link.`, 'bad_request'));
@@ -80,19 +104,23 @@ export async function researchRepo(url: string, { query: _query, signal }: { que
 
   try {
     const readSignal = signal ? AbortSignal.any([signal, lease.signal]) : lease.signal;
+    let search: RepoSearchResult;
     let overview: RepoOverview | undefined;
     try {
-      overview = await readRepoOverview(lease.dir, { pathScope: meta.pathScope, signal: readSignal });
+      search = await searchRepo(lease.dir, { query, pathScope: meta.pathScope, signal: readSignal, charBudget: SEARCH_CHAR_BUDGET });
+      if (search.scopeFound && search.files.length < 2) {
+        overview = await readRepoOverview(lease.dir, { pathScope: meta.pathScope, signal: readSignal });
+      }
       throwIfAborted(readSignal);
     } catch (error) {
       if (signal?.aborted) throw abortError();
       if (lease.signal.aborted) return fail(repoFailure('REPO_CACHE_CLOSED', 'The session is ending, so the repo was not searched.', 'transient'));
       return fail(repoFailure('REPO_READ_FAILED', `Couldn't read the clone of ${meta.owner}/${meta.repo}: ${error instanceof Error ? error.message : String(error)}`, 'transient'));
     }
-    if (!overview) {
+    if (!search.scopeFound) {
       return fail(repoFailure('REPO_PATH_NOT_FOUND', `There's no folder ${meta.pathScope} in ${meta.owner}/${meta.repo} at ${meta.ref}.`, 'bad_request'));
     }
-    return { ok: true, response: overviewResponse(meta, overview, lease.reused) };
+    return { ok: true, response: searchResponse(meta, search, overview, lease.reused) };
   } finally {
     lease.release();
   }
