@@ -33,6 +33,7 @@ export type RepoCacheOptions = {
   isPidAlive?: (pid: number) => boolean;
   now?: () => number;
   platform?: NodeJS.Platform;
+  userInfo?: () => { username: string };
 };
 
 type Outcome = { ok: true } | { ok: false; failure: RepoFailure };
@@ -53,9 +54,13 @@ const FOLDER = /^([0-9a-z]+)-(\d+)-([0-9a-f]+)$/;
 const closedFailure = () => repoFailure('REPO_CACHE_CLOSED', 'The session is ending, so the repo was not searched.', 'transient');
 const cancelledCloneFailure = () => repoFailure('REPO_CLONE_CANCELLED', 'The clone was cancelled.', 'transient');
 
-function cacheUserName(): string {
-  if (typeof process.getuid === 'function') return String(process.getuid());
-  return userInfo().username.replace(/[^a-z0-9_-]/gi, '-') || 'unknown';
+function cacheUserName(platform: NodeJS.Platform, getUserInfo: () => { username: string }): string {
+  if (platform !== 'win32' && typeof process.getuid === 'function') return String(process.getuid());
+  try {
+    return getUserInfo().username.replace(/[^a-z0-9_-]/gi, '-') || 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 function currentBootId(): string {
@@ -91,12 +96,12 @@ async function folderSize(dir: string): Promise<number> {
 }
 
 export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
-  const baseDir = options.baseDir ?? join(tmpdir(), `pi-web-agent-repos-${cacheUserName()}`);
+  const platform = options.platform ?? process.platform;
+  const baseDir = options.baseDir ?? join(tmpdir(), `pi-web-agent-repos-${cacheUserName(platform, options.userInfo ?? userInfo)}`);
   const bootId = options.bootId ?? currentBootId();
   const pid = options.pid ?? process.pid;
   const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
   const now = options.now ?? Date.now;
-  const platform = options.platform ?? process.platform;
   const maxIdleBytes = options.maxIdleBytes ?? REPO_IDLE_CACHE_MAX_BYTES;
   const closeGraceMs = options.closeGraceMs ?? REPO_CLOSE_GRACE_MS;
   const ownName = `${bootId}-${pid}-${randomBytes(6).toString('hex')}`;
