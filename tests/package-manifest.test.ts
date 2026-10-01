@@ -19,8 +19,9 @@ describe('package manifest', () => {
     });
   });
 
-  it('keeps runtime imports in dependencies', () => {
-    expect(packageJson.dependencies).toHaveProperty('typebox');
+  it('declares typebox as a host-provided peer dependency', () => {
+    expect(packageJson.peerDependencies?.['typebox']).toBe('*');
+    expect(packageJson.dependencies?.['typebox']).toBeUndefined();
     expect(packageJson.dependencies?.['@sinclair/typebox']).toBeUndefined();
     expect(packageJson.peerDependencies?.['@sinclair/typebox']).toBeUndefined();
   });
