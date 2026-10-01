@@ -150,6 +150,28 @@ describe('researchRepo', () => {
     }
   });
 
+  it('renders bounded search excerpts without an unpaired surrogate', async () => {
+    const source = `needle${'x'.repeat(4_993)}😀tail`;
+    const { deps } = setup(Object.fromEntries(['a', 'b', 'c', 'd'].map((name) => [`src/${name}.ts`, source])));
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.content!.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it('does not split an emoji in the bounded README excerpt', async () => {
+    const { deps } = setup({
+      'README.md': `${'x'.repeat(1_999)}😀tail`,
+      'src/cache.ts': 'export const needle = true;'
+    });
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = result.response.content!.text;
+    expect(text).toContain(`README.md:\n${'x'.repeat(1_999)}`);
+    expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
   it('bounds a long search-term header without cutting the response cap', async () => {
     const { deps } = setup({ 'src/refresh.ts': 'export const needle = true;' });
     const result = await researchRepo('https://github.com/acme/widget', { query: `${'z'.repeat(READER_TEXT_CAP + 100)} needle` }, deps);

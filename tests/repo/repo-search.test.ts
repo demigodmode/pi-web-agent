@@ -53,6 +53,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { MAX_SEARCH_FILE_BYTES, buildExcerpts, fitToBudget, scoreFile, searchRepo } from '../../src/repo/repo-search.js';
+import { safeSlice } from '../../src/repo/safe-slice.js';
 import { queryTerms } from '../../src/repo/repo-terms.js';
 
 const temps: string[] = [];
@@ -502,6 +503,18 @@ describe('excerpts', () => {
       { path: 'a.ts', score: 1, excerpts: [{ startLine: 3, endLine: 5, text: 'one\ntwo\nthree' }] }
     ], 4);
     expect(fitted[0].excerpts).toEqual([{ startLine: 3, endLine: 3, text: 'one' }]);
+  });
+
+  it('backs a bounded search excerpt away from an emoji boundary', async () => {
+    const result = await searchRepo(tree({ 'a.ts': `needle${'x'.repeat(2)}😀tail` }), {
+      query: 'needle',
+      charBudget: 9
+    });
+    expect(result.files[0].excerpts).toEqual([{ startLine: 1, endLine: 1, text: 'needlexx' }]);
+  });
+
+  it('does not return an unpaired high surrogate from a shared slice', () => {
+    expect(safeSlice('a😀', 2)).toBe('a');
   });
 
   it('respects the char budget inside searchRepo', async () => {

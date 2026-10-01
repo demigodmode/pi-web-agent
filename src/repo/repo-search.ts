@@ -4,6 +4,7 @@ import { throwIfAborted } from '../abort.js';
 import { MAX_SCANNED_BYTES, MAX_SEARCH_MS, REPO_MAX_FILES } from './limits.js';
 import { resolveInside } from './repo-overview.js';
 import { queryTerms, type QueryTerm } from './repo-terms.js';
+import { safeSlice } from './safe-slice.js';
 
 export type RepoSearchExcerpt = { startLine: number; endLine: number; text: string };
 export type RepoSearchFile = { path: string; score: number; excerpts: RepoSearchExcerpt[] };
@@ -173,7 +174,8 @@ export function fitToBudget(files: RepoSearchFile[], charBudget: number): RepoSe
         continue;
       }
       const lineBreak = excerpt.text.lastIndexOf('\n', room - 1);
-      const text = excerpt.text.slice(0, lineBreak > 0 ? lineBreak : room);
+      const text = safeSlice(excerpt.text, lineBreak > 0 ? lineBreak : room);
+      if (text.length === 0) break;
       excerpts.push({ startLine: excerpt.startLine, endLine: excerpt.startLine + text.split('\n').length - 1, text });
       used += text.length;
       break;

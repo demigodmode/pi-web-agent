@@ -9,6 +9,7 @@ import { fetchRepoMeta, type RepoMeta } from './repo-meta.js';
 import { readRepoOverview, type RepoOverview } from './repo-overview.js';
 import { searchRepo, type RepoSearchOptions, type RepoSearchResult } from './repo-search.js';
 import { parseRepoUrl } from './repo-url.js';
+import { safeSlice } from './safe-slice.js';
 import { repoFailure, type RepoFailure } from './types.js';
 
 export type RepoResearchError = { code: string; message: string; failure: FailureInfo };
@@ -71,7 +72,7 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
   let shortened = '';
   while (low <= high) {
     const middle = Math.floor((low + high) / 2);
-    const candidate = line.slice(0, middle);
+    const candidate = safeSlice(line, middle);
     if (excerptSection(meta, path, excerpt.startLine, candidate).length <= maxChars) {
       shortened = candidate;
       low = middle + 1;
@@ -92,7 +93,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
     `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.` +
       (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '');
   let truncated = header.length > contentCap || search.partial === true;
-  const sections = [header.slice(0, contentCap)];
+  const sections = [safeSlice(header, contentCap)];
   let length = sections[0].length;
   let exhausted = false;
 
@@ -126,8 +127,11 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
       return;
     }
     if (available > 0) {
-      sections.push(section.slice(0, available));
-      length += available + 2;
+      const shortened = safeSlice(section, available);
+      if (shortened.length > 0) {
+        sections.push(shortened);
+        length += shortened.length + 2;
+      }
     }
     truncated = true;
   };
@@ -136,7 +140,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
   }
   // The README only fills in when the code search found little (#70).
   if (search.files.length < 2 && overview) {
-    if (overview.readme) appendPlain(`${overview.readmePath}:\n${overview.readme.slice(0, README_EXCERPT_CHARS)}`);
+    if (overview.readme) appendPlain(`${overview.readmePath}:\n${safeSlice(overview.readme, README_EXCERPT_CHARS)}`);
     if (search.files.length === 0) {
       const listing = overview.entries.map((entry) => (entry.dir ? `[dir] ${entry.name}` : entry.name)).join('\n');
       appendPlain(`Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`);
