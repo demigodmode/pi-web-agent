@@ -43,16 +43,19 @@ function formatSize(sizeKb: number): string {
 
 function statusFailure(status: number, headers: Headers, name: string, tokenSent: boolean): RepoFailure {
   if (status === 404) {
+    if (tokenSent) {
+      return repoFailure('REPO_NOT_FOUND', `${name} wasn't found, or the token doesn't have access to it.`, 'bad_request');
+    }
     return repoFailure(
       'REPO_NOT_FOUND',
       `${name} wasn't found, or it's private and there's no access. For private repos run \`gh auth login\` or set GITHUB_TOKEN.`,
-      tokenSent ? 'bad_request' : 'auth_failed'
+      'auth_failed'
     );
   }
   if (status === 401) {
     return repoFailure('REPO_AUTH_FAILED', 'GitHub rejected the token; check GITHUB_TOKEN or run `gh auth login` again.', 'auth_failed');
   }
-  if (status === 429 || (status === 403 && headers.get('x-ratelimit-remaining') === '0')) {
+  if (status === 429 || (status === 403 && (headers.get('x-ratelimit-remaining') === '0' || headers.has('retry-after')))) {
     return repoFailure('REPO_RATE_LIMITED', 'GitHub rate limit hit; set GITHUB_TOKEN or sign in with `gh` for a higher limit.', 'rate_limited');
   }
   if (status === 403) return repoFailure('REPO_FORBIDDEN', `GitHub refused access to ${name}.`, 'auth_failed');
@@ -97,6 +100,7 @@ export async function fetchRepoMeta(target: RepoTarget, deps: RepoMetaDeps): Pro
   const timeoutMs = deps.timeoutMs ?? REPO_META_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   const budget = requestSignal(deps.signal, timeoutMs);
+  const tokenSent = Boolean(deps.token);
   const timedOut = () => repoFailure('REPO_META_TIMEOUT', `GitHub didn't answer within ${Math.round(timeoutMs / 1000)}s.`, 'transient');
   const base = `${API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
@@ -106,13 +110,13 @@ export async function fetchRepoMeta(target: RepoTarget, deps: RepoMetaDeps): Pro
         headers: {
           Accept: accept,
           'User-Agent': 'pi-web-agent',
-          ...(deps.token ? { Authorization: `Bearer ${deps.token}` } : {})
+          ...(tokenSent ? { Authorization: `Bearer ${deps.token}` } : {})
         },
         signal: budget
       });
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
-        throw new MetaStop(statusFailure(response.status, response.headers, name, deps.token !== undefined));
+        throw new MetaStop(statusFailure(response.status, response.headers, name, tokenSent));
       }
       return await response.text();
     } catch (error) {

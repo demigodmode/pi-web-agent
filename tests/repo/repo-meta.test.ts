@@ -68,9 +68,39 @@ describe('repo metadata', () => {
     });
   });
 
+  it('does not suggest GitHub login after a token-authenticated 404', async () => {
+    const result = await fetchRepoMeta(
+      { owner: 'acme', repo: 'secret' },
+      { fetchImpl: githubApi({ status: 404 }).fetchImpl, token: 'sekret', git: {} }
+    );
+    expect(result).toEqual({
+      ok: false,
+      failure: {
+        code: 'REPO_NOT_FOUND',
+        message: "acme/secret wasn't found, or the token doesn't have access to it.",
+        failure: { kind: 'bad_request' }
+      }
+    });
+  });
+
+  it('treats an empty token as no GitHub login', async () => {
+    const api = githubApi({ status: 404 });
+    const result = await fetchRepoMeta({ owner: 'acme', repo: 'secret' }, { fetchImpl: api.fetchImpl, token: '', git: {} });
+    expect(api.calls[0].auth).toBeNull();
+    expect(result).toEqual({
+      ok: false,
+      failure: {
+        code: 'REPO_NOT_FOUND',
+        message: "acme/secret wasn't found, or it's private and there's no access. For private repos run `gh auth login` or set GITHUB_TOKEN.",
+        failure: { kind: 'auth_failed' }
+      }
+    });
+  });
+
   it.each([
     [401, {}, 'auth_failed', 'REPO_AUTH_FAILED'],
     [403, { 'x-ratelimit-remaining': '0' }, 'rate_limited', 'REPO_RATE_LIMITED'],
+    [403, { 'retry-after': '60' }, 'rate_limited', 'REPO_RATE_LIMITED'],
     [429, {}, 'rate_limited', 'REPO_RATE_LIMITED'],
     [403, {}, 'auth_failed', 'REPO_FORBIDDEN'],
     [502, {}, 'transient', 'REPO_META_FAILED']
