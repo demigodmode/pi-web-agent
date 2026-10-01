@@ -104,10 +104,13 @@ function proxyCredentialValues(proxyUrl: string | undefined): string[] {
         return [value];
       }
     };
-    const userinfo = url.username && url.password ? `${url.username}:${url.password}@` : '';
+    const userinfo =
+      url.username || url.password
+        ? [`${url.username}:${url.password}@`, ...(url.username && !url.password ? [`${url.username}@`] : [])]
+        : [];
     return [
       ...rawAndDecoded(proxyUrl),
-      ...(userinfo ? rawAndDecoded(userinfo) : []),
+      ...userinfo.flatMap(rawAndDecoded),
       ...[url.username, url.password].flatMap(rawAndDecoded).filter((value) => value.length >= 4)
     ].filter(Boolean);
   } catch {

@@ -470,4 +470,28 @@ describe('git runner', () => {
       expect(result.failure.message).not.toContain('uu:longpass@');
     }
   });
+
+  it('redacts short password-only proxy userinfo without garbling ordinary text', async () => {
+    const proxyUrl = 'http://:p%40@proxy.local:3128/';
+    vi.stubEnv('FAKE_GIT_ERROR_TEXT', 'fatal: proxy unavailable; credential :p%40@ decoded :p@@');
+    const result = await runGit(['fetch'], {
+      timeoutMs: 10_000,
+      env: { proxyUrl, ...fakeGit(FAKE_GIT_ERROR) }
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.message).toBe('proxy unavailable; credential *** decoded ***');
+  });
+
+  it('redacts short username-only proxy authority and colon userinfo forms', async () => {
+    const proxyUrl = 'http://u@proxy.local:3128/';
+    vi.stubEnv('FAKE_GIT_ERROR_TEXT', 'fatal: vacuum unavailable; credential u@ colon u:@');
+    const result = await runGit(['fetch'], {
+      timeoutMs: 10_000,
+      env: { proxyUrl, ...fakeGit(FAKE_GIT_ERROR) }
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.message).toBe('vacuum unavailable; credential *** colon ***');
+  });
 });
