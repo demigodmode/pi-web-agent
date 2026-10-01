@@ -83,6 +83,7 @@ export async function researchRepo(url: string, { query: _query, signal }: { que
     let overview: RepoOverview | undefined;
     try {
       overview = await readRepoOverview(lease.dir, { pathScope: meta.pathScope, signal: readSignal });
+      throwIfAborted(readSignal);
     } catch (error) {
       if (signal?.aborted) throw abortError();
       if (lease.signal.aborted) return fail(repoFailure('REPO_CACHE_CLOSED', 'The session is ending, so the repo was not searched.', 'transient'));

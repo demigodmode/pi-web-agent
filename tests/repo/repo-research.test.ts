@@ -1,7 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
 import { createRepoCache, type RepoCache } from '../../src/repo/repo-cache.js';
 import { resolveInside } from '../../src/repo/repo-overview.js';
 import { researchRepo, type RepoResearchDeps } from '../../src/repo/repo-research.js';
@@ -89,6 +95,65 @@ describe('researchRepo', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(researchRepo('https://github.com/acme/widget', { query: 'q', signal: controller.signal }, deps)).rejects.toThrow('Operation aborted');
+  });
+
+  it('throws and releases the lease when the caller cancels during the final README read', async () => {
+    const { cache, deps } = setup({ 'README.md': 'root' });
+    const { readFile: originalReadFile } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let finalReadStarted!: () => void;
+    const finalRead = new Promise<void>((resolve) => { finalReadStarted = resolve; });
+    const readFile = vi.mocked(fsPromises.readFile).mockImplementation(async (...args) => {
+      const contents = await originalReadFile(...args);
+      if (!String(args[0]).endsWith('README.md')) return contents;
+      finalReadStarted();
+      await readGate;
+      return contents;
+    });
+    const controller = new AbortController();
+    const run = researchRepo('https://github.com/acme/widget', { query: 'q', signal: controller.signal }, deps);
+    try {
+      await finalRead;
+      controller.abort();
+      releaseRead();
+      await expect(run).rejects.toThrow('Operation aborted');
+      await expect(cache.close()).resolves.toBeUndefined();
+      await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      releaseRead();
+      readFile.mockReset();
+      await cache.close();
+    }
+  });
+
+  it('returns a cache-closed failure and awaits cleanup when shutdown starts during the final README read', async () => {
+    const { cache, deps } = setup({ 'README.md': 'root' });
+    const { readFile: originalReadFile } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let finalReadStarted!: () => void;
+    const finalRead = new Promise<void>((resolve) => { finalReadStarted = resolve; });
+    const readFile = vi.mocked(fsPromises.readFile).mockImplementation(async (...args) => {
+      const contents = await originalReadFile(...args);
+      if (!String(args[0]).endsWith('README.md')) return contents;
+      finalReadStarted();
+      await readGate;
+      return contents;
+    });
+    const run = researchRepo('https://github.com/acme/widget', { query: 'q' }, deps);
+    try {
+      await finalRead;
+      const close = cache.close();
+      releaseRead();
+      await expect(run).resolves.toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_CACHE_CLOSED', failure: { kind: 'transient' } }) });
+      await expect(close).resolves.toBeUndefined();
+      await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      releaseRead();
+      readFile.mockReset();
+      await cache.close();
+    }
   });
 
   it('rejects something that is not a repo link', async () => {

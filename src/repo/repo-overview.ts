@@ -41,8 +41,8 @@ export async function readRepoOverview(
   { pathScope, signal }: { pathScope?: string; signal?: AbortSignal }
 ): Promise<RepoOverview | undefined> {
   const dir = await resolveInside(root, pathScope);
-  if (!dir) return undefined;
   throwIfAborted(signal);
+  if (!dir) return undefined;
 
   const items = (await readdir(dir, { withFileTypes: true }))
     .filter((item) => item.name !== '.git' && !item.isSymbolicLink())
@@ -58,9 +58,13 @@ export async function readRepoOverview(
     readmeName = await findReadme(base);
   }
   throwIfAborted(signal);
-  if (!readmeName) return { entries };
+  if (!readmeName) {
+    throwIfAborted(signal);
+    return { entries };
+  }
 
   const readmePath = join(readmeDir, readmeName).slice(base.length + 1);
   const readme = (await readFile(join(readmeDir, readmeName), 'utf8')).slice(0, READER_TEXT_CAP);
+  throwIfAborted(signal);
   return { readmePath, readme, entries };
 }
