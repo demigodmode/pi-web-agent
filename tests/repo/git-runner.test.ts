@@ -375,18 +375,37 @@ describe('git runner', () => {
     vi.stubEnv('FAKE_GIT_STARTED_FILE', startedFile);
     const env = fakeGit(FAKE_GIT_SLEEP);
     await expect(runGit(['--version'], { timeoutMs: 10_000, env })).resolves.toMatchObject({ ok: true });
-    const running = runGit(['fetch'], { timeoutMs: 2_000, env });
-    await waitForSleepingGit(startedFile);
-    const pids = readPids(pidFile)!;
-    expect(isAlive(pids.pid)).toBe(true);
-    const result = await running;
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.code).toBe('GIT_TIMEOUT');
-      expect(result.failure.failure.kind).toBe('transient');
+    const controller = new AbortController();
+    vi.useFakeTimers();
+    const started = Date.now();
+    const running = runGit(['fetch'], { timeoutMs: 2_000, signal: controller.signal, env });
+    try {
+      await waitForSleepingGit(startedFile);
+      const pids = readPids(pidFile)!;
+      expect(isAlive(pids.pid)).toBe(true);
+      let settled = false;
+      void running.then(
+        () => (settled = true),
+        () => (settled = true)
+      );
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      const result = await running;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.failure.code).toBe('GIT_TIMEOUT');
+        expect(result.failure.failure.kind).toBe('transient');
+      }
+      expect(Date.now() - started).toBe(2_000);
+      expect(isAlive(pids.pid)).toBe(false);
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+    } finally {
+      vi.useRealTimers();
+      controller.abort();
+      await Promise.allSettled([running]);
     }
-    expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
   }, 30_000);
 
   it('throws the abort error on cancel, after killing the group', async () => {
