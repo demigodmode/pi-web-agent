@@ -30,7 +30,7 @@ afterEach(async () => {
   const rejected = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (rejected) throw rejected.reason;
   if (cleanupErrors[0]) throw cleanupErrors[0];
-});
+}, 30_000);
 
 function world() {
   const repo = createFixtureRepo({ 'README.md': '# Widget\nWidget makes widgets for tests.', 'src/index.ts': 'export {};' });

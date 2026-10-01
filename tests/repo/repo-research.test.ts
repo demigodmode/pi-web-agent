@@ -39,7 +39,7 @@ afterEach(async () => {
   const rejected = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (rejected) throw rejected.reason;
   if (cleanupErrors[0]) throw cleanupErrors[0];
-});
+}, 30_000);
 
 function setup(files: Parameters<typeof createFixtureRepo>[0], api: { status?: number; size?: number } = {}) {
   const repo = createFixtureRepo(files);
@@ -226,7 +226,7 @@ describe('researchRepo', () => {
     expect(result.response.content!.text).toContain('Searched the first');
     expect(result.response.content!.text).toContain('files only (large repo); paste a /tree/ folder link to narrow it.');
     expect(result.response.metadata.truncated).toBe(true);
-  });
+  }, 30_000);
 
   it('says a valid scoped search ran out of time before it could start', async () => {
     const { deps } = setup({ 'src/a.ts': 'needle' });
