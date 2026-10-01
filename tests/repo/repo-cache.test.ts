@@ -61,7 +61,6 @@ const cache = (options: Parameters<typeof createRepoCache>[0]) => {
 afterEach(async () => {
   await Promise.all(caches.splice(0).map((c) => c.close()));
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
-  rmGate.reset();
 });
 
 function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSignal[] } {
@@ -195,6 +194,7 @@ describe('repo cache', () => {
   });
 
   it('waits for an evicted clone to be removed before recreating its directory', async () => {
+    rmGate.reset();
     const c = cache({ baseDir: baseDir(), maxIdleBytes: 0 });
     const first = await c.acquire('same-key', fakeClone(10));
     if (!first.ok) throw new Error('acquire failed');
@@ -220,6 +220,7 @@ describe('repo cache', () => {
       rmGate.release();
       retry ??= await fresh;
       if (retry.ok) retry.lease.release();
+      rmGate.reset();
     }
   });
 
