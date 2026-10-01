@@ -123,6 +123,36 @@ describe('repo cache', () => {
     expect(again.calls).toHaveLength(1);
   });
 
+  it('removes a clone that finishes after its sole caller cancels', async () => {
+    const c = cache({ baseDir: baseDir(), maxIdleBytes: 0 });
+    const written = deferred();
+    const finish = deferred();
+    let cancelledDir = '';
+    const first: CloneFn = async (dest) => {
+      cancelledDir = dest;
+      await mkdir(dest, { recursive: true });
+      await writeFile(join(dest, 'data'), 'x'.repeat(64));
+      written.resolve();
+      await finish.promise;
+      return { ok: true, sha: 'a'.repeat(40) };
+    };
+    const controller = new AbortController();
+    const pending = c.acquire('k', first, controller.signal);
+    await written.promise;
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+    finish.resolve();
+    await vi.waitFor(() => expect(existsSync(cancelledDir)).toBe(false));
+
+    const fresh = fakeClone();
+    const retry = await c.acquire('k', fresh);
+    try {
+      expect(fresh.calls).toHaveLength(1);
+    } finally {
+      if (retry.ok) retry.lease.release();
+    }
+  });
+
   it('never evicts a leased clone and evicts idle ones oldest first', async () => {
     let clock = 0;
     const c = cache({ baseDir: baseDir(), maxIdleBytes: 250, now: () => ++clock });

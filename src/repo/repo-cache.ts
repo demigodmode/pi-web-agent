@@ -50,6 +50,7 @@ type Entry = {
 
 const FOLDER = /^([0-9a-z]+)-(\d+)-([0-9a-f]+)$/;
 const closedFailure = () => repoFailure('REPO_CACHE_CLOSED', 'The session is ending, so the repo was not searched.', 'transient');
+const cancelledCloneFailure = () => repoFailure('REPO_CLONE_CANCELLED', 'The clone was cancelled.', 'transient');
 
 function currentBootId(): string {
   try {
@@ -208,12 +209,17 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
           await remove(entry.dir);
           return result;
         }
-        if (closed) {
+        if (closed || controller.signal.aborted) {
           entries.delete(key);
           await remove(entry.dir);
-          return { ok: false, failure: closedFailure() };
+          return { ok: false, failure: closed ? closedFailure() : cancelledCloneFailure() };
         }
         entry.size = await folderSize(entry.dir);
+        if (closed || controller.signal.aborted) {
+          entries.delete(key);
+          await remove(entry.dir);
+          return { ok: false, failure: closed ? closedFailure() : cancelledCloneFailure() };
+        }
         entry.sha = result.sha;
         entry.state = 'ready';
         return { ok: true };
@@ -221,7 +227,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
         entries.delete(key);
         await remove(entry.dir);
         if (closed) return { ok: false, failure: closedFailure() };
-        if (controller.signal.aborted) return { ok: false, failure: repoFailure('REPO_CLONE_CANCELLED', 'The clone was cancelled.', 'transient') };
+        if (controller.signal.aborted) return { ok: false, failure: cancelledCloneFailure() };
         return { ok: false, failure: repoFailure('REPO_CACHE_FAILED', `Couldn't prepare the clone: ${error instanceof Error ? error.message : String(error)}`, 'transient') };
       }
     })();
