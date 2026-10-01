@@ -97,15 +97,19 @@ function proxyCredentialValues(proxyUrl: string | undefined): string[] {
   if (!proxyUrl) return [];
   try {
     const url = new URL(proxyUrl);
-    return [url.username, url.password]
-      .filter((value) => value.length > 0)
-      .flatMap((value) => {
-        try {
-          return [value, decodeURIComponent(value)];
-        } catch {
-          return [value];
-        }
-      });
+    const rawAndDecoded = (value: string): string[] => {
+      try {
+        return [value, decodeURIComponent(value)];
+      } catch {
+        return [value];
+      }
+    };
+    const userinfo = url.username && url.password ? `${url.username}:${url.password}@` : '';
+    return [
+      ...rawAndDecoded(proxyUrl),
+      ...(userinfo ? rawAndDecoded(userinfo) : []),
+      ...[url.username, url.password].filter((value) => value.length >= 4).flatMap(rawAndDecoded)
+    ].filter(Boolean);
   } catch {
     return [];
   }

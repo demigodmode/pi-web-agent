@@ -436,4 +436,21 @@ describe('git runner', () => {
       expect(result.failure.message).not.toContain('pa$s');
     }
   });
+
+  it('redacts short proxy userinfo without garbling an ordinary diagnostic', async () => {
+    const proxyUrl = 'http://u:p%40@proxy.local:3128/';
+    vi.stubEnv('FAKE_GIT_ERROR_TEXT', `fatal: unable to reach proxy ${proxyUrl}; credential u:p%40@ decoded u:p@@`);
+    const result = await runGit(['fetch'], {
+      timeoutMs: 10_000,
+      env: { proxyUrl, ...fakeGit(FAKE_GIT_ERROR) }
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure.message).toBe('unable to reach proxy ***; credential *** decoded ***');
+      expect(result.failure.message).not.toContain(proxyUrl);
+      expect(result.failure.message).not.toContain('u:p%40@');
+      expect(result.failure.message).not.toContain('u:p@@');
+    }
+  });
 });

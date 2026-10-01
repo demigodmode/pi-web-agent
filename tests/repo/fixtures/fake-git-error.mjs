@@ -13,4 +13,5 @@ for (let index = 0; index < Number(process.env.GIT_CONFIG_COUNT); index += 1) {
     process.stderr.write(`${process.env[`GIT_CONFIG_VALUE_${index}`]}\n`);
   }
 }
+if (process.env.FAKE_GIT_ERROR_TEXT) process.stderr.write(`${process.env.FAKE_GIT_ERROR_TEXT}\n`);
 process.exit(1);
