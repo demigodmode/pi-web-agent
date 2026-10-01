@@ -12,6 +12,7 @@ import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
 import type { WebExploreResponse } from './types.js';
 import { getUpdateChangelogNotice } from './changelog-notice.js';
+import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
 
 /**
@@ -73,6 +74,10 @@ export default function extension(pi: ExtensionAPI) {
 
   const injectedWebExplore = (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool;
   type Workflow = ReturnType<typeof createResearchWorkflow>;
+  // Clones live for the Pi session (#72): the extension owns the cache, not a backend set,
+  // so a backend config change keeps them and session_shutdown removes them.
+  const makeRepoCache = (pi as ExtensionAPI & { __repoCacheFactory?: () => RepoCache }).__repoCacheFactory ?? (() => createRepoCache());
+  let repoCache = makeRepoCache();
 
   let cachedBackendKey: string | undefined;
   let cachedWorkflow: Workflow | undefined;
@@ -81,9 +86,13 @@ export default function extension(pi: ExtensionAPI) {
   const activeRuns = new Map<Workflow, number>();
   const retiring = new Set<Workflow>();
 
-  const closeWorkflow = (workflow: Workflow) => {
+  const closeWorkflowNow = (workflow: Workflow): Promise<void> => {
     retiring.delete(workflow);
-    void Promise.resolve((workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+    return Promise.resolve((workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+  };
+
+  const closeWorkflow = (workflow: Workflow) => {
+    void closeWorkflowNow(workflow);
   };
 
   const retire = (workflow: Workflow) => {
@@ -119,7 +128,7 @@ export default function extension(pi: ExtensionAPI) {
     if (!cachedWebExplore || cachedBackendKey !== backendKey) {
       if (cachedWorkflow) retire(cachedWorkflow);
       cachedBackendKey = backendKey;
-      cachedWorkflow = createResearchWorkflow({ backendConfig });
+      cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache });
       cachedWebExplore = createWebExploreTool({ explore: leased(cachedWorkflow) });
     }
 
@@ -131,7 +140,16 @@ export default function extension(pi: ExtensionAPI) {
     cachedWorkflow = undefined;
     cachedWebExplore = undefined;
     cachedBackendKey = undefined;
-    if (workflow) retire(workflow);
+    // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
+    const oldCache = repoCache;
+    repoCache = makeRepoCache();
+    const closing: Array<Promise<unknown>> = [oldCache.close()];
+    if (workflow) {
+      // An idle workflow is closed and awaited now; a running one closes when its run settles.
+      if ((activeRuns.get(workflow) ?? 0) === 0) closing.push(closeWorkflowNow(workflow));
+      else retiring.add(workflow);
+    }
+    await Promise.allSettled(closing);
   });
 
   pi.on('session_start', async (_event, ctx) => {
