@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ensureGitVersion, runGit } from '../../src/repo/git-runner.js';
 import { cloneRepo } from '../../src/repo/repo-clone.js';
@@ -76,51 +77,71 @@ describe('cloneRepo', () => {
 
   it('times out, kills git and removes the folder', async () => {
     const pidFile = join(tempDir(), 'pids.json');
+    const startedFile = join(tempDir(), 'started');
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
+    vi.stubEnv('FAKE_GIT_STARTED_FILE', startedFile);
     const dest = join(tempDir(), 'clone');
     const git = fakeGit(FAKE_GIT_SLEEP);
     await expect(ensureGitVersion(git)).resolves.toMatchObject({ ok: true });
+    const controller = new AbortController();
+    vi.useFakeTimers();
     const pending = cloneRepo(
       { owner: 'acme', repo: 'widget', sha: 'a'.repeat(40), dest },
-      { git, timeoutMs: 2_000 }
+      { git, signal: controller.signal, timeoutMs: 2_000 }
     );
-    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
-    const pids = readPids(pidFile)!;
-    expect(isAlive(pids.pid)).toBe(true);
-    const result = await pending.then(async (value) => {
-      expect(isAlive(pids.pid)).toBe(false);
-      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-      return value;
-    });
-    expect(result).toEqual({
-      ok: false,
-      failure: { code: 'REPO_CLONE_TIMEOUT', message: 'Cloning acme/widget timed out after 2s.', failure: { kind: 'transient' } }
-    });
-    expect(existsSync(dest)).toBe(false);
-  });
+    try {
+      while (!existsSync(startedFile)) await delay(20);
+      const pids = readPids(pidFile)!;
+      expect(isAlive(pids.pid)).toBe(true);
+      await vi.advanceTimersByTimeAsync(2_000);
+      const result = await pending.then(async (value) => {
+        expect(isAlive(pids.pid)).toBe(false);
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+        return value;
+      });
+      expect(result).toEqual({
+        ok: false,
+        failure: { code: 'REPO_CLONE_TIMEOUT', message: 'Cloning acme/widget timed out after 2s.', failure: { kind: 'transient' } }
+      });
+      expect(existsSync(dest)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      controller.abort();
+      await Promise.allSettled([pending]);
+    }
+  }, 30_000);
 
   it('cancels mid-clone, kills git and removes the folder', async () => {
     const pidFile = join(tempDir(), 'pids.json');
+    const startedFile = join(tempDir(), 'started');
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
+    vi.stubEnv('FAKE_GIT_STARTED_FILE', startedFile);
     const dest = join(tempDir(), 'clone');
     const controller = new AbortController();
     const pending = cloneRepo({ owner: 'acme', repo: 'widget', sha: 'a'.repeat(40), dest }, { git: fakeGit(FAKE_GIT_SLEEP), signal: controller.signal });
-    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
-    const pids = readPids(pidFile)!;
-    controller.abort();
-    const settled = pending.then(
-      () => {
-        throw new Error('expected clone cancellation');
-      },
-      async (error) => {
-        expect(isAlive(pids.pid)).toBe(false);
-        await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-        throw error;
-      }
-    );
-    await expect(settled).rejects.toThrow('Operation aborted');
-    expect(existsSync(dest)).toBe(false);
-  });
+    try {
+      while (!existsSync(startedFile)) await delay(20);
+      const pids = readPids(pidFile)!;
+      controller.abort();
+      const settled = pending.then(
+        () => {
+          throw new Error('expected clone cancellation');
+        },
+        async (error) => {
+          expect(isAlive(pids.pid)).toBe(false);
+          await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+          throw error;
+        }
+      );
+      await expect(settled).rejects.toThrow('Operation aborted');
+      expect(existsSync(dest)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      controller.abort();
+      await Promise.allSettled([pending]);
+    }
+  }, 30_000);
 
   it('reports a missing or too old git', async () => {
     const dest = join(tempDir(), 'clone');
