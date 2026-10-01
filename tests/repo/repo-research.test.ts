@@ -150,6 +150,15 @@ describe('researchRepo', () => {
     }
   });
 
+  it('bounds a long search-term header without cutting the response cap', async () => {
+    const { deps } = setup({ 'src/refresh.ts': 'export const needle = true;' });
+    const result = await researchRepo('https://github.com/acme/widget', { query: `${'z'.repeat(READER_TEXT_CAP + 100)} needle` }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.content!.text.length).toBeLessThanOrEqual(READER_TEXT_CAP);
+    expect(result.response.metadata.truncated).toBe(true);
+  });
+
   it('reuses the clone on a follow-up question', async () => {
     const { deps } = setup({ 'README.md': 'hi' });
     await researchRepo('https://github.com/acme/widget', { query: 'a' }, deps);

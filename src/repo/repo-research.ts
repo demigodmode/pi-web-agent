@@ -81,12 +81,12 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
 
 function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: RepoOverview | undefined, reused: boolean): WebFetchResponse {
   const name = `${meta.owner}/${meta.repo}`;
-  const sections = [
+  const header =
     `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.` +
-      (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '')
-  ];
+      (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '');
+  let truncated = header.length > READER_TEXT_CAP;
+  const sections = [header.slice(0, READER_TEXT_CAP)];
   let length = sections[0].length;
-  let truncated = false;
   let exhausted = false;
 
   for (let index = 0; !exhausted && search.files.some((file) => file.excerpts[index]); index++) {
