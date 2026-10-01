@@ -3,9 +3,9 @@ import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runGit } from '../../src/repo/git-runner.js';
+import { ensureGitVersion, runGit } from '../../src/repo/git-runner.js';
 import { cloneRepo } from '../../src/repo/repo-clone.js';
-import { createFixtureRepo, FAKE_GIT_OLD, FAKE_GIT_SLEEP, fakeGit, readPids, type FixtureRepo } from './git-fixtures.js';
+import { createFixtureRepo, FAKE_GIT_OLD, FAKE_GIT_SLEEP, fakeGit, isAlive, readPids, type FixtureRepo } from './git-fixtures.js';
 
 const fixtures: FixtureRepo[] = [];
 const temps: string[] = [];
@@ -78,16 +78,25 @@ describe('cloneRepo', () => {
     const pidFile = join(tempDir(), 'pids.json');
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
     const dest = join(tempDir(), 'clone');
-    const result = await cloneRepo(
+    const git = fakeGit(FAKE_GIT_SLEEP);
+    await expect(ensureGitVersion(git)).resolves.toMatchObject({ ok: true });
+    const pending = cloneRepo(
       { owner: 'acme', repo: 'widget', sha: 'a'.repeat(40), dest },
-      { git: fakeGit(FAKE_GIT_SLEEP), timeoutMs: 400 }
+      { git, timeoutMs: 2_000 }
     );
+    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
+    const pids = readPids(pidFile)!;
+    expect(isAlive(pids.pid)).toBe(true);
+    const result = await pending.then(async (value) => {
+      expect(isAlive(pids.pid)).toBe(false);
+      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+      return value;
+    });
     expect(result).toEqual({
       ok: false,
-      failure: { code: 'REPO_CLONE_TIMEOUT', message: 'Cloning acme/widget timed out after 0s.', failure: { kind: 'transient' } }
+      failure: { code: 'REPO_CLONE_TIMEOUT', message: 'Cloning acme/widget timed out after 2s.', failure: { kind: 'transient' } }
     });
     expect(existsSync(dest)).toBe(false);
-    expect(readPids(pidFile)).toBeDefined();
   });
 
   it('cancels mid-clone, kills git and removes the folder', async () => {
@@ -97,8 +106,19 @@ describe('cloneRepo', () => {
     const controller = new AbortController();
     const pending = cloneRepo({ owner: 'acme', repo: 'widget', sha: 'a'.repeat(40), dest }, { git: fakeGit(FAKE_GIT_SLEEP), signal: controller.signal });
     await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
+    const pids = readPids(pidFile)!;
     controller.abort();
-    await expect(pending).rejects.toThrow('Operation aborted');
+    const settled = pending.then(
+      () => {
+        throw new Error('expected clone cancellation');
+      },
+      async (error) => {
+        expect(isAlive(pids.pid)).toBe(false);
+        await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+        throw error;
+      }
+    );
+    await expect(settled).rejects.toThrow('Operation aborted');
     expect(existsSync(dest)).toBe(false);
   });
 
