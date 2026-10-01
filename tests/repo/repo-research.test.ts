@@ -17,10 +17,28 @@ import { createFixtureRepo, type FixtureRepo } from './git-fixtures.js';
 const fixtures: FixtureRepo[] = [];
 const caches: RepoCache[] = [];
 const temps: string[] = [];
+const readGateReleases: Array<() => void> = [];
 afterEach(async () => {
-  await Promise.all(caches.splice(0).map((c) => c.close()));
-  for (const f of fixtures.splice(0)) f.cleanup();
-  for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const release of readGateReleases.splice(0)) release();
+  const closed = await Promise.allSettled(caches.splice(0).map((c) => c.close()));
+  const cleanupErrors: unknown[] = [];
+  for (const f of fixtures.splice(0)) {
+    try {
+      f.cleanup();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  for (const d of temps.splice(0)) {
+    try {
+      rmSync(d, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  const rejected = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  if (cleanupErrors[0]) throw cleanupErrors[0];
 });
 
 function setup(files: Parameters<typeof createFixtureRepo>[0], api: { status?: number; size?: number } = {}) {
@@ -279,6 +297,7 @@ describe('researchRepo', () => {
     const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    readGateReleases.push(releaseRead);
     let finalReadStarted!: () => void;
     const finalRead = new Promise<void>((resolve) => { finalReadStarted = resolve; });
     let readmeClosed = false;
@@ -320,6 +339,7 @@ describe('researchRepo', () => {
     const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    readGateReleases.push(releaseRead);
     let finalReadStarted!: () => void;
     const finalRead = new Promise<void>((resolve) => { finalReadStarted = resolve; });
     let readmeClosed = false;
@@ -360,6 +380,7 @@ describe('researchRepo', () => {
     const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    readGateReleases.push(releaseRead);
     let sourceReadStarted!: () => void;
     const sourceRead = new Promise<void>((resolve) => { sourceReadStarted = resolve; });
     let sourceClosed = false;
@@ -401,6 +422,7 @@ describe('researchRepo', () => {
     const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    readGateReleases.push(releaseRead);
     let sourceReadStarted!: () => void;
     const sourceRead = new Promise<void>((resolve) => { sourceReadStarted = resolve; });
     let sourceClosed = false;

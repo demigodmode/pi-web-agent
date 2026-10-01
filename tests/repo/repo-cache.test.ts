@@ -132,6 +132,7 @@ vi.mock('../../src/abort.js', async (importOriginal) => {
 
 const temps: string[] = [];
 const caches: RepoCache[] = [];
+const deferredReleases: Array<() => void> = [];
 const baseDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'pwa-cache-'));
   temps.push(dir);
@@ -143,9 +144,27 @@ const cache = (options: Parameters<typeof createRepoCache>[0]) => {
   return created;
 };
 afterEach(async () => {
-  await Promise.all(caches.splice(0).map((c) => c.close()));
-  for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
+  raceGate.release();
+  rmGate.release();
+  for (const release of deferredReleases.splice(0)) release();
+  tmpdirGate.reset();
+  lstatUidGate.reset();
+
+  const closed = await Promise.allSettled(caches.splice(0).map((c) => c.close()));
+  const cleanupErrors: unknown[] = [];
+  for (const dir of temps.splice(0)) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
   raceGate.reset();
+  rmGate.reset();
+
+  const rejected = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  if (cleanupErrors[0]) throw cleanupErrors[0];
 });
 
 function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSignal[] } {
@@ -169,6 +188,7 @@ function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSi
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => (resolve = r));
+  deferredReleases.push(resolve);
   return { promise, resolve };
 }
 

@@ -11,9 +11,25 @@ const fixtures: FixtureRepo[] = [];
 const caches: RepoCache[] = [];
 const temps: string[] = [];
 afterEach(async () => {
-  await Promise.all(caches.splice(0).map((c) => c.close()));
-  for (const f of fixtures.splice(0)) f.cleanup();
-  for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
+  const closed = await Promise.allSettled(caches.splice(0).map((c) => c.close()));
+  const cleanupErrors: unknown[] = [];
+  for (const f of fixtures.splice(0)) {
+    try {
+      f.cleanup();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  for (const d of temps.splice(0)) {
+    try {
+      rmSync(d, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
+  const rejected = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  if (cleanupErrors[0]) throw cleanupErrors[0];
 });
 
 function world() {
