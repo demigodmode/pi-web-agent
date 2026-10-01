@@ -232,22 +232,27 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   throwIfAborted(options.signal);
   const now = options.now ?? performance.now.bind(performance);
   const searchStartedAt = now();
-  const terms = queryTerms(options.query);
-  if (await scopeHasSymlink(root, options.pathScope, options.signal)) {
-    return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
-  }
-  const start = await resolveInside(root, options.pathScope);
-  throwIfAborted(options.signal);
-  if (!start) return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
-  if (terms.length === 0) return { scopeFound: true, terms: [], files: [] };
-
-  const base = await realpath(root);
-  throwIfAborted(options.signal);
   const maxFiles = options.maxFiles ?? REPO_MAX_FILES;
   const maxScannedFiles = options.maxScannedFiles ?? MAX_SCANNED_FILES;
   const maxScannedBytes = options.maxScannedBytes ?? MAX_SCANNED_BYTES;
   const maxSearchMs = options.maxSearchMs ?? MAX_SEARCH_MS;
   const timedOut = () => now() - searchStartedAt >= maxSearchMs;
+  const terms = queryTerms(options.query);
+  const scopeHasLink = await scopeHasSymlink(root, options.pathScope, options.signal);
+  throwIfAborted(options.signal);
+  if (scopeHasLink) {
+    return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
+  }
+  if (timedOut()) return { scopeFound: true, terms: terms.map((term) => term.term), files: [] };
+  const start = await resolveInside(root, options.pathScope);
+  throwIfAborted(options.signal);
+  if (!start) return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
+  if (timedOut()) return { scopeFound: true, terms: terms.map((term) => term.term), files: [] };
+  if (terms.length === 0) return { scopeFound: true, terms: [], files: [] };
+
+  const base = await realpath(root);
+  throwIfAborted(options.signal);
+  if (timedOut()) return { scopeFound: true, terms: terms.map((term) => term.term), files: [] };
   const top: Candidate[] = [];
   let scanned = 0;
   let scannedBytes = 0;

@@ -9,13 +9,21 @@ const handleCalls = vi.hoisted(() => ({
   blockOpen: false,
   openEntered: undefined as (() => void) | undefined,
   releaseOpen: undefined as (() => void) | undefined,
-  onRead: undefined as (() => void) | undefined
+  onRead: undefined as (() => void) | undefined,
+  realpathPaths: [] as string[],
+  onRealpath: undefined as (() => void) | undefined
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...original,
+    realpath: async (...args: Parameters<typeof original.realpath>) => {
+      const result = await original.realpath(...args);
+      handleCalls.realpathPaths.push(String(args[0]));
+      handleCalls.onRealpath?.();
+      return result;
+    },
     open: async (...args: Parameters<typeof original.open>) => {
       const handle = await original.open(...args);
       if (handleCalls.blockOpen) {
@@ -51,6 +59,8 @@ afterEach(() => {
   handleCalls.openEntered = undefined;
   handleCalls.releaseOpen = undefined;
   handleCalls.onRead = undefined;
+  handleCalls.realpathPaths.length = 0;
+  handleCalls.onRealpath = undefined;
 });
 
 function tree(files: Record<string, string | Buffer | { symlink: string }>): string {
@@ -199,6 +209,23 @@ describe('searchRepo walk and scoring', () => {
       maxSearchMs: 10,
       now: () => calls++ === 0 ? 0 : 10
     });
+    expect(handleCalls.lengths).toEqual([]);
+  });
+
+  it('stops after scope resolution reaches the deadline', async () => {
+    const root = tree({ 'src/a.ts': impl });
+    let elapsed = 0;
+    handleCalls.onRealpath = () => {
+      elapsed = 10;
+    };
+    const result = await searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      pathScope: 'src',
+      maxSearchMs: 10,
+      now: () => elapsed
+    });
+    expect(result).toEqual({ scopeFound: true, terms: ['refresh', 'oauth', 'tokens'], files: [] });
+    expect(handleCalls.realpathPaths).toEqual([root]);
     expect(handleCalls.lengths).toEqual([]);
   });
 
