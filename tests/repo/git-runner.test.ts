@@ -422,4 +422,18 @@ describe('git runner', () => {
       expect(result.failure.message).not.toContain(encoded);
     }
   });
+
+  it('keeps raw and encoded proxy credentials out of git error messages without a GitHub token', async () => {
+    const proxyUrl = 'http://proxy-user:pa%24s@proxy.local:3128/';
+    const result = await runGit(['fetch'], {
+      timeoutMs: 10_000,
+      env: { proxyUrl, ...fakeGit(FAKE_GIT_ERROR) }
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure.message).not.toContain('proxy-user');
+      expect(result.failure.message).not.toContain('pa%24s');
+      expect(result.failure.message).not.toContain('pa$s');
+    }
+  });
 });

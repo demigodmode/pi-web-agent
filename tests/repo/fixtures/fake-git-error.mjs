@@ -5,6 +5,10 @@ if (args.includes('--version')) {
 }
 
 for (let index = 0; index < Number(process.env.GIT_CONFIG_COUNT); index += 1) {
+  if (process.env[`GIT_CONFIG_KEY_${index}`] === 'http.proxy') {
+    const proxyUrl = process.env[`GIT_CONFIG_VALUE_${index}`];
+    process.stderr.write(`${proxyUrl} decoded=${decodeURIComponent(proxyUrl)}\n`);
+  }
   if (process.env[`GIT_CONFIG_KEY_${index}`] === 'http.https://github.com/.extraHeader') {
     process.stderr.write(`${process.env[`GIT_CONFIG_VALUE_${index}`]}\n`);
   }

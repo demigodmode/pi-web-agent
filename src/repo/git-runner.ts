@@ -93,10 +93,31 @@ function killGroup(child: ChildProcess): void {
   }
 }
 
-function describeGitError(stderr: string, code: number | null, token: string | undefined): string {
+function proxyCredentialValues(proxyUrl: string | undefined): string[] {
+  if (!proxyUrl) return [];
+  try {
+    const url = new URL(proxyUrl);
+    return [url.username, url.password]
+      .filter((value) => value.length > 0)
+      .flatMap((value) => {
+        try {
+          return [value, decodeURIComponent(value)];
+        } catch {
+          return [value];
+        }
+      });
+  } catch {
+    return [];
+  }
+}
+
+function describeGitError(stderr: string, code: number | null, env: GitEnv): string {
   const line = stderr.split('\n').map((entry) => entry.trim()).filter(Boolean).at(-1)?.replace(/^fatal:\s*/, '');
   const message = line || `git exited with code ${code}`;
-  return token ? message.split(token).join('***').split(githubBasicCredential(token)).join('***') : message;
+  const secrets = [env.token, env.token ? githubBasicCredential(env.token) : undefined, ...proxyCredentialValues(env.proxyUrl)].filter(
+    (value): value is string => Boolean(value)
+  );
+  return secrets.reduce((redacted, secret) => redacted.split(secret).join('***'), message);
 }
 
 function spawnGit(args: string[], { cwd, signal, timeoutMs, env }: RunGitOptions): Promise<GitResult> {
@@ -161,7 +182,7 @@ function spawnGit(args: string[], { cwd, signal, timeoutMs, env }: RunGitOptions
       }
       if (spawnError) return finish({ ok: false, failure: repoFailure('GIT_FAILED', spawnError.message, 'transient') });
       if (code === 0) return finish({ ok: true, stdout });
-      finish({ ok: false, failure: repoFailure('GIT_FAILED', describeGitError(stderr, code, env.token), 'transient') });
+      finish({ ok: false, failure: repoFailure('GIT_FAILED', describeGitError(stderr, code, env), 'transient') });
     });
   });
 }
