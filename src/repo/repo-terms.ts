@@ -11,7 +11,7 @@ const STOPWORDS = new Set([
 
 function addWord(words: string[], seen: Set<string>, word: string): void {
   const normalized = word.toLowerCase();
-  if (normalized.length < 3 || /^\d+$/.test(normalized) || STOPWORDS.has(normalized) || seen.has(normalized)) return;
+  if (normalized.length < 3 || /^\p{N}+$/u.test(normalized) || STOPWORDS.has(normalized) || seen.has(normalized)) return;
   seen.add(normalized);
   words.push(normalized);
 }
@@ -30,11 +30,14 @@ function variants(word: string): string[] {
 export function queryTerms(query: string): QueryTerm[] {
   const words: string[] = [];
   const seen = new Set<string>();
-  const tokens = query.replace(/https?:\/\/\S+/gi, '').match(/[A-Za-z0-9_]+/g) ?? [];
+  const tokens = query.replace(/https?:\/\/\S+/gi, '').match(/[\p{L}\p{N}_]+/gu) ?? [];
 
   for (const token of tokens) {
     addWord(words, seen, token);
-    const parts = token.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_]+/);
+    const parts = token
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .split(/[\s_]+/);
     if (parts.length > 1) {
       for (const part of parts) addWord(words, seen, part);
     }

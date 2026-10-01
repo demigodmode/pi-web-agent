@@ -6,6 +6,7 @@ describe('queryTerms', () => {
     expect(queryTerms('where does this project refresh OAuth tokens? https://github.com/acme/widget').map(({ term }) => term)).toEqual([
       'refresh',
       'oauth',
+      'auth',
       'tokens'
     ]);
   });
@@ -19,6 +20,23 @@ describe('queryTerms', () => {
       'token',
       'token_store',
       'store'
+    ]);
+  });
+
+  it('keeps terms from a Cyrillic question', () => {
+    expect(queryTerms('Как обновляются токены?').map(({ term }) => term)).toEqual([
+      'как',
+      'обновляются',
+      'токены'
+    ]);
+  });
+
+  it('splits acronym prefixes while keeping the whole identifier', () => {
+    expect(queryTerms('what calls HTTPServer').map(({ term }) => term)).toEqual([
+      'calls',
+      'httpserver',
+      'http',
+      'server'
     ]);
   });
 

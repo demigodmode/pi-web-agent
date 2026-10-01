@@ -80,7 +80,7 @@ describe('researchRepo', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const text = result.response.content!.text;
-    expect(text).toContain('Searched the code for: refresh, oauth, tokens.');
+    expect(text).toContain('Searched the code for: refresh, oauth, auth, tokens.');
     expect(text).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L6`);
     expect(text).toContain("return oauthClient.post('/token'");
     expect(text).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/session.ts#L1-L1`);
