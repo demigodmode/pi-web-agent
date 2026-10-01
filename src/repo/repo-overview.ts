@@ -16,7 +16,7 @@ function inside(base: string, target: string): boolean {
   return target === base || target.startsWith(base + sep);
 }
 
-function hasGitSegment(pathScope: string): boolean {
+export function hasGitSegment(pathScope: string): boolean {
   return pathScope.split(/[\\/]+/).some((segment) => segment.replace(/[. ]+$/, '').toLowerCase() === '.git');
 }
 

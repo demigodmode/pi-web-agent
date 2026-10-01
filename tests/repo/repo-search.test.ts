@@ -304,6 +304,23 @@ describe('searchRepo walk and scoring', () => {
     expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
   });
 
+  it('rejects a trailing-dot .git scope before an expired search deadline', async () => {
+    const root = tree({
+      'src/.GIT./secret.ts': 'refresh oauth token SECRET-VALUE',
+      'src/auth/token-refresh.ts': impl
+    });
+
+    const result = await searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      pathScope: 'src/.GIT.',
+      maxSearchMs: 0
+    });
+
+    expect(result).toMatchObject({ scopeFound: false, files: [] });
+    expect(handleCalls.openPaths).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
+  });
+
   it('limits the search to the folder scope and keeps paths relative to the repo root', async () => {
     const root = tree({ 'src/auth/token-refresh.ts': impl, 'lib/refresh.ts': impl });
     const result = await searchRepo(root, { query: 'refresh OAuth tokens', pathScope: 'src/auth' });

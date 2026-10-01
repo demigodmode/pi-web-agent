@@ -2,7 +2,7 @@ import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { throwIfAborted } from '../abort.js';
 import { MAX_SCANNED_BYTES, MAX_SEARCH_MS, REPO_MAX_FILES } from './limits.js';
-import { resolveInside } from './repo-overview.js';
+import { hasGitSegment, resolveInside } from './repo-overview.js';
 import { queryTerms, type QueryTerm } from './repo-terms.js';
 import { safeSlice } from './safe-slice.js';
 
@@ -271,6 +271,10 @@ async function scopeHasSymlink(root: string, pathScope: string | undefined, sign
  */
 export async function searchRepo(root: string, options: RepoSearchOptions): Promise<RepoSearchResult> {
   throwIfAborted(options.signal);
+  const terms = queryTerms(options.query);
+  if (options.pathScope && hasGitSegment(options.pathScope)) {
+    return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
+  }
   const now = options.now ?? performance.now.bind(performance);
   const searchStartedAt = now();
   const maxFiles = options.maxFiles ?? REPO_MAX_FILES;
@@ -278,7 +282,6 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   const maxScannedBytes = options.maxScannedBytes ?? MAX_SCANNED_BYTES;
   const maxSearchMs = options.maxSearchMs ?? MAX_SEARCH_MS;
   const timedOut = () => now() - searchStartedAt >= maxSearchMs;
-  const terms = queryTerms(options.query);
   const result = (scopeFound: boolean, files: RepoSearchFile[], partial?: RepoSearchBudget, scannedFiles = 0): RepoSearchResult => ({
     scopeFound,
     terms: terms.map((term) => term.term),

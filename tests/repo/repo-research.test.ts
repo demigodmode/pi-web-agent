@@ -248,6 +248,17 @@ describe('researchRepo', () => {
     expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_PATH_NOT_FOUND', failure: { kind: 'bad_request' } }) });
   });
 
+  it('rejects a trailing-dot .git tree scope when the search deadline has expired', async () => {
+    const { deps } = setup({ 'README.md': 'root', 'src/index.ts': 'export const refresh = true;' });
+
+    const result = await researchRepo('https://github.com/acme/widget/tree/main/src/.GIT.', { query: 'refresh' }, {
+      ...deps,
+      searchLimits: { maxSearchMs: 0 }
+    });
+
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_PATH_NOT_FOUND', failure: { kind: 'bad_request' } }) });
+  });
+
   it('passes metadata failures through without cloning', async () => {
     const { deps, cache } = setup({ 'README.md': 'root' }, { status: 404 });
     const acquire = vi.spyOn(cache, 'acquire');
