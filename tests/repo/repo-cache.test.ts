@@ -428,6 +428,51 @@ describe('repo cache', () => {
     }
   });
 
+  it('accepts a mode 755 base on win32 and removes its instance after a lease is released', async () => {
+    const parent = baseDir();
+    const base = join(parent, 'cache');
+    mkdirSync(base);
+    chmodSync(base, 0o755);
+    const c = cache({ baseDir: base, platform: 'win32' });
+    const result = await c.acquire('k', fakeClone());
+    try {
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(readFileSync(join(result.lease.dir, 'data'), 'utf8')).toBe('x'.repeat(10));
+    } finally {
+      if (result.ok) result.lease.release();
+      await c.close();
+    }
+    expect(existsSync(c.root)).toBe(false);
+  });
+
+  it('refuses a mode 755 base on linux', async () => {
+    const parent = baseDir();
+    const base = join(parent, 'cache');
+    mkdirSync(base);
+    chmodSync(base, 0o755);
+    const c = cache({ baseDir: base, platform: 'linux' });
+    const result = await c.acquire('k', fakeClone());
+    try {
+      expect(result).toEqual({ ok: false, failure: expect.objectContaining({ code: 'REPO_CACHE_UNSAFE' }) });
+    } finally {
+      if (result.ok) result.lease.release();
+    }
+  });
+
+  it.each(['win32', 'linux'] as const)('refuses a symlink cache base on %s', async (platform) => {
+    const parent = baseDir();
+    const base = join(parent, 'cache');
+    symlinkSync(parent, base);
+    const c = cache({ baseDir: base, platform });
+    const result = await c.acquire('k', fakeClone());
+    try {
+      expect(result).toEqual({ ok: false, failure: expect.objectContaining({ code: 'REPO_CACHE_UNSAFE' }) });
+    } finally {
+      if (result.ok) result.lease.release();
+    }
+  });
+
   it.each([
     ['a symlink', (base: string, target: string) => symlinkSync(target, base)],
     ['world-readable permissions', (base: string) => {

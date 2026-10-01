@@ -32,6 +32,7 @@ export type RepoCacheOptions = {
   pid?: number;
   isPidAlive?: (pid: number) => boolean;
   now?: () => number;
+  platform?: NodeJS.Platform;
 };
 
 type Outcome = { ok: true } | { ok: false; failure: RepoFailure };
@@ -95,6 +96,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   const pid = options.pid ?? process.pid;
   const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
   const now = options.now ?? Date.now;
+  const platform = options.platform ?? process.platform;
   const maxIdleBytes = options.maxIdleBytes ?? REPO_IDLE_CACHE_MAX_BYTES;
   const closeGraceMs = options.closeGraceMs ?? REPO_CLOSE_GRACE_MS;
   const ownName = `${bootId}-${pid}-${randomBytes(6).toString('hex')}`;
@@ -114,11 +116,10 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   const hasPrivateBase = async (): Promise<boolean> => {
     try {
       const info = await lstat(baseDir);
+      if (!info.isDirectory() || info.isSymbolicLink()) return false;
+      if (platform === 'win32') return true;
       const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
-      return info.isDirectory()
-        && !info.isSymbolicLink()
-        && (uid === undefined || info.uid === uid)
-        && (info.mode & 0o077) === 0;
+      return (uid === undefined || info.uid === uid) && (info.mode & 0o077) === 0;
     } catch {
       return false;
     }
