@@ -193,6 +193,50 @@ describe('repo cache', () => {
     }
   });
 
+  it('waits for a cancelled clone cleanup before acquiring the same key again', async () => {
+    rmGate.reset();
+    const c = cache({ baseDir: baseDir() });
+    let cancelledDir = '';
+    const first: CloneFn = async (dest, signal) => {
+      cancelledDir = dest;
+      await mkdir(dest, { recursive: true });
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          setTimeout(() => reject(abortError()), 50);
+        }, { once: true });
+      });
+      throw new Error('unreachable');
+    };
+    const controller = new AbortController();
+    const pending = c.acquire('same-key', first, controller.signal);
+    await vi.waitFor(() => expect(cancelledDir).not.toBe(''));
+    rmGate.path = cancelledDir;
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+
+    const freshClone = fakeClone(20);
+    const retry = c.acquire('same-key', freshClone);
+    let acquired: Awaited<typeof retry> | undefined;
+    try {
+      await rmGate.started;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(freshClone.calls).toHaveLength(0);
+
+      rmGate.release();
+      acquired = await retry;
+      expect(acquired.ok).toBe(true);
+      if (!acquired.ok) return;
+      expect(freshClone.calls).toHaveLength(1);
+      expect(existsSync(acquired.lease.dir)).toBe(true);
+      expect(readFileSync(join(acquired.lease.dir, 'data'), 'utf8')).toHaveLength(20);
+    } finally {
+      rmGate.release();
+      acquired ??= await retry;
+      if (acquired.ok) acquired.lease.release();
+      rmGate.reset();
+    }
+  });
+
   it('waits for an evicted clone to be removed before recreating its directory', async () => {
     rmGate.reset();
     const c = cache({ baseDir: baseDir(), maxIdleBytes: 0 });

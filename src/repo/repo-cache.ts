@@ -188,6 +188,11 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
     if (closed) return { ok: false, failure: closedFailure() };
     throwIfAborted(signal);
     const existing = entries.get(key);
+    if (existing?.controller.signal.aborted) {
+      if (signal) await raceAbort(existing.ready, signal);
+      else await existing.ready;
+      return acquire(key, clone, signal);
+    }
     if (existing?.state === 'ready') return { ok: true, lease: makeLease(existing, true) };
     if (existing) return joinClone(existing, signal);
 
