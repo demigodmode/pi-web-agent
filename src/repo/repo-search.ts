@@ -307,7 +307,7 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   if (scopeHasLink) {
     return result(false, []);
   }
-  if (timedOut()) return result(true, [], 'time');
+  if (timedOut()) return result(false, [], 'time');
   const start = await resolveInside(root, options.pathScope);
   throwIfAborted(options.signal);
   if (!start) return result(false, []);

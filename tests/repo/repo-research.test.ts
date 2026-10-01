@@ -221,7 +221,7 @@ describe('researchRepo', () => {
     const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, {
       ...deps,
       searchLimits,
-      ...('maxSearchMs' in searchLimits ? { searchNow: (() => { let calls = 0; return () => calls++ === 0 ? 0 : 1; })() } : {})
+      ...('maxSearchMs' in searchLimits ? { searchNow: (() => { let calls = 0; return () => ++calls >= 4 ? 1 : 0; })() } : {})
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -263,6 +263,19 @@ describe('researchRepo', () => {
   it('refuses a folder that is not there', async () => {
     const { deps } = setup({ 'README.md': 'root' });
     const result = await researchRepo('https://github.com/acme/widget/tree/main/nope', { query: 'q' }, deps);
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_PATH_NOT_FOUND', failure: { kind: 'bad_request' } }) });
+  });
+
+  it('refuses a missing folder when the search deadline expires before resolving it', async () => {
+    const { deps } = setup({ 'README.md': 'root' });
+    let calls = 0;
+
+    const result = await researchRepo('https://github.com/acme/widget/tree/main/nope', { query: 'q' }, {
+      ...deps,
+      searchLimits: { maxSearchMs: 10 },
+      searchNow: () => calls++ === 0 ? 0 : 10
+    });
+
     expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_PATH_NOT_FOUND', failure: { kind: 'bad_request' } }) });
   });
 

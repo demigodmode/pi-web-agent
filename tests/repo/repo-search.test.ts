@@ -471,7 +471,7 @@ describe('searchRepo walk and scoring', () => {
     });
 
     expect(result).toEqual({
-      scopeFound: true,
+      scopeFound: false,
       terms: ['refresh', 'oauth', 'auth', 'tokens'],
       files: [],
       partial: true,
@@ -485,7 +485,7 @@ describe('searchRepo walk and scoring', () => {
     const root = tree({ 'src/a.ts': impl });
     let elapsed = 0;
     handleCalls.onRealpath = () => {
-      elapsed = 10;
+      if (handleCalls.realpathPaths.length === 3) elapsed = 10;
     };
     const result = await searchRepo(root, {
       query: 'refresh OAuth tokens',
@@ -494,8 +494,23 @@ describe('searchRepo walk and scoring', () => {
       now: () => elapsed
     });
     expect(result).toEqual({ scopeFound: true, terms: ['refresh', 'oauth', 'auth', 'tokens'], files: [], partial: true, budget: 'time', scannedFiles: 0 });
-    expect(handleCalls.realpathPaths).toEqual([root]);
+    expect(handleCalls.realpathPaths).toEqual([root, root, join(root, 'src')]);
     expect(handleCalls.lengths).toEqual([]);
+  });
+
+  it('does not claim a missing scope exists when the deadline expires before resolving it', async () => {
+    const root = tree({ 'src/a.ts': impl });
+    let calls = 0;
+
+    const result = await searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      pathScope: 'missing',
+      maxSearchMs: 10,
+      now: () => calls++ === 0 ? 0 : 10
+    });
+
+    expect(result).toMatchObject({ scopeFound: false, partial: true, budget: 'time', scannedFiles: 0 });
+    expect(handleCalls.openPaths).toEqual([]);
   });
 
   it('drops a candidate when the deadline expires during its read', async () => {
