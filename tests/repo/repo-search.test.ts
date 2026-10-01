@@ -222,6 +222,28 @@ describe('excerpts', () => {
     expect(excerpts).toEqual([{ startLine: 1, endLine: 20, text: numbered(20, {}) }]);
   });
 
+  it('does not count a terminal newline as an extra matching line', () => {
+    expect(buildExcerpts('refresh\n', queryTerms('refresh'))).toEqual([
+      { startLine: 1, endLine: 1, text: 'refresh' }
+    ]);
+  });
+
+  it('keeps a real trailing blank line', () => {
+    expect(buildExcerpts('refresh\n\n', queryTerms('refresh'))).toEqual([
+      { startLine: 1, endLine: 2, text: 'refresh\n' }
+    ]);
+  });
+
+  it('does not count a terminal newline as an extra path-only line', () => {
+    expect(buildExcerpts('plain\n', queryTerms('refresh'))).toEqual([
+      { startLine: 1, endLine: 1, text: 'plain' }
+    ]);
+  });
+
+  it('returns no excerpt for an empty path-only file', () => {
+    expect(buildExcerpts('', queryTerms('refresh'))).toEqual([]);
+  });
+
   it('fits all files into the budget, sharing it fairly and cutting on line breaks', () => {
     const big = { startLine: 1, endLine: 400, text: Array.from({ length: 400 }, (_, i) => `line ${i + 1} ${'x'.repeat(20)}`).join('\n') };
     const files = [
@@ -236,6 +258,13 @@ describe('excerpts', () => {
     const cut = fitted[0].excerpts[0];
     expect(cut.text.endsWith('\n')).toBe(false);
     expect(cut.endLine).toBe(cut.startLine + cut.text.split('\n').length - 1);
+  });
+
+  it('keeps line ranges aligned when a budget cut ends on a newline', () => {
+    const fitted = fitToBudget([
+      { path: 'a.ts', score: 1, excerpts: [{ startLine: 3, endLine: 5, text: 'one\ntwo\nthree' }] }
+    ], 4);
+    expect(fitted[0].excerpts).toEqual([{ startLine: 3, endLine: 3, text: 'one' }]);
   });
 
   it('respects the char budget inside searchRepo', async () => {

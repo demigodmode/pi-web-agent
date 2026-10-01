@@ -78,9 +78,16 @@ export function scoreFile(path: string, text: string, terms: QueryTerm[]): numbe
   return Math.max(1, score);
 }
 
+function sourceLines(text: string): string[] {
+  if (text.length === 0) return [];
+  const lines = text.split('\n');
+  if (text.endsWith('\n')) lines.pop();
+  return lines;
+}
+
 /** About `contextLines` lines either side of every matching line, overlapping windows merged. */
 export function buildExcerpts(text: string, terms: QueryTerm[], contextLines = DEFAULT_CONTEXT_LINES): RepoSearchExcerpt[] {
-  const lines = text.split('\n');
+  const lines = sourceLines(text);
   const windows: Array<[number, number]> = [];
   lines.forEach((line, index) => {
     const lower = line.toLowerCase();
@@ -93,6 +100,7 @@ export function buildExcerpts(text: string, terms: QueryTerm[], contextLines = D
   });
   if (windows.length === 0) {
     // Only the path matched: the top of the file is the best we have.
+    if (lines.length === 0) return [];
     const end = Math.min(lines.length, contextLines * 2);
     return [{ startLine: 1, endLine: end, text: lines.slice(0, end).join('\n') }];
   }
