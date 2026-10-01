@@ -342,7 +342,7 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
     const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
     throwIfAborted(options.signal);
     if (timedOut()) {
-      stoppedBy = 'time';
+      if (stack.length || items.some((remaining) => leavesWalkWork(remaining, dir, start))) stoppedBy = 'time';
       break;
     }
     items.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);

@@ -425,6 +425,18 @@ describe('searchRepo walk and scoring', () => {
     expect(result).toMatchObject({ partial: true, budget: 'time', scannedFiles: 0 });
   });
 
+  it('does not mark an empty completed directory partial when its deadline lands after readdir', async () => {
+    const root = tree({});
+    let elapsed = 0;
+    handleCalls.onReaddir = () => {
+      elapsed = 10;
+    };
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxSearchMs: 10, now: () => elapsed });
+
+    expect(result).not.toHaveProperty('partial');
+    expect(result.files).toEqual([]);
+  });
+
   it('bounds a read by the remaining byte budget and skips its incomplete candidate', async () => {
     const root = tree({ 'a.ts': impl });
     const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedBytes: 12 });
