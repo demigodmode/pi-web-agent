@@ -16,7 +16,9 @@ import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
+import { parseRepoUrl } from '../repo/repo-url.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -144,6 +146,14 @@ function buildMetadata({
   };
 }
 
+type ResearchOrchestratorResult = {
+  decision: ResearchOrchestratorDecision;
+  evidence: ResearchEvidence[];
+  workerPass: ResearchWorkerResult;
+  metadata: ReturnType<typeof buildMetadata>;
+  terminalFailure?: { code: string; message: string };
+};
+
 function decisionForAnswer({
   action,
   query,
@@ -174,7 +184,7 @@ export function createResearchOrchestrator({
   worker,
   fetchDirect,
   headlessFetch,
-  researchRepo: _researchRepo
+  researchRepo
 }: {
   worker: {
     run: (input: {
@@ -190,7 +200,7 @@ export function createResearchOrchestrator({
   researchRepo?: (input: RepoResearchInput) => Promise<RepoResearchResult>;
 }) {
   return {
-    async run({ query, signal }: { query: string; signal?: AbortSignal }) {
+    async run({ query, signal }: { query: string; signal?: AbortSignal }): Promise<ResearchOrchestratorResult> {
       const allEvidence: ResearchEvidence[] = [];
       const allGaps: ResearchGap[] = [];
       const allLowValueOutcomes: ResearchLowValueOutcome[] = [];
@@ -210,8 +220,35 @@ export function createResearchOrchestrator({
         return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts] };
       }
 
+      const terminal = (terminalFailure: { code: string; message: string }) => ({
+        decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked: [], exhaustedBudget: false }),
+        evidence: [],
+        workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
+        metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() }),
+        terminalFailure
+      });
+
+      // Typed repo links are sorted out before the page budget, so none is ever skipped (#72).
+      const typedUrls = extractDirectUrls(query);
+      const repoUrls = researchRepo ? typedUrls.filter((url) => parseRepoUrl(url) !== undefined) : [];
+      const pageUrls = typedUrls.filter((url) => !repoUrls.includes(url));
+
+      if (repoUrls.length > REPO_MAX_TYPED_REPOS) {
+        return terminal({ code: 'REPO_TOO_MANY', message: 'Too many repo links in one question; ask about one or two at a time.' });
+      }
+      for (const url of repoUrls) {
+        throwIfAborted(signal);
+        const researched = await researchRepo!({ url, query, signal });
+        throwIfAborted(signal);
+        // A typed repo that can't be researched ends the run: the README reader must not stand in for the code.
+        if (!researched.ok) return terminal({ code: researched.error.code, message: researched.error.message });
+        const repoEvidence = evidenceFromFetch(researched.response, query);
+        if (repoEvidence) allEvidence.push(repoEvidence);
+        else allGaps.push({ kind: 'fetch-failed', message: `Nothing readable came back for ${url}.` });
+      }
+
       if (fetchDirect) {
-        for (const url of extractDirectUrls(query).slice(0, 3)) {
+        for (const url of pageUrls.slice(0, 3)) {
           throwIfAborted(signal);
           const directResult = await fetchDirect({ url, query, signal });
           throwIfAborted(signal);
