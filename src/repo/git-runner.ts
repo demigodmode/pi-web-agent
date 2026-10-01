@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { devNull } from 'node:os';
-import { abortError, raceAbort } from '../abort.js';
+import { abortError } from '../abort.js';
 import { stripProxyCredentials, type ProxyConfig } from '../backends/config.js';
 import { resolveProxyCredentials } from '../fetch/proxy-fetch.js';
 import { MIN_GIT_VERSION } from './limits.js';
@@ -160,36 +160,117 @@ function spawnGit(args: string[], { cwd, signal, timeoutMs, env }: RunGitOptions
   });
 }
 
-const versionChecks = new Map<string, Promise<GitResult>>();
+type VersionCheck = {
+  controller: AbortController;
+  promise: Promise<GitResult>;
+  waiters: Set<symbol>;
+};
+
+const versionChecks = new Map<string, VersionCheck>();
+
+function versionCheckKey(env: GitEnv): string {
+  return [env.gitBinary ?? 'git', ...(env.gitArgsPrefix ?? [])].join('\0');
+}
+
+function startVersionCheck(key: string, env: GitEnv, timeoutMs: number): VersionCheck {
+  const controller = new AbortController();
+  const check: VersionCheck = {
+    controller,
+    promise: spawnGit(['--version'], {
+      env: { gitBinary: env.gitBinary, gitArgsPrefix: env.gitArgsPrefix },
+      signal: controller.signal,
+      timeoutMs
+    }).then((result): GitResult => {
+      if (!result.ok) return result;
+      const match = /git version (\d+)\.(\d+)/.exec(result.stdout);
+      const major = Number(match?.[1]);
+      const minor = Number(match?.[2]);
+      if (!match || major < MIN_GIT_VERSION.major || (major === MIN_GIT_VERSION.major && minor < MIN_GIT_VERSION.minor)) {
+        return { ok: false, failure: repoFailure('GIT_TOO_OLD', 'git 2.32 or newer is needed to search repo code.', 'not_configured') };
+      }
+      return result;
+    }),
+    waiters: new Set()
+  };
+  versionChecks.set(key, check);
+  void check.promise.then(
+    (result) => {
+      if (!result.ok && result.failure.code === 'GIT_TIMEOUT' && versionChecks.get(key) === check) versionChecks.delete(key);
+    },
+    () => {
+      if (versionChecks.get(key) === check) versionChecks.delete(key);
+    }
+  );
+  return check;
+}
+
+function waitForVersion(key: string, check: VersionCheck, signal: AbortSignal | undefined, timeoutMs: number): Promise<GitResult> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  const waiter = Symbol();
+  check.waiters.add(waiter);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (result: GitResult | Error) => {
+      if (settled) return;
+      settled = true;
+      check.waiters.delete(waiter);
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    };
+    const timeoutFailure = (): GitResult => ({
+      ok: false,
+      failure: repoFailure('GIT_TIMEOUT', `git --version took longer than ${Math.round(timeoutMs / 1000)}s.`, 'transient')
+    });
+    const onAbort = () => {
+      check.waiters.delete(waiter);
+      if (check.waiters.size !== 0) return finish(abortError());
+      if (versionChecks.get(key) === check) versionChecks.delete(key);
+      check.controller.abort();
+      void check.promise.then(
+        () => finish(abortError()),
+        () => finish(abortError())
+      );
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      check.waiters.delete(waiter);
+      if (check.waiters.size !== 0) return finish(timeoutFailure());
+      if (versionChecks.get(key) === check) versionChecks.delete(key);
+      check.controller.abort();
+      void check.promise.then(
+        () => finish(timeoutFailure()),
+        () => finish(timeoutFailure())
+      );
+    }, timeoutMs);
+    void check.promise.then(
+      (result) => finish(result),
+      (error: unknown) => finish(error instanceof Error ? error : new Error(String(error)))
+    );
+  });
+}
 
 /** Checks once per git command that it exists and is 2.32+. A timeout isn't remembered. */
-export function ensureGitVersion(env: GitEnv, signal?: AbortSignal): Promise<GitResult> {
-  const key = [env.gitBinary ?? 'git', ...(env.gitArgsPrefix ?? [])].join('\0');
-  let check = versionChecks.get(key);
-  if (!check) {
-    check = spawnGit(['--version'], { env: { gitBinary: env.gitBinary, gitArgsPrefix: env.gitArgsPrefix }, timeoutMs: 10_000 }).then(
-      (result): GitResult => {
-        if (!result.ok) return result;
-        const match = /git version (\d+)\.(\d+)/.exec(result.stdout);
-        const major = Number(match?.[1]);
-        const minor = Number(match?.[2]);
-        if (!match || major < MIN_GIT_VERSION.major || (major === MIN_GIT_VERSION.major && minor < MIN_GIT_VERSION.minor)) {
-          return { ok: false, failure: repoFailure('GIT_TOO_OLD', 'git 2.32 or newer is needed to search repo code.', 'not_configured') };
-        }
-        return result;
-      }
-    );
-    versionChecks.set(key, check);
-    void check.then((result) => {
-      if (!result.ok && result.failure.code === 'GIT_TIMEOUT') versionChecks.delete(key);
-    });
-  }
-  return signal ? raceAbort(check, signal) : check;
+export function ensureGitVersion(env: GitEnv, signal?: AbortSignal, timeoutMs = 10_000): Promise<GitResult> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  const key = versionCheckKey(env);
+  return waitForVersion(key, versionChecks.get(key) ?? startVersionCheck(key, env, timeoutMs), signal, timeoutMs);
 }
 
 /** The one way repo research runs git (#72). Throws only abortError(); everything else is a result. */
 export async function runGit(args: string[], options: RunGitOptions): Promise<GitResult> {
-  const version = await ensureGitVersion(options.env, options.signal);
+  const startedAt = Date.now();
+  const remaining = () => options.timeoutMs - (Date.now() - startedAt);
+  const version = await ensureGitVersion(options.env, options.signal, Math.max(0, remaining()));
   if (!version.ok) return version;
-  return spawnGit(args, options);
+  const timeoutMs = remaining();
+  if (timeoutMs <= 0) {
+    return {
+      ok: false,
+      failure: repoFailure('GIT_TIMEOUT', `git ${args[0]} took longer than ${Math.round(options.timeoutMs / 1000)}s.`, 'transient')
+    };
+  }
+  return spawnGit(args, { ...options, timeoutMs });
 }

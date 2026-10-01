@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
-if (args[0] === '--version') {
+if (args.includes('--version') && process.env.FAKE_GIT_SLEEP_VERSION !== '1') {
   process.stdout.write('git version 2.55.0\n');
   process.exit(0);
 }
