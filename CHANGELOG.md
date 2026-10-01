@@ -7,10 +7,10 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Paste a GitHub repo link into your question and `web_explore` now downloads that repo (one commit, shallow) and reads it locally (#72). Clones stay around for the session so follow-ups are quick, and get cleaned up when the session ends. Private repos work with `gh auth login` or `GITHUB_TOKEN`. Repos over 300MB, a clone that takes over 60 seconds or a missing `git` stop the answer with a clear reason instead of falling back to the README. For now you get the README and the folder listing; searching the code for your question comes next.
 
 ### Changed
-- None.
+- `typebox` is now a peer dependency instead of a bundled one, so Pi 0.99 stops warning about it at startup (#82). Pi already provides `typebox` to extensions. If you installed an earlier version, update or reinstall the package so the old bundled copy goes away.
 
 ### Fixed
 - Pressing Esc on a running `web_explore` now actually stops it (#59). Searches, page fetches and the headless browser all stop, the browser gets closed, and nothing retries or falls back after you cancel. A cancel also never puts a search provider on cooldown. Before this, Pi sat there until the whole research run had finished on its own.

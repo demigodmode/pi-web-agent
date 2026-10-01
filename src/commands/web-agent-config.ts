@@ -9,6 +9,7 @@ import {
   type BackendConfigOverride
 } from '../backends/config.js';
 import { checkBackendHealth } from '../backends/doctor.js';
+import { repoResearchDoctorLine } from '../repo/doctor.js';
 import { parseCidr } from '../fetch/network-guard.js';
 import type { SearchProviderName } from '../types.js';
 import {
@@ -59,6 +60,7 @@ type CommandDeps = {
   checkTypebox?: () => Promise<boolean>;
   checkJitiCompat?: () => { pending: string[] };
   checkBackends?: (config: BackendConfig) => Promise<string[]>;
+  checkRepoResearch?: () => Promise<string>;
   getChangelog?: () => Promise<string | undefined>;
 };
 
@@ -1050,6 +1052,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         config.proxy && isValidProxyUrl(config.proxy.url) ? createProxyFetch(config.proxy) : fetch
     })
   );
+  const checkRepoResearch = deps.checkRepoResearch ?? (() => repoResearchDoctorLine());
   const getChangelog = deps.getChangelog ?? (() => getLatestChangelogEntry());
 
   pi.registerCommand('web-agent', {
@@ -1077,6 +1080,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         const backendConfig = loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG;
         const backendIssues = validateBackendConfig(backendConfig);
         const backendHealth = await checkBackends(backendConfig);
+        const repoResearchLine = await checkRepoResearch();
         const lines = [
           'pi-web-agent: loaded',
           `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
@@ -1086,7 +1090,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           `network allow list: ${backendConfig.network?.allowRanges?.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
           `trust upstream proxy for private addresses: ${backendConfig.network?.trustProxyDns ? 'on' : 'off'}`,
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
-          ...backendHealth
+          ...backendHealth,
+          repoResearchLine
         ];
 
         if (browser.ok) {

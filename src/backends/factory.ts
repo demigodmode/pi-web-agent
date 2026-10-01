@@ -27,11 +27,17 @@ import { throwIfAborted } from '../abort.js';
 import { createGithubReader } from '../readers/github-reader.js';
 import { createPdfReader } from '../readers/pdf-reader.js';
 import { createYoutubeReader } from '../readers/youtube-reader.js';
+import { productionGitEnv, proxyUrlForGit, type GitEnv } from '../repo/git-runner.js';
+import { resolveGithubToken, type GithubToken } from '../repo/repo-auth.js';
+import type { RepoCache } from '../repo/repo-cache.js';
+import { researchRepo, type RepoResearchInput, type RepoResearchResult } from '../repo/repo-research.js';
 
 export type BackendSet = {
   search: (input: SearchInput) => Promise<WebSearchResponse>;
   fetchPage: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
   headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
+  /** Typed GitHub repo URLs (#72). Only there when the extension handed over its repo cache. */
+  researchRepo?: (input: RepoResearchInput) => Promise<RepoResearchResult>;
   /** Releases the guard proxy and its agents. Idempotent; never starts the proxy. */
   close: () => Promise<void>;
 };
@@ -56,6 +62,13 @@ export type BackendFactoryDeps = {
   policy?: Omit<PolicyDeps, 'health'>;
   /** Test seam for the per-call fanout provider timeout. */
   fanoutTimeoutMs?: number;
+  /** The extension's repo cache (#72). Without it, repo URLs keep going to the README reader. */
+  repoCache?: RepoCache;
+  resolveGithubToken?: () => Promise<GithubToken>;
+  /** Test seam: git settings for repo research (fixture transport). */
+  repoGitEnv?: GitEnv;
+  /** Test seam: the fetch used for GitHub API metadata. */
+  repoApiFetch?: typeof fetch;
 };
 
 function invalidSearxngSearch() {
@@ -175,6 +188,14 @@ export function createBackendSet(
         };
         return { ...result, presentation: buildFetchPresentation(result) };
       },
+      ...(deps.repoCache
+        ? {
+            researchRepo: async (): Promise<RepoResearchResult> => ({
+              ok: false,
+              error: { code: 'BACKEND_CONFIG_INVALID', message, failure: { kind: 'config_global' } }
+            })
+          }
+        : {}),
       close: async () => undefined
     };
   }
@@ -336,10 +357,22 @@ export function createBackendSet(
   const headlessPage = ({ url, query, signal }: ResearchFetchInput) =>
     headlessFetch(url, { query, signal, guard: networkGuard, guardProxy: getGuardProxy });
 
+  const repoCache = deps.repoCache;
+  const repoResearch = repoCache
+    ? ({ url, query, signal }: RepoResearchInput) =>
+        researchRepo(url, { query, signal }, {
+          fetchImpl: deps.repoApiFetch ?? targetFetch,
+          cache: repoCache,
+          git: deps.repoGitEnv ?? productionGitEnv({ proxyUrl: proxy ? proxyUrlForGit(proxy) : undefined }),
+          resolveToken: deps.resolveGithubToken ?? (() => resolveGithubToken())
+        })
+    : undefined;
+
   return {
     search,
     fetchPage: withTargetGuard(fetchPageWithReaders, networkGuard, config.fetch.provider === 'firecrawl' ? 'firecrawl' : 'http'),
     headlessFetch: createHeadlessFetch({ fetchPage: headlessPage }),
+    ...(repoResearch ? { researchRepo: repoResearch } : {}),
     close
   };
 }
