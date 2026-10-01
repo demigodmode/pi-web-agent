@@ -97,6 +97,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
 
   const entries = new Map<string, Entry>();
   const removals = new Set<Promise<void>>();
+  const removalsByDir = new Map<string, Promise<void>>();
   const closing = new AbortController();
   let closed = false;
   let closePromise: Promise<void> | undefined;
@@ -104,10 +105,16 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   let onLeasesDrained: (() => void) | undefined;
 
   const remove = (dir: string) => {
+    const existing = removalsByDir.get(dir);
+    if (existing) return existing;
     const removal: Promise<void> = rm(dir, { recursive: true, force: true })
       .catch(() => undefined)
-      .finally(() => removals.delete(removal));
+      .finally(() => {
+        removals.delete(removal);
+        if (removalsByDir.get(dir) === removal) removalsByDir.delete(dir);
+      });
     removals.add(removal);
+    removalsByDir.set(dir, removal);
     return removal;
   };
 
@@ -201,6 +208,8 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
       try {
         await initialSweep;
         await sweepLeftovers();
+        const priorRemoval = removalsByDir.get(entry.dir);
+        if (priorRemoval) await raceAbort(priorRemoval, controller.signal);
         await mkdir(root, { recursive: true });
         throwIfAborted(controller.signal);
         const result = await clone(entry.dir, controller.signal);

@@ -1,10 +1,50 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortError } from '../../src/abort.js';
 import { createRepoCache, type CloneFn, type RepoCache } from '../../src/repo/repo-cache.js';
+
+const rmGate = vi.hoisted(() => {
+  let start!: () => void;
+  let release!: () => void;
+  const state: {
+    path: string;
+    started: Promise<void>;
+    allow: Promise<void>;
+    reset(): void;
+    start(): void;
+    release(): void;
+  } = {
+    path: '',
+    started: Promise.resolve(),
+    allow: Promise.resolve(),
+    reset() {
+      this.path = '';
+      this.started = new Promise<void>((resolve) => { start = resolve; });
+      this.allow = new Promise<void>((resolve) => { release = resolve; });
+    },
+    start: () => start(),
+    release: () => release()
+  };
+  state.reset();
+  return state;
+});
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    rm: async (path: string, options?: Parameters<typeof actual.rm>[1]) => {
+      if (path === rmGate.path) {
+        rmGate.start();
+        await rmGate.allow;
+      }
+      return actual.rm(path, options);
+    }
+  };
+});
 
 const temps: string[] = [];
 const caches: RepoCache[] = [];
@@ -21,6 +61,7 @@ const cache = (options: Parameters<typeof createRepoCache>[0]) => {
 afterEach(async () => {
   await Promise.all(caches.splice(0).map((c) => c.close()));
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
+  rmGate.reset();
 });
 
 function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSignal[] } {
@@ -149,6 +190,35 @@ describe('repo cache', () => {
     try {
       expect(fresh.calls).toHaveLength(1);
     } finally {
+      if (retry.ok) retry.lease.release();
+    }
+  });
+
+  it('waits for an evicted clone to be removed before recreating its directory', async () => {
+    const c = cache({ baseDir: baseDir(), maxIdleBytes: 0 });
+    const first = await c.acquire('same-key', fakeClone(10));
+    if (!first.ok) throw new Error('acquire failed');
+    rmGate.path = first.lease.dir;
+    first.lease.release();
+    await rmGate.started;
+
+    const freshClone = fakeClone(20);
+    const fresh = c.acquire('same-key', freshClone);
+    let retry: Awaited<typeof fresh> | undefined;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(freshClone.calls).toHaveLength(0);
+
+      rmGate.release();
+      retry = await fresh;
+      expect(retry.ok).toBe(true);
+      if (!retry.ok) return;
+      expect(freshClone.calls).toHaveLength(1);
+      expect(existsSync(retry.lease.dir)).toBe(true);
+      expect(readFileSync(join(retry.lease.dir, 'data'), 'utf8')).toHaveLength(20);
+    } finally {
+      rmGate.release();
+      retry ??= await fresh;
       if (retry.ok) retry.lease.release();
     }
   });
