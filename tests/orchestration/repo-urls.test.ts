@@ -71,6 +71,34 @@ describe('typed repo URLs', () => {
     expect(w.run).not.toHaveBeenCalled();
   });
 
+  it('keeps trusted cloned README evidence that mentions bot-like phrases', async () => {
+    const w = worker();
+    const readme = 'The security service verifies every request. If verification fails, it may say verify you are not a bot before continuing.';
+    const researchRepo = vi.fn(async ({ url }: { url: string }): Promise<RepoResearchResult> => {
+      const base = repoOk(url);
+      if (!base.ok) throw new Error('repo fixture must succeed');
+      return {
+        ...base,
+        response: {
+          ...base.response,
+          content: { title: 'acme/widget', text: readme }
+        }
+      };
+    });
+    const fetchDirect = vi.fn(okPage);
+    const orchestrator = createResearchOrchestrator({ worker: w, fetchDirect, headlessFetch: vi.fn(), researchRepo });
+    const result = await orchestrator.run({ query: 'what is https://github.com/acme/widget' });
+    expect(result.evidence[0]).toMatchObject({
+      url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`,
+      method: 'github',
+      sourceKind: 'primary-content',
+      summary: readme,
+      supports: [readme]
+    });
+    expect(w.run).not.toHaveBeenCalled();
+    expect(fetchDirect).not.toHaveBeenCalled();
+  });
+
   it('leaves repo URLs to fetchDirect when there is no researchRepo', async () => {
     const fetchDirect = vi.fn(okPage);
     const orchestrator = createResearchOrchestrator({ worker: worker(), fetchDirect, headlessFetch: vi.fn() });

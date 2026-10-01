@@ -37,9 +37,9 @@ function isBotCheckContent({ title = '', text, botCheck }: { title?: string; tex
   return hasBotCheckContent(`${title}\n${text}`);
 }
 
-function evidenceFromFetch(result: WebFetchResponse, query: string): ResearchEvidence | null {
+function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedContent = false }: { trustedContent?: boolean } = {}): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
-  if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
+  if (!trustedContent && isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   if (isReaderMethod(result.metadata.method)) {
     return {
@@ -242,7 +242,7 @@ export function createResearchOrchestrator({
         throwIfAborted(signal);
         // A typed repo that can't be researched ends the run: the README reader must not stand in for the code.
         if (!researched.ok) return terminal({ code: researched.error.code, message: researched.error.message });
-        const repoEvidence = evidenceFromFetch(researched.response, query);
+        const repoEvidence = evidenceFromFetch(researched.response, query, { trustedContent: true });
         if (repoEvidence) allEvidence.push(repoEvidence);
         else allGaps.push({ kind: 'fetch-failed', message: `Nothing readable came back for ${url}.` });
       }
