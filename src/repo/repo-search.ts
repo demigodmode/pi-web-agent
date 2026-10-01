@@ -178,6 +178,7 @@ async function readCandidate(base: string, abs: string, terms: QueryTerm[], rema
     buffer = Buffer.alloc(Math.min(info.size, MAX_SEARCH_FILE_BYTES) + 1);
     requested = Math.min(buffer.length, remainingBytes);
     ({ bytesRead } = await handle.read(buffer, 0, requested, 0));
+    if (timedOut()) return { bytesRead };
   } catch {
     // A clone can be pruned while searching it; skip that one file.
     readFailed = true;
@@ -195,12 +196,14 @@ async function readCandidate(base: string, abs: string, terms: QueryTerm[], rema
   return { candidate: score > 0 ? { path, score, text } : undefined, bytesRead };
 }
 
-async function safeDirectory(base: string, dir: string, signal?: AbortSignal): Promise<string | undefined> {
+async function safeDirectory(base: string, dir: string, timedOut: () => boolean, signal?: AbortSignal): Promise<string | undefined> {
   const info = await lstat(dir).catch(() => undefined);
   throwIfAborted(signal);
+  if (timedOut()) return undefined;
   if (!info?.isDirectory()) return undefined;
   const real = await realpath(dir).catch(() => undefined);
   throwIfAborted(signal);
+  if (timedOut()) return undefined;
   return real && inside(base, real) ? real : undefined;
 }
 
@@ -251,10 +254,12 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
 
   while (stack.length && scanned < maxScannedFiles && scannedBytes < maxScannedBytes && !timedOut()) {
     throwIfAborted(options.signal);
-    const dir = await safeDirectory(base, stack.pop()!, options.signal);
+    const dir = await safeDirectory(base, stack.pop()!, timedOut, options.signal);
+    if (timedOut()) break;
     if (!dir) continue;
     const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
     throwIfAborted(options.signal);
+    if (timedOut()) break;
     for (const item of items) {
       if (item.isSymbolicLink() || isGitAlias(item.name)) continue;
       const abs = join(dir, item.name);
@@ -268,6 +273,7 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
       throwIfAborted(options.signal);
       const read = await readCandidate(base, abs, terms, maxScannedBytes - scannedBytes, timedOut, options.signal);
       scannedBytes += read.bytesRead;
+      if (timedOut()) break;
       if (read.candidate) keepTop(top, read.candidate, maxFiles);
     }
   }

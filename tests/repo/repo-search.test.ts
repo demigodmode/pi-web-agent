@@ -8,7 +8,8 @@ const handleCalls = vi.hoisted(() => ({
   lengths: [] as number[],
   blockOpen: false,
   openEntered: undefined as (() => void) | undefined,
-  releaseOpen: undefined as (() => void) | undefined
+  releaseOpen: undefined as (() => void) | undefined,
+  onRead: undefined as (() => void) | undefined
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -26,6 +27,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return {
         read: async (buffer: Buffer, offset: number, length: number, position: number) => {
           handleCalls.lengths.push(length);
+          handleCalls.onRead?.();
           return handle.read(buffer, offset, length, position);
         },
         close: async () => {
@@ -48,6 +50,7 @@ afterEach(() => {
   handleCalls.blockOpen = false;
   handleCalls.openEntered = undefined;
   handleCalls.releaseOpen = undefined;
+  handleCalls.onRead = undefined;
 });
 
 function tree(files: Record<string, string | Buffer | { symlink: string }>): string {
@@ -197,6 +200,21 @@ describe('searchRepo walk and scoring', () => {
       now: () => calls++ === 0 ? 0 : 10
     });
     expect(handleCalls.lengths).toEqual([]);
+  });
+
+  it('drops a candidate when the deadline expires during its read', async () => {
+    const root = tree({ 'a.ts': impl });
+    let elapsed = 0;
+    handleCalls.onRead = () => {
+      elapsed = 10;
+    };
+    const result = await searchRepo(root, {
+      query: 'refresh OAuth tokens',
+      maxSearchMs: 10,
+      now: () => elapsed
+    });
+    expect(result.files).toEqual([]);
+    expect(handleCalls.closed).toBe(1);
   });
 
   it('closes a handle when cancellation arrives while it is opening', async () => {
