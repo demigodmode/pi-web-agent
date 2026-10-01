@@ -116,19 +116,24 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
   let leaseCount = 0;
   let onLeasesDrained: (() => void) | undefined;
 
-  const unsafeBaseFailure = () => repoFailure('REPO_CACHE_UNSAFE', `the repo cache folder ${baseDir} isn't private to this user`, 'not_configured');
+  const unsafeBaseFailure = (reason = 'could not be inspected securely') => repoFailure('REPO_CACHE_UNSAFE', `the repo cache folder ${baseDir} ${reason}`, 'not_configured');
 
-  const hasPrivateBase = async (): Promise<boolean> => {
+  const privateBaseIssue = async (): Promise<string | undefined> => {
     try {
       const info = await lstat(baseDir);
-      if (!info.isDirectory() || info.isSymbolicLink()) return false;
-      if (platform === 'win32') return true;
+      if (info.isSymbolicLink()) return 'is a symlink';
+      if (!info.isDirectory()) return 'is not a directory';
+      if (platform === 'win32') return undefined;
       const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
-      return (uid === undefined || info.uid === uid) && (info.mode & 0o077) === 0;
+      if (uid !== undefined && info.uid !== uid) return 'is owned by another user';
+      if ((info.mode & 0o077) !== 0) return 'is readable by other users (expected 0700)';
+      return undefined;
     } catch {
-      return false;
+      return 'could not be inspected securely';
     }
   };
+
+  const hasPrivateBase = async (): Promise<boolean> => (await privateBaseIssue()) === undefined;
 
   const preparePrivateBase = async (): Promise<RepoFailure | undefined> => {
     try {
@@ -141,7 +146,8 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
         return unsafeBaseFailure();
       }
     }
-    return (await hasPrivateBase()) ? undefined : unsafeBaseFailure();
+    const issue = await privateBaseIssue();
+    return issue === undefined ? undefined : unsafeBaseFailure(issue);
   };
 
   const remove = (dir: string) => {

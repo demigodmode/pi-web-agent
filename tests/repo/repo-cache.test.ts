@@ -68,6 +68,15 @@ const tmpdirGate = vi.hoisted(() => ({
   }
 }));
 
+const lstatUidGate = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  uid: undefined as number | undefined,
+  reset() {
+    this.path = undefined;
+    this.uid = undefined;
+  }
+}));
+
 vi.mock('node:os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:os')>();
   return {
@@ -80,6 +89,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...actual,
+    lstat: async (path: string, options?: Parameters<typeof actual.lstat>[1]) => {
+      const info = await actual.lstat(path, options as never);
+      if (path !== lstatUidGate.path || lstatUidGate.uid === undefined) return info;
+      return Object.assign(Object.create(info), { uid: lstatUidGate.uid });
+    },
     rm: async (path: string, options?: Parameters<typeof actual.rm>[1]) => {
       if (path === rmGate.path) {
         rmGate.start();
@@ -562,22 +576,28 @@ describe('repo cache', () => {
   });
 
   it.each([
-    ['a symlink', (base: string, target: string) => symlinkSync(target, base)],
-    ['world-readable permissions', (base: string) => {
+    ['is a symlink', (base: string, target: string) => symlinkSync(target, base)],
+    ['is readable by other users (expected 0700)', (base: string) => {
       mkdirSync(base);
       chmodSync(base, 0o755);
     }],
-    ['group-readable permissions', (base: string) => {
+    ['is readable by other users (expected 0700)', (base: string) => {
       mkdirSync(base);
       chmodSync(base, 0o750);
+    }],
+    ['is owned by another user', (base: string) => {
+      mkdirSync(base);
+      lstatUidGate.path = base;
+      lstatUidGate.uid = (process.getuid?.() ?? 0) + 1;
     }]
-  ])('refuses an unsafe cache base with %s', async (_description, makeUnsafe) => {
+  ])('reports why a linux cache base is unsafe: %s', async (reason, makeUnsafe) => {
     const parent = baseDir();
     const base = join(parent, 'cache');
     makeUnsafe(base, parent);
     const leftover = join(parent, 'otherboot-999999-dead');
     mkdirSync(leftover);
-    const c = cache({ baseDir: base });
+    writeFileSync(join(leftover, 'keep'), 'keep');
+    const c = cache({ baseDir: base, platform: 'linux' });
     const clone = fakeClone();
 
     const result = await c.acquire('k', clone);
@@ -586,15 +606,16 @@ describe('repo cache', () => {
         ok: false,
         failure: {
           code: 'REPO_CACHE_UNSAFE',
-          message: `the repo cache folder ${base} isn't private to this user`,
+          message: `the repo cache folder ${base} ${reason}`,
           failure: { kind: 'not_configured' }
         }
       });
       expect(clone.calls).toHaveLength(0);
       await c.sweepLeftovers();
       await c.close();
-      expect(existsSync(leftover)).toBe(true);
+      expect(readFileSync(join(leftover, 'keep'), 'utf8')).toBe('keep');
     } finally {
+      lstatUidGate.reset();
       if (result.ok) result.lease.release();
     }
   });
