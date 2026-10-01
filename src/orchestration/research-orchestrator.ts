@@ -232,11 +232,19 @@ export function createResearchOrchestrator({
       const typedUrls = extractDirectUrls(query);
       const repoUrls = researchRepo ? typedUrls.filter((url) => parseRepoUrl(url) !== undefined) : [];
       const pageUrls = typedUrls.filter((url) => !repoUrls.includes(url));
+      const repoKeys = new Set<string>();
+      const uniqueRepoUrls = repoUrls.filter((url) => {
+        const target = parseRepoUrl(url)!;
+        const key = `${target.owner.toLowerCase()}/${target.repo.toLowerCase()}\0${target.refAndPath ?? ''}`;
+        if (repoKeys.has(key)) return false;
+        repoKeys.add(key);
+        return true;
+      });
 
-      if (repoUrls.length > REPO_MAX_TYPED_REPOS) {
+      if (uniqueRepoUrls.length > REPO_MAX_TYPED_REPOS) {
         return terminal({ code: 'REPO_TOO_MANY', message: 'Too many repo links in one question; ask about one or two at a time.' });
       }
-      for (const url of repoUrls) {
+      for (const url of uniqueRepoUrls) {
         throwIfAborted(signal);
         const researched = await researchRepo!({ url, query, signal });
         throwIfAborted(signal);

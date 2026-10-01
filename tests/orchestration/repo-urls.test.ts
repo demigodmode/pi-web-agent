@@ -61,6 +61,47 @@ describe('typed repo URLs', () => {
     expect(researchRepo).not.toHaveBeenCalled();
   });
 
+  it('researches root, .git, trailing slash, and owner case aliases once', async () => {
+    const researchRepo = vi.fn(async ({ url }: { url: string }) => repoOk(url));
+    const fetchDirect = vi.fn(okPage);
+    const orchestrator = createResearchOrchestrator({ worker: worker(), fetchDirect, headlessFetch: vi.fn(), researchRepo });
+    await orchestrator.run({
+      query: 'https://github.com/Acme/Widget https://github.com/acme/widget.git https://github.com/acme/widget/'
+    });
+    expect(researchRepo).toHaveBeenCalledTimes(1);
+    expect(researchRepo).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://github.com/Acme/Widget' }));
+    expect(fetchDirect).not.toHaveBeenCalled();
+  });
+
+  it('researches an alias group and a second repo without spending page fetches on aliases', async () => {
+    const researchRepo = vi.fn(async ({ url }: { url: string }): Promise<RepoResearchResult> => {
+      const result = repoOk(url);
+      if (!result.ok) throw new Error('repo fixture must succeed');
+      return { ...result, response: { ...result.response, content: { title: 'acme/widget', text: '' } } };
+    });
+    const fetchDirect = vi.fn(okPage);
+    const orchestrator = createResearchOrchestrator({ worker: worker(), fetchDirect, headlessFetch: vi.fn(), researchRepo });
+    await orchestrator.run({
+      query: 'https://github.com/acme/widget https://github.com/acme/widget.git https://github.com/other/tool https://a.example/1 https://b.example/2 https://c.example/3'
+    });
+    expect(researchRepo).toHaveBeenCalledTimes(2);
+    expect(researchRepo.mock.calls.map(([input]) => input.url)).toEqual(['https://github.com/acme/widget', 'https://github.com/other/tool']);
+    expect(fetchDirect.mock.calls.map(([input]) => input.url)).toEqual(['https://a.example/1', 'https://b.example/2', 'https://c.example/3']);
+  });
+
+  it('counts distinct repo refs and folders separately before the typed repo limit', async () => {
+    const researchRepo = vi.fn(async ({ url }: { url: string }) => repoOk(url));
+    const orchestrator = createResearchOrchestrator({ worker: worker(), fetchDirect: vi.fn(okPage), headlessFetch: vi.fn(), researchRepo });
+    const result = await orchestrator.run({
+      query: 'https://github.com/acme/widget/tree/main/src https://github.com/acme/widget/tree/main/docs https://github.com/acme/widget/tree/release/src'
+    });
+    expect(result.terminalFailure).toEqual({
+      code: 'REPO_TOO_MANY',
+      message: 'Too many repo links in one question; ask about one or two at a time.'
+    });
+    expect(researchRepo).not.toHaveBeenCalled();
+  });
+
   it('answers from the repo without searching', async () => {
     const w = worker();
     const researchRepo = vi.fn(async ({ url }: { url: string }) => repoOk(url));
