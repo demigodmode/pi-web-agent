@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { devNull, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { once } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ensureGitVersion,
@@ -14,6 +16,7 @@ import { FAKE_GIT_ERROR, FAKE_GIT_OLD, FAKE_GIT_SLEEP, fakeGit, isAlive, readPid
 
 const sleepingVersionGit = (key: string) => fakeGit(FAKE_GIT_SLEEP, { gitArgsPrefix: [FAKE_GIT_SLEEP, key] });
 const temps: string[] = [];
+const servers: Server[] = [];
 const tempDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'pwa-git-runner-'));
   temps.push(dir);
@@ -21,8 +24,29 @@ const tempDir = () => {
 };
 afterEach(() => {
   vi.unstubAllEnvs();
+  for (const server of servers.splice(0)) server.close();
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+const askpassScript = (marker: string) => {
+  const script = join(tempDir(), 'askpass.mjs');
+  writeFileSync(script, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'invoked');\n`);
+  chmodSync(script, 0o755);
+  return script;
+};
+
+const unauthorizedRemote = async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(401, { 'www-authenticate': 'Basic realm="test"' });
+    response.end();
+  });
+  servers.push(server);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('test server did not bind a TCP port');
+  return `http://127.0.0.1:${address.port}/repo.git`;
+};
 
 describe('git runner', () => {
   it('runs real git', async () => {
@@ -34,16 +58,27 @@ describe('git runner', () => {
   it('isolates git from the parent environment and the user config', () => {
     const env = gitProcessEnv(
       { token: 'sekret-token', proxyUrl: 'http://u:p@proxy.local:3128/', extraAllowedProtocols: ['file'] },
-      { PATH: '/usr/bin', HOME: '/home/x', GIT_DIR: '/evil', GIT_CONFIG_PARAMETERS: "'core.x=1'", HTTPS_PROXY: 'http://other:1', no_proxy: '*' }
+      {
+        PATH: '/usr/bin',
+        HOME: '/home/x',
+        GIT_DIR: '/evil',
+        GIT_CONFIG_PARAMETERS: "'core.x=1'",
+        GIT_ASKPASS: '/evil/git-askpass',
+        SSH_ASKPASS: '/evil/ssh-askpass',
+        HTTPS_PROXY: 'http://other:1',
+        no_proxy: '*'
+      }
     );
     expect(env.PATH).toBe('/usr/bin');
     expect(env.GIT_DIR).toBeUndefined();
     expect(env.GIT_CONFIG_PARAMETERS).toBeUndefined();
+    expect(env.SSH_ASKPASS).toBeUndefined();
     expect(env.HTTPS_PROXY).toBeUndefined();
     expect(env.no_proxy).toBeUndefined();
     expect(env.GIT_CONFIG_NOSYSTEM).toBe('1');
     expect(env.GIT_CONFIG_GLOBAL).toBe(devNull);
     expect(env.GIT_TERMINAL_PROMPT).toBe('0');
+    expect(env.GIT_ASKPASS).toBe('');
     expect(env.GIT_LFS_SKIP_SMUDGE).toBe('1');
     expect(env.GCM_INTERACTIVE).toBe('never');
 
@@ -55,9 +90,32 @@ describe('git runner', () => {
       'protocol.https.allow': 'always',
       'protocol.file.allow': 'always',
       'core.symlinks': 'false',
+      'credential.helper': '',
       'http.proxy': 'http://u:p@proxy.local:3128/',
       'http.https://github.com/.extraHeader': 'Authorization: Basic eC1hY2Nlc3MtdG9rZW46c2VrcmV0LXRva2Vu'
     });
+  });
+
+  it('does not invoke inherited SSH_ASKPASS for an HTTP authentication failure', async () => {
+    const marker = join(tempDir(), 'ssh-askpass-marker');
+    vi.stubEnv('SSH_ASKPASS', askpassScript(marker));
+    const result = await runGit(['ls-remote', await unauthorizedRemote()], { timeoutMs: 2_000, env: { extraAllowedProtocols: ['http'] } });
+
+    expect(result.ok).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('clears inherited GIT_ASKPASS while an HTTP authentication failure stays noninteractive', async () => {
+    const marker = join(tempDir(), 'git-askpass-marker');
+    const script = askpassScript(marker);
+    vi.stubEnv('GIT_ASKPASS', script);
+
+    const isolated = gitProcessEnv({}, { PATH: process.env.PATH, GIT_ASKPASS: script });
+    expect(isolated.GIT_ASKPASS).toBe('');
+
+    const result = await runGit(['ls-remote', await unauthorizedRemote()], { timeoutMs: 2_000, env: { extraAllowedProtocols: ['http'] } });
+    expect(result.ok).toBe(false);
+    expect(existsSync(marker)).toBe(false);
   });
 
   it('never lets production wiring reach the test-only transports', () => {

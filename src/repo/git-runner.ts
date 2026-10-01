@@ -57,13 +57,14 @@ function githubBasicCredential(token: string): string {
 export function gitProcessEnv(env: GitEnv, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(base)) {
-    if (!key.startsWith('GIT_') && !PROXY_ENV.test(key)) out[key] = value;
+    if (!key.startsWith('GIT_') && key !== 'SSH_ASKPASS' && !PROXY_ENV.test(key)) out[key] = value;
   }
   const config: Array<[string, string]> = [
     ['protocol.allow', 'never'],
     ['protocol.https.allow', 'always'],
     ...(env.extraAllowedProtocols ?? []).map((protocol): [string, string] => [`protocol.${protocol}.allow`, 'always']),
-    ['core.symlinks', 'false']
+    ['core.symlinks', 'false'],
+    ['credential.helper', '']
   ];
   if (env.proxyUrl) config.push(['http.proxy', env.proxyUrl]);
   if (env.token) config.push(['http.https://github.com/.extraHeader', `Authorization: Basic ${githubBasicCredential(env.token)}`]);
@@ -71,6 +72,7 @@ export function gitProcessEnv(env: GitEnv, base: NodeJS.ProcessEnv = process.env
   out.GIT_CONFIG_NOSYSTEM = '1';
   out.GIT_CONFIG_GLOBAL = devNull;
   out.GIT_TERMINAL_PROMPT = '0';
+  out.GIT_ASKPASS = '';
   out.GIT_LFS_SKIP_SMUDGE = '1';
   out.GCM_INTERACTIVE = 'never';
   out.GIT_CONFIG_COUNT = String(config.length);
