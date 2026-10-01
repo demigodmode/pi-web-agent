@@ -472,6 +472,16 @@ describe('excerpts', () => {
     ]);
   });
 
+  it('normalizes CRLF search excerpts while keeping terminal and blank lines in their ranges', async () => {
+    const result = await searchRepo(tree({
+      'src/crlf.ts': 'before\r\nneedle\r\n\r\nafter\r\n'
+    }), { query: 'needle', contextLines: 10 });
+
+    expect(result.files[0].excerpts).toEqual([
+      { startLine: 1, endLine: 4, text: 'before\nneedle\n\nafter' }
+    ]);
+  });
+
   it('does not count a terminal newline as an extra path-only line', () => {
     expect(buildExcerpts('plain\n', queryTerms('refresh'))).toEqual([
       { startLine: 1, endLine: 1, text: 'plain' }

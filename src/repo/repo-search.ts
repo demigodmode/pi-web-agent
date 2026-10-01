@@ -126,7 +126,7 @@ export function scoreFile(path: string, text: string, terms: QueryTerm[]): numbe
 
 function sourceLines(text: string): string[] {
   if (text.length === 0) return [];
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/);
   if (text.endsWith('\n')) lines.pop();
   return lines;
 }
@@ -176,7 +176,7 @@ export function fitToBudget(files: RepoSearchFile[], charBudget: number): RepoSe
       const lineBreak = excerpt.text.lastIndexOf('\n', room - 1);
       const text = safeSlice(excerpt.text, lineBreak > 0 ? lineBreak : room);
       if (text.length === 0) break;
-      excerpts.push({ startLine: excerpt.startLine, endLine: excerpt.startLine + text.split('\n').length - 1, text });
+      excerpts.push({ startLine: excerpt.startLine, endLine: excerpt.startLine + text.split(/\r?\n/).length - 1, text });
       used += text.length;
       break;
     }

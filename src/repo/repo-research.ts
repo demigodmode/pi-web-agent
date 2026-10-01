@@ -49,7 +49,7 @@ function blobUrl(meta: RepoMeta, path: string, startLine: number, endLine: numbe
 }
 
 function excerptSection(meta: RepoMeta, path: string, startLine: number, text: string): string {
-  const endLine = startLine + text.split('\n').length - 1;
+  const endLine = startLine + text.split(/\r?\n/).length - 1;
   return `${path} (lines ${startLine}-${endLine})\n${blobUrl(meta, path, startLine, endLine)}\n${text}`;
 }
 
@@ -57,7 +57,7 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
   const full = excerptSection(meta, path, excerpt.startLine, excerpt.text);
   if (full.length <= maxChars) return full;
 
-  const lines = excerpt.text.split('\n');
+  const lines = excerpt.text.split(/\r?\n/);
   let best: string | undefined;
   for (const line of lines) {
     const candidate = best === undefined ? line : `${best}\n${line}`;

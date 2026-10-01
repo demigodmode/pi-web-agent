@@ -90,6 +90,19 @@ describe('researchRepo', () => {
     expect(text.length).toBeLessThanOrEqual(24_000);
   });
 
+  it('renders CRLF source with a normalized pinned citation range', async () => {
+    const { repo, deps } = setup({
+      'src/crlf.ts': 'before\r\nneedle\r\nafter\r\n'
+    });
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = result.response.content!.text;
+    expect(text).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/crlf.ts#L1-L3`);
+    expect(text).toContain('before\nneedle\nafter');
+    expect(text).not.toContain('\r');
+  });
+
   it('adds the README when only one file matched', async () => {
     const { repo, deps } = setup({ 'README.md': '# Widget\nIntro text.', 'src/cache.ts': 'export const evictIdle = () => 1;' });
     const result = await researchRepo('https://github.com/acme/widget', { query: 'how is evictIdle done' }, deps);
