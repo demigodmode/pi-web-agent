@@ -64,7 +64,11 @@ describe('git runner', () => {
         GIT_DIR: '/evil',
         GIT_CONFIG_PARAMETERS: "'core.x=1'",
         GIT_ASKPASS: '/evil/git-askpass',
+        git_askpass: '/evil/lower-git-askpass',
+        GiT_AsKpAsS: '/evil/mixed-git-askpass',
         SSH_ASKPASS: '/evil/ssh-askpass',
+        ssh_askpass: '/evil/lower-ssh-askpass',
+        SsH_AsKpAsS: '/evil/mixed-ssh-askpass',
         HTTPS_PROXY: 'http://other:1',
         no_proxy: '*'
       }
@@ -72,7 +76,11 @@ describe('git runner', () => {
     expect(env.PATH).toBe('/usr/bin');
     expect(env.GIT_DIR).toBeUndefined();
     expect(env.GIT_CONFIG_PARAMETERS).toBeUndefined();
+    expect(env.git_askpass).toBeUndefined();
+    expect(env.GiT_AsKpAsS).toBeUndefined();
     expect(env.SSH_ASKPASS).toBeUndefined();
+    expect(env.ssh_askpass).toBeUndefined();
+    expect(env.SsH_AsKpAsS).toBeUndefined();
     expect(env.HTTPS_PROXY).toBeUndefined();
     expect(env.no_proxy).toBeUndefined();
     expect(env.GIT_CONFIG_NOSYSTEM).toBe('1');

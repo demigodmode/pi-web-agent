@@ -57,7 +57,7 @@ function githubBasicCredential(token: string): string {
 export function gitProcessEnv(env: GitEnv, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(base)) {
-    if (!key.startsWith('GIT_') && key !== 'SSH_ASKPASS' && !PROXY_ENV.test(key)) out[key] = value;
+    if (!/^git_/i.test(key) && key.toUpperCase() !== 'SSH_ASKPASS' && !PROXY_ENV.test(key)) out[key] = value;
   }
   const config: Array<[string, string]> = [
     ['protocol.allow', 'never'],
