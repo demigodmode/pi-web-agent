@@ -7,7 +7,7 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Paste a GitHub repo link into your question and `web_explore` now downloads that repo (one commit, shallow) and reads it locally (#72). Clones stay around for the session so follow-ups are quick, and get cleaned up when the session ends. Private repos work with `gh auth login` or `GITHUB_TOKEN`. Repos over 300MB, a clone that takes over 60 seconds or a missing `git` stop the answer with a clear reason instead of falling back to the README. For now you get the README and the folder listing; searching the code for your question comes next.
 
 ### Changed
 - None.
