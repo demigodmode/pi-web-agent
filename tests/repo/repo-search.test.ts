@@ -11,13 +11,18 @@ const handleCalls = vi.hoisted(() => ({
   releaseOpen: undefined as (() => void) | undefined,
   onRead: undefined as (() => void) | undefined,
   realpathPaths: [] as string[],
-  onRealpath: undefined as (() => void) | undefined
+  onRealpath: undefined as (() => void) | undefined,
+  reverseReaddir: false
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...original,
+    readdir: async (...args: Parameters<typeof original.readdir>) => {
+      const entries = await original.readdir(...args);
+      return handleCalls.reverseReaddir && Array.isArray(entries) ? [...entries].reverse() : entries;
+    },
     realpath: async (...args: Parameters<typeof original.realpath>) => {
       const result = await original.realpath(...args);
       handleCalls.realpathPaths.push(String(args[0]));
@@ -61,6 +66,7 @@ afterEach(() => {
   handleCalls.onRead = undefined;
   handleCalls.realpathPaths.length = 0;
   handleCalls.onRealpath = undefined;
+  handleCalls.reverseReaddir = false;
 });
 
 function tree(files: Record<string, string | Buffer | { symlink: string }>): string {
@@ -188,9 +194,10 @@ describe('searchRepo walk and scoring', () => {
 
   it('stops before opening files beyond the scanned-file budget', async () => {
     const root = tree({ 'a.ts': impl, 'b.ts': impl });
-    await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedFiles: 1 });
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', maxScannedFiles: 1 });
     expect(handleCalls.lengths).toHaveLength(1);
     expect(handleCalls.closed).toBe(1);
+    expect(result).toMatchObject({ partial: true, budget: 'files', scannedFiles: 1 });
   });
 
   it('bounds a read by the remaining byte budget and skips its incomplete candidate', async () => {
@@ -199,17 +206,19 @@ describe('searchRepo walk and scoring', () => {
     expect(handleCalls.lengths).toEqual([12]);
     expect(handleCalls.closed).toBe(1);
     expect(result.files).toEqual([]);
+    expect(result).toMatchObject({ partial: true, budget: 'bytes', scannedFiles: 1 });
   });
 
   it('stops before opening files after the search time budget expires', async () => {
     const root = tree({ 'a.ts': impl });
     let calls = 0;
-    await searchRepo(root, {
+    const result = await searchRepo(root, {
       query: 'refresh OAuth tokens',
       maxSearchMs: 10,
       now: () => calls++ === 0 ? 0 : 10
     });
     expect(handleCalls.lengths).toEqual([]);
+    expect(result).toMatchObject({ partial: true, budget: 'time', scannedFiles: 0 });
   });
 
   it('stops after scope resolution reaches the deadline', async () => {
@@ -224,7 +233,7 @@ describe('searchRepo walk and scoring', () => {
       maxSearchMs: 10,
       now: () => elapsed
     });
-    expect(result).toEqual({ scopeFound: true, terms: ['refresh', 'oauth', 'tokens'], files: [] });
+    expect(result).toEqual({ scopeFound: true, terms: ['refresh', 'oauth', 'tokens'], files: [], partial: true, budget: 'time', scannedFiles: 0 });
     expect(handleCalls.realpathPaths).toEqual([root]);
     expect(handleCalls.lengths).toEqual([]);
   });
@@ -242,6 +251,7 @@ describe('searchRepo walk and scoring', () => {
     });
     expect(result.files).toEqual([]);
     expect(handleCalls.closed).toBe(1);
+    expect(result).toMatchObject({ partial: true, budget: 'time', scannedFiles: 1 });
   });
 
   it('still throws when cancellation arrives during a deadline-expiring read', async () => {
@@ -281,6 +291,16 @@ describe('searchRepo walk and scoring', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(searchRepo(root, { query: 'refresh', signal: controller.signal })).rejects.toThrow('Operation aborted');
+  });
+
+  it('uses code-unit ordering for traversal and equal-score paths despite creation and filesystem entry order', async () => {
+    const root = tree({ 'a.ts': 'refresh oauth token', 'Z.ts': 'refresh oauth token', 'm.ts': 'refresh oauth token' });
+    const normal = await searchRepo(root, { query: 'refresh oauth token', maxScannedFiles: 2 });
+    const reorderedRoot = tree({ 'm.ts': 'refresh oauth token', 'Z.ts': 'refresh oauth token', 'a.ts': 'refresh oauth token' });
+    handleCalls.reverseReaddir = true;
+    const reversed = await searchRepo(reorderedRoot, { query: 'refresh oauth token', maxScannedFiles: 2 });
+    expect(reversed.files.map((file) => file.path)).toEqual(normal.files.map((file) => file.path));
+    expect(normal.files.map((file) => file.path)).toEqual(['Z.ts', 'a.ts']);
   });
 });
 

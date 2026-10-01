@@ -159,6 +159,37 @@ describe('researchRepo', () => {
     expect(result.response.metadata.truncated).toBe(true);
   });
 
+  it.each([
+    ['files', { maxScannedFiles: 1 }, { 'a.ts': 'needle', 'b.ts': 'needle' }],
+    ['bytes', { maxScannedBytes: 1 }, { 'a.ts': 'needle' }],
+    ['time', { maxSearchMs: 1 }, { 'a.ts': 'needle' }]
+  ] as const)('discloses a partial %s scan in the response and metadata', async (_budget, searchLimits, files) => {
+    const { deps } = setup(files);
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, {
+      ...deps,
+      searchLimits,
+      ...('maxSearchMs' in searchLimits ? { searchNow: (() => { let calls = 0; return () => calls++ === 0 ? 0 : 1; })() } : {})
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.content!.text).toContain('Searched the first');
+    expect(result.response.content!.text).toContain('files only (large repo); paste a /tree/ folder link to narrow it.');
+    expect(result.response.metadata.truncated).toBe(true);
+  });
+
+  it('keeps the partial-search notice under the reader cap when the header fills it', async () => {
+    const { deps } = setup({ 'a.ts': 'needle', 'b.ts': 'needle' });
+    const result = await researchRepo('https://github.com/acme/widget', { query: `${'z'.repeat(READER_TEXT_CAP + 100)} needle` }, {
+      ...deps,
+      searchLimits: { maxScannedFiles: 1 }
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.content!.text.length).toBeLessThanOrEqual(READER_TEXT_CAP);
+    expect(result.response.content!.text).toContain('Searched the first 1 files only (large repo); paste a /tree/ folder link to narrow it.');
+    expect(result.response.metadata.truncated).toBe(true);
+  });
+
   it('reuses the clone on a follow-up question', async () => {
     const { deps } = setup({ 'README.md': 'hi' });
     await researchRepo('https://github.com/acme/widget', { query: 'a' }, deps);

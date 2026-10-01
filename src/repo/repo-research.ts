@@ -7,7 +7,7 @@ import type { RepoCache } from './repo-cache.js';
 import { cloneRepo } from './repo-clone.js';
 import { fetchRepoMeta, type RepoMeta } from './repo-meta.js';
 import { readRepoOverview, type RepoOverview } from './repo-overview.js';
-import { searchRepo, type RepoSearchResult } from './repo-search.js';
+import { searchRepo, type RepoSearchOptions, type RepoSearchResult } from './repo-search.js';
 import { parseRepoUrl } from './repo-url.js';
 import { repoFailure, type RepoFailure } from './types.js';
 
@@ -24,6 +24,9 @@ export type RepoResearchDeps = {
   resolveToken: () => Promise<GithubToken>;
   metaTimeoutMs?: number;
   cloneTimeoutMs?: number;
+  /** Internal test seam for proving capped scans are disclosed; never user configuration. */
+  searchLimits?: Pick<RepoSearchOptions, 'maxScannedFiles' | 'maxScannedBytes' | 'maxSearchMs'>;
+  searchNow?: () => number;
 };
 
 const fail = (failure: RepoFailure): RepoResearchResult => ({ ok: false, error: failure });
@@ -81,11 +84,15 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
 
 function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: RepoOverview | undefined, reused: boolean): WebFetchResponse {
   const name = `${meta.owner}/${meta.repo}`;
+  const partialNotice = search.partial
+    ? `Searched the first ${search.scannedFiles} files only (large repo); paste a /tree/ folder link to narrow it.`
+    : undefined;
+  const contentCap = READER_TEXT_CAP - (partialNotice ? partialNotice.length + 2 : 0);
   const header =
     `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.` +
       (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '');
-  let truncated = header.length > READER_TEXT_CAP;
-  const sections = [header.slice(0, READER_TEXT_CAP)];
+  let truncated = header.length > contentCap || search.partial === true;
+  const sections = [header.slice(0, contentCap)];
   let length = sections[0].length;
   let exhausted = false;
 
@@ -93,7 +100,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
     for (const file of search.files) {
       const excerpt = file.excerpts[index];
       if (!excerpt) continue;
-      const available = READER_TEXT_CAP - length - 2;
+      const available = contentCap - length - 2;
       const full = excerptSection(meta, file.path, excerpt.startLine, excerpt.text);
       const section = fitExcerptSection(meta, file.path, excerpt, available);
       if (!section) {
@@ -112,7 +119,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
   }
 
   const appendPlain = (section: string) => {
-    const available = READER_TEXT_CAP - length - 2;
+    const available = contentCap - length - 2;
     if (section.length <= available) {
       sections.push(section);
       length += section.length + 2;
@@ -135,6 +142,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
       appendPlain(`Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`);
     }
   }
+  if (partialNotice) sections.push(partialNotice);
   const text = sections.join('\n\n');
   return {
     status: 'ok',
@@ -176,7 +184,14 @@ export async function researchRepo(url: string, { query, signal }: { query: stri
     let search: RepoSearchResult;
     let overview: RepoOverview | undefined;
     try {
-      search = await searchRepo(lease.dir, { query, pathScope: meta.pathScope, signal: readSignal, charBudget: SEARCH_CHAR_BUDGET });
+      search = await searchRepo(lease.dir, {
+        query,
+        pathScope: meta.pathScope,
+        signal: readSignal,
+        charBudget: SEARCH_CHAR_BUDGET,
+        ...deps.searchLimits,
+        ...(deps.searchNow ? { now: deps.searchNow } : {})
+      });
       if (search.scopeFound && search.files.length < 2) {
         overview = await readRepoOverview(lease.dir, { pathScope: meta.pathScope, signal: readSignal });
       }

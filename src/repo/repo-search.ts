@@ -7,7 +7,16 @@ import { queryTerms, type QueryTerm } from './repo-terms.js';
 
 export type RepoSearchExcerpt = { startLine: number; endLine: number; text: string };
 export type RepoSearchFile = { path: string; score: number; excerpts: RepoSearchExcerpt[] };
-export type RepoSearchResult = { scopeFound: boolean; terms: string[]; files: RepoSearchFile[] };
+export type RepoSearchBudget = 'files' | 'bytes' | 'time';
+export type RepoSearchResult = {
+  scopeFound: boolean;
+  terms: string[];
+  files: RepoSearchFile[];
+  /** Present when a scan cap is reached. */
+  partial?: true;
+  budget?: RepoSearchBudget;
+  scannedFiles?: number;
+};
 export type RepoSearchOptions = {
   query: string;
   pathScope?: string;
@@ -147,7 +156,7 @@ export function fitToBudget(files: RepoSearchFile[], charBudget: number): RepoSe
 
 function keepTop(top: Candidate[], candidate: Candidate, limit: number): void {
   top.push(candidate);
-  top.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  top.sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   if (top.length > limit) top.length = limit;
 }
 
@@ -238,21 +247,27 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   const maxSearchMs = options.maxSearchMs ?? MAX_SEARCH_MS;
   const timedOut = () => now() - searchStartedAt >= maxSearchMs;
   const terms = queryTerms(options.query);
+  const result = (scopeFound: boolean, files: RepoSearchFile[], partial?: RepoSearchBudget, scannedFiles = 0): RepoSearchResult => ({
+    scopeFound,
+    terms: terms.map((term) => term.term),
+    files,
+    ...(partial ? { partial: true, budget: partial, scannedFiles } : {})
+  });
   const scopeHasLink = await scopeHasSymlink(root, options.pathScope, options.signal);
   throwIfAborted(options.signal);
   if (scopeHasLink) {
-    return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
+    return result(false, []);
   }
-  if (timedOut()) return { scopeFound: true, terms: terms.map((term) => term.term), files: [] };
+  if (timedOut()) return result(true, [], 'time');
   const start = await resolveInside(root, options.pathScope);
   throwIfAborted(options.signal);
-  if (!start) return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
-  if (timedOut()) return { scopeFound: true, terms: terms.map((term) => term.term), files: [] };
+  if (!start) return result(false, []);
+  if (timedOut()) return result(true, [], 'time');
   if (terms.length === 0) return { scopeFound: true, terms: [], files: [] };
 
   const base = await realpath(root);
   throwIfAborted(options.signal);
-  if (timedOut()) return { scopeFound: true, terms: terms.map((term) => term.term), files: [] };
+  if (timedOut()) return result(true, [], 'time');
   const top: Candidate[] = [];
   let scanned = 0;
   let scannedBytes = 0;
@@ -266,6 +281,7 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
     const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
     throwIfAborted(options.signal);
     if (timedOut()) break;
+    items.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
     for (const item of items) {
       if (item.isSymbolicLink() || isGitAlias(item.name)) continue;
       const abs = join(dir, item.name);
@@ -289,5 +305,6 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
     score: candidate.score,
     excerpts: buildExcerpts(candidate.text, terms, options.contextLines)
   }));
-  return { scopeFound: true, terms: terms.map((term) => term.term), files: fitToBudget(files, options.charBudget ?? Number.POSITIVE_INFINITY) };
+  const budget = timedOut() ? 'time' : scanned >= maxScannedFiles ? 'files' : scannedBytes >= maxScannedBytes ? 'bytes' : undefined;
+  return result(true, fitToBudget(files, options.charBudget ?? Number.POSITIVE_INFINITY), budget, scanned);
 }
