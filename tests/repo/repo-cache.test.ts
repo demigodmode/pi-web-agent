@@ -32,6 +32,32 @@ const rmGate = vi.hoisted(() => {
   return state;
 });
 
+const raceGate = vi.hoisted(() => {
+  let reached!: () => void;
+  let release!: () => void;
+  const state: {
+    enabled: boolean;
+    reached: Promise<void>;
+    allow: Promise<void>;
+    reset(): void;
+    reach(): void;
+    release(): void;
+  } = {
+    enabled: false,
+    reached: Promise.resolve(),
+    allow: Promise.resolve(),
+    reset() {
+      this.enabled = false;
+      this.reached = new Promise<void>((resolve) => { reached = resolve; });
+      this.allow = new Promise<void>((resolve) => { release = resolve; });
+    },
+    reach: () => reached(),
+    release: () => release()
+  };
+  state.reset();
+  return state;
+});
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
@@ -42,6 +68,21 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         await rmGate.allow;
       }
       return actual.rm(path, options);
+    },
+  };
+});
+
+vi.mock('../../src/abort.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/abort.js')>();
+  return {
+    ...actual,
+    raceAbort: async <T>(work: Promise<T>, signal: AbortSignal) => {
+      const result = await actual.raceAbort(work, signal);
+      if (raceGate.enabled) {
+        raceGate.reach();
+        await raceGate.allow;
+      }
+      return result;
     }
   };
 });
@@ -61,6 +102,7 @@ const cache = (options: Parameters<typeof createRepoCache>[0]) => {
 afterEach(async () => {
   await Promise.all(caches.splice(0).map((c) => c.close()));
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
+  raceGate.reset();
 });
 
 function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSignal[] } {
@@ -129,6 +171,30 @@ describe('repo cache', () => {
     } finally {
       if (ra.ok) ra.lease.release();
       if (rb.ok) rb.lease.release();
+    }
+  });
+
+  it('keeps a just-finished clone while its waiter receives the first lease', async () => {
+    const c = cache({ baseDir: baseDir(), maxIdleBytes: 10 });
+    const held = await c.acquire('held', fakeClone(10));
+    if (!held.ok) throw new Error('acquire failed');
+
+    raceGate.reset();
+    raceGate.enabled = true;
+    const second = c.acquire('second', fakeClone(10), new AbortController().signal);
+    await raceGate.reached;
+    held.lease.release();
+    raceGate.release();
+
+    const result = await second;
+    try {
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(existsSync(result.lease.dir)).toBe(true);
+      expect(readFileSync(join(result.lease.dir, 'data'), 'utf8')).toBe('x'.repeat(10));
+    } finally {
+      if (result.ok) result.lease.release();
     }
   });
 

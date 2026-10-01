@@ -172,7 +172,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
 
   const evictIdle = () => {
     const idle = [...entries.values()]
-      .filter((entry) => entry.state === 'ready' && entry.leases === 0)
+      .filter((entry) => entry.state === 'ready' && entry.leases === 0 && entry.waiters === 0)
       .sort((a, b) => a.lastReleased - b.lastReleased);
     let total = idle.reduce((sum, entry) => sum + entry.size, 0);
     for (const entry of idle) {
@@ -204,12 +204,13 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
     };
   };
 
-  const joinClone = async (entry: Entry, signal: AbortSignal | undefined): Promise<AcquireResult> => {
+  const joinClone = async (entry: Entry, clone: CloneFn, signal: AbortSignal | undefined): Promise<AcquireResult> => {
     entry.waiters++;
     try {
       const outcome = signal ? await raceAbort(entry.ready, signal) : await entry.ready;
       if (!outcome.ok) return { ok: false, failure: outcome.failure };
       if (closed) return { ok: false, failure: closedFailure() };
+      if (entries.get(entry.key) !== entry) return acquire(entry.key, clone, signal);
       const lease = makeLease(entry, false);
       evictIdle();
       return { ok: true, lease };
@@ -233,7 +234,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
       return acquire(key, clone, signal);
     }
     if (existing?.state === 'ready') return { ok: true, lease: makeLease(existing, true) };
-    if (existing) return joinClone(existing, signal);
+    if (existing) return joinClone(existing, clone, signal);
 
     const controller = new AbortController();
     const entry: Entry = {
@@ -289,7 +290,7 @@ export function createRepoCache(options: RepoCacheOptions = {}): RepoCache {
         return { ok: false, failure: repoFailure('REPO_CACHE_FAILED', `Couldn't prepare the clone: ${error instanceof Error ? error.message : String(error)}`, 'transient') };
       }
     })();
-    return joinClone(entry, signal);
+    return joinClone(entry, clone, signal);
   };
 
   const close = () => (closePromise ??= (async () => {
