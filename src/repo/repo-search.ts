@@ -37,7 +37,8 @@ export const MAX_SEARCH_FILE_BYTES = 512 * 1024;
 const MAX_SCANNED_FILES = 20_000;
 const DEFAULT_CONTEXT_LINES = 20;
 
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'vendor', 'dist', 'build', '.next', 'target', '__pycache__', '.venv']);
+const SKIP_DIRS = new Set(['node_modules', 'vendor', '.next', '__pycache__', '.venv']);
+const ROOT_SKIP_DIRS = new Set(['dist', 'build', 'target', 'out']);
 const LOCKFILES = new Set([
   'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'Cargo.lock', 'poetry.lock',
   'Pipfile.lock', 'Gemfile.lock', 'composer.lock', 'go.sum', 'mix.lock', 'flake.lock'
@@ -314,7 +315,7 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
       if (item.isSymbolicLink() || isGitAlias(item.name)) continue;
       const abs = join(dir, item.name);
       if (item.isDirectory()) {
-        if (!SKIP_DIRS.has(item.name)) stack.push(abs);
+        if (!SKIP_DIRS.has(item.name) && !(dir === start && ROOT_SKIP_DIRS.has(item.name))) stack.push(abs);
         continue;
       }
       const extension = extname(item.name).toLowerCase();

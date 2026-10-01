@@ -155,6 +155,52 @@ describe('searchRepo walk and scoring', () => {
     expect(result.files.map((file) => file.path)).toEqual(['src/auth/token-refresh.ts']);
   });
 
+  it('skips build output only at the clone root and the scoped root', async () => {
+    const root = tree({
+      'dist/root.ts': impl,
+      'build/root.ts': impl,
+      'target/root.ts': impl,
+      'out/root.ts': impl,
+      'src/dist/oauth.ts': impl,
+      'src/build/oauth.ts': impl,
+      'src/target/oauth.ts': impl,
+      'src/out/oauth.ts': impl,
+      'src/node_modules/oauth.ts': impl,
+      'scope/dist/root.ts': impl,
+      'scope/build/root.ts': impl,
+      'scope/target/root.ts': impl,
+      'scope/out/root.ts': impl,
+      'scope/lib/dist/oauth.ts': impl,
+      'scope/lib/build/oauth.ts': impl,
+      'scope/lib/target/oauth.ts': impl,
+      'scope/lib/out/oauth.ts': impl
+    });
+
+    const cloneResult = await searchRepo(root, { query: 'refresh OAuth tokens', maxFiles: 20 });
+    expect(cloneResult.files.map((file) => file.path)).toEqual([
+      'scope/lib/build/oauth.ts',
+      'scope/lib/dist/oauth.ts',
+      'scope/lib/out/oauth.ts',
+      'scope/lib/target/oauth.ts',
+      'src/build/oauth.ts',
+      'src/dist/oauth.ts',
+      'src/out/oauth.ts',
+      'src/target/oauth.ts',
+      'scope/build/root.ts',
+      'scope/dist/root.ts',
+      'scope/out/root.ts',
+      'scope/target/root.ts'
+    ]);
+
+    const scopedResult = await searchRepo(root, { query: 'refresh OAuth tokens', pathScope: 'scope', maxFiles: 20 });
+    expect(scopedResult.files.map((file) => file.path)).toEqual([
+      'scope/lib/build/oauth.ts',
+      'scope/lib/dist/oauth.ts',
+      'scope/lib/out/oauth.ts',
+      'scope/lib/target/oauth.ts'
+    ]);
+  });
+
   it('penalizes structured data and all-caps extensionless project documents like docs', () => {
     const terms = queryTerms('refresh oauth tokens');
     const content = 'refresh oauth tokens';
