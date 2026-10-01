@@ -594,7 +594,7 @@ describe('repo cache', () => {
     const parent = baseDir();
     const base = join(parent, 'cache');
     makeUnsafe(base, parent);
-    const leftover = join(parent, 'otherboot-999999-dead');
+    const leftover = join(base, 'otherboot-999999-dead');
     mkdirSync(leftover);
     writeFileSync(join(leftover, 'keep'), 'keep');
     const c = cache({ baseDir: base, platform: 'linux' });
