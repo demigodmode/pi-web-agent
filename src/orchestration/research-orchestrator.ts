@@ -16,6 +16,7 @@ import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -172,7 +173,8 @@ function decisionForAnswer({
 export function createResearchOrchestrator({
   worker,
   fetchDirect,
-  headlessFetch
+  headlessFetch,
+  researchRepo: _researchRepo
 }: {
   worker: {
     run: (input: {
@@ -184,6 +186,8 @@ export function createResearchOrchestrator({
   };
   fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
   headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
+  /** Typed GitHub repo URLs (#72). Without it, they go through fetchDirect like any page. */
+  researchRepo?: (input: RepoResearchInput) => Promise<RepoResearchResult>;
 }) {
   return {
     async run({ query, signal }: { query: string; signal?: AbortSignal }) {
