@@ -737,7 +737,8 @@ describe('web-agent config commands', () => {
       // Injected so this stays hermetic. The real checkJitiCompat reads this
       // machine's node_modules, which would make the test fail on exactly the
       // trees where #34 has recurred.
-      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] })
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -755,6 +756,27 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).not.toContain('fetch backend: http');
     expect(notify.mock.calls[0][0]).toContain('jsdom compat patch: ok');
     expect(notify.mock.calls[0][0]).toContain('network allow list: none');
+  });
+
+  it('adds the repo research line to doctor output', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+    registerWebAgentConfigCommands(pi as never, {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      load: vi.fn().mockResolvedValue({ effectiveConfig: DEFAULT_PRESENTATION_CONFIG, effectiveBackends: DEFAULT_BACKEND_CONFIG }),
+      checkBackends: vi.fn().mockResolvedValue([]),
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
+    });
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+    expect(notify.mock.calls[0][0]).toContain('repo research: git 2.55.0, no GitHub login (public repos only)');
   });
 
   it('reports a needed jsdom compat patch and the recovery command in doctor output', async () => {
@@ -778,7 +800,8 @@ describe('web-agent config commands', () => {
         effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
         effectiveBackends: DEFAULT_BACKEND_CONFIG
       }),
-      checkBackends: vi.fn().mockResolvedValue([])
+      checkBackends: vi.fn().mockResolvedValue([]),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -812,7 +835,8 @@ describe('web-agent config commands', () => {
       }),
       resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -840,7 +864,8 @@ describe('web-agent config commands', () => {
         }
       }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'darwin', arch: 'arm64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -1027,7 +1052,8 @@ describe('web-agent config commands', () => {
         browser: 'chromium'
       }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
