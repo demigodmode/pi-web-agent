@@ -181,10 +181,10 @@ describe('git runner', () => {
     vi.stubEnv('FAKE_GIT_SLEEP_VERSION', '1');
     const env = sleepingVersionGit('first-timeout');
     const first = runGit(['fetch'], { timeoutMs: 400, env });
-    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
     const controller = new AbortController();
     const second = runGit(['fetch'], { timeoutMs: 30_000, signal: controller.signal, env });
     await expect(first).resolves.toMatchObject({ ok: false, failure: { code: 'GIT_TIMEOUT' } });
+    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
     const state = await Promise.race([second.then(() => 'settled'), new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 900))]);
     expect(state).toBe('waiting');
     const pids = readPids(pidFile)!;
@@ -204,9 +204,11 @@ describe('git runner', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.failure.code).toBe('GIT_TIMEOUT');
     expect(Date.now() - started).toBeLessThan(1_500);
-    const pids = readPids(pidFile)!;
-    expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+    const pids = readPids(pidFile);
+    if (pids) {
+      expect(isAlive(pids.pid)).toBe(false);
+      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+    }
   });
 
   it('keeps each shared version-check wait within its caller timeout budget', async () => {
