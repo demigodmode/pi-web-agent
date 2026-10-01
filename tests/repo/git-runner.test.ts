@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { devNull, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ensureGitVersion,
@@ -24,6 +25,7 @@ const tempDir = () => {
   return dir;
 };
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   for (const server of servers.splice(0)) server.close();
   for (const pidFile of sleepingPidFiles) {
@@ -75,7 +77,11 @@ const sleepingGit = (key: string) => {
 };
 
 const waitForSleepingGit = async (startedFile: string) => {
-  await vi.waitFor(() => expect(existsSync(startedFile)).toBe(true), { timeout: 10_000 });
+  const deadline = process.hrtime.bigint() + 10_000_000_000n;
+  while (!existsSync(startedFile)) {
+    if (process.hrtime.bigint() >= deadline) throw new Error(`fake git did not report ready: ${startedFile}`);
+    await delay(20);
+  }
 };
 
 describe('git runner', () => {
@@ -241,7 +247,7 @@ describe('git runner', () => {
         }
       }
     }
-  });
+  }, 15_000);
 
   it('kills and awaits an uncached version check when its only caller cancels', async () => {
     const { pidFile, startedFile, env } = sleepingGit('sole-caller');
@@ -253,7 +259,7 @@ describe('git runner', () => {
     const pids = readPids(pidFile)!;
     expect(isAlive(pids.pid)).toBe(false);
     await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  });
+  }, 15_000);
 
   it('keeps a shared version check alive until its last caller cancels', async () => {
     const { pidFile, startedFile, env } = sleepingGit('shared-callers');
@@ -270,7 +276,7 @@ describe('git runner', () => {
     await expect(second).rejects.toThrow('Operation aborted');
     expect(isAlive(pids.pid)).toBe(false);
     await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  });
+  }, 15_000);
 
   it("returns a last waiter's timeout after the remaining caller cancels the shared version check", async () => {
     const { pidFile, startedFile, env } = sleepingGit('last-timeout');
@@ -284,7 +290,7 @@ describe('git runner', () => {
     const pids = readPids(pidFile)!;
     expect(isAlive(pids.pid)).toBe(false);
     await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  });
+  }, 15_000);
 
   it('keeps a shared version check alive past the first caller timeout', async () => {
     const { pidFile, startedFile, env } = sleepingGit('first-timeout');
@@ -315,18 +321,33 @@ describe('git runner', () => {
 
   it('spends the caller timeout budget on an uncached version check', async () => {
     const { pidFile, startedFile, env } = sleepingGit('version-timeout');
+    const controller = new AbortController();
+    vi.useFakeTimers();
     const started = Date.now();
-    const result = await runGit(['fetch'], { timeoutMs: 1_500, env });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.code).toBe('GIT_TIMEOUT');
-    expect(Date.now() - started).toBeLessThan(10_000);
-    await waitForSleepingGit(startedFile);
-    const pids = readPids(pidFile);
-    if (pids) {
+    const running = runGit(['fetch'], { timeoutMs: 1_500, signal: controller.signal, env });
+    try {
+      await waitForSleepingGit(startedFile);
+      let settled = false;
+      void running.then(
+        () => (settled = true),
+        () => (settled = true)
+      );
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_500);
+      const result = await running;
+      expect(result).toMatchObject({ ok: false, failure: { code: 'GIT_TIMEOUT' } });
+      expect(Date.now() - started).toBe(1_500);
+      const pids = readPids(pidFile)!;
       expect(isAlive(pids.pid)).toBe(false);
+      vi.useRealTimers();
       await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+    } finally {
+      vi.useRealTimers();
+      controller.abort();
+      await Promise.allSettled([running]);
     }
-  });
+  }, 15_000);
 
   it('keeps each shared version-check wait within its caller timeout budget', async () => {
     const { pidFile, startedFile, env } = sleepingGit('shared-timeout');
@@ -346,7 +367,7 @@ describe('git runner', () => {
       const pids = readPids(pidFile);
       if (pids && isAlive(pids.pid)) process.kill(-pids.pid, 'SIGKILL');
     }
-  });
+  }, 15_000);
 
   it('kills the whole process group on timeout and returns only after git exited', async () => {
     const pidFile = join(tempDir(), 'pids.json');
