@@ -12,6 +12,7 @@ The format is intentionally simple and release-oriented.
 
 ### Changed
 - `typebox` is now a peer dependency instead of a bundled one, so Pi 0.99 stops warning about it at startup (#82). Pi already provides `typebox` to extensions. If you installed an earlier version, update or reinstall the package so the old bundled copy goes away.
+- Development and CI now run against Pi 1.0. The extension already worked with it; nothing changes for users.
 
 ### Fixed
 - Pressing Esc on a running `web_explore` now actually stops it (#59). Searches, page fetches and the headless browser all stop, the browser gets closed, and nothing retries or falls back after you cancel. A cancel also never puts a search provider on cooldown. Before this, Pi sat there until the whole research run had finished on its own.
