@@ -92,6 +92,50 @@ describe('repo metadata', () => {
     if (!result.ok) expect(result.failure.failure.kind).toBe('transient');
   });
 
+  it.each([null, [], 'metadata', {}, { size: undefined }, { size: Number.NaN }, { size: -1 }])(
+    'rejects malformed metadata before ref resolution: %j',
+    async (metadata) => {
+      const fetchImpl = vi.fn(async () => Response.json(metadata));
+      const runGitImpl = vi.fn();
+      const result = await fetchRepoMeta(
+        { owner: 'acme', repo: 'widget', refAndPath: 'main/src' },
+        { fetchImpl: fetchImpl as unknown as typeof fetch, git: {}, runGitImpl }
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        failure: expect.objectContaining({ code: 'REPO_META_FAILED', failure: { kind: 'bad_response' } })
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(runGitImpl).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([null, 'network rejected', { reason: 'network rejected' }])('turns arbitrary fetch rejection %j into a transient failure', async (rejection) => {
+    const fetchImpl = (async () => {
+      throw rejection;
+    }) as unknown as typeof fetch;
+    const result = await fetchRepoMeta({ owner: 'acme', repo: 'widget' }, { fetchImpl, git: {} });
+    expect(result).toEqual({
+      ok: false,
+      failure: expect.objectContaining({ code: 'REPO_META_FAILED', failure: { kind: 'transient' } })
+    });
+  });
+
+  it('keeps a token out of a network failure message and its cause', async () => {
+    const token = 'token-secret-value';
+    const error = new Error(`outer ${token}`, { cause: new Error(`inner ${token}`) });
+    const fetchImpl = (async () => {
+      throw error;
+    }) as unknown as typeof fetch;
+    const result = await fetchRepoMeta({ owner: 'acme', repo: 'widget' }, { fetchImpl, token, git: {} });
+    expect(result).toEqual({
+      ok: false,
+      failure: expect.objectContaining({ code: 'REPO_META_FAILED', failure: { kind: 'transient' } })
+    });
+    if (!result.ok) expect(result.failure.message).not.toContain(token);
+  });
+
   it('gives up on a stalled API within the budget', async () => {
     const fetchImpl = ((_input: unknown, init?: RequestInit) =>
       new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal!.reason)))) as unknown as typeof fetch;

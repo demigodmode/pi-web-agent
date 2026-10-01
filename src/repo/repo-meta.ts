@@ -36,12 +36,6 @@ class MetaStop extends Error {
   }
 }
 
-function describe(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  const cause = error.cause instanceof Error ? error.cause.message : undefined;
-  return cause && cause !== error.message ? `${error.message} (${cause})` : error.message;
-}
-
 function formatSize(sizeKb: number): string {
   const mb = sizeKb / 1024;
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)}GB` : `${Math.round(mb)}MB`;
@@ -125,7 +119,7 @@ export async function fetchRepoMeta(target: RepoTarget, deps: RepoMetaDeps): Pro
       if (error instanceof MetaStop) throw error;
       if (deps.signal?.aborted) throw abortError();
       if (budget.aborted) throw new MetaStop(timedOut());
-      throw new MetaStop(repoFailure('REPO_META_FAILED', `GitHub couldn't be reached: ${describe(error)}.`, 'transient'));
+      throw new MetaStop(repoFailure('REPO_META_FAILED', "GitHub couldn't be reached.", 'transient'));
     }
   };
 
@@ -142,14 +136,22 @@ export async function fetchRepoMeta(target: RepoTarget, deps: RepoMetaDeps): Pro
   };
 
   try {
-    let info: { size?: unknown; private?: unknown; default_branch?: unknown };
+    let parsed: unknown;
     try {
-      info = JSON.parse(await read(base, 'application/vnd.github+json')) as typeof info;
+      parsed = JSON.parse(await read(base, 'application/vnd.github+json'));
     } catch (error) {
-      if (error instanceof MetaStop || (error as Error).name === 'AbortError') throw error;
+      if (error instanceof MetaStop) throw error;
+      if (deps.signal?.aborted) throw abortError();
       throw new MetaStop(repoFailure('REPO_META_FAILED', `GitHub sent something unexpected for ${name}.`, 'bad_response'));
     }
-    const sizeKb = typeof info.size === 'number' ? info.size : 0;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, failure: repoFailure('REPO_META_FAILED', `GitHub sent invalid metadata for ${name}.`, 'bad_response') };
+    }
+    const info = parsed as { size?: unknown; private?: unknown; default_branch?: unknown };
+    if (typeof info.size !== 'number' || !Number.isFinite(info.size) || info.size < 0) {
+      return { ok: false, failure: repoFailure('REPO_META_FAILED', `GitHub sent invalid metadata for ${name}.`, 'bad_response') };
+    }
+    const sizeKb = info.size;
     if (sizeKb / 1024 > REPO_MAX_SIZE_MB) {
       return {
         ok: false,
@@ -191,6 +193,7 @@ export async function fetchRepoMeta(target: RepoTarget, deps: RepoMetaDeps): Pro
     };
   } catch (error) {
     if (error instanceof MetaStop) return { ok: false, failure: error.failure };
-    throw error;
+    if (deps.signal?.aborted) throw abortError();
+    return { ok: false, failure: repoFailure('REPO_META_FAILED', `GitHub metadata failed for ${name}.`, 'transient') };
   }
 }
