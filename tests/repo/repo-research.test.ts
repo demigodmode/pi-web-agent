@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, readFile: vi.fn(actual.readFile) };
+  return { ...actual, open: vi.fn(actual.open) };
 });
 import { createRepoCache, type RepoCache } from '../../src/repo/repo-cache.js';
-import { resolveInside } from '../../src/repo/repo-overview.js';
+import { readRepoOverview, resolveInside } from '../../src/repo/repo-overview.js';
 import { researchRepo, type RepoResearchDeps } from '../../src/repo/repo-research.js';
+import { READER_TEXT_CAP } from '../../src/readers/limits.js';
 import { createFixtureRepo, type FixtureRepo } from './git-fixtures.js';
 
 const fixtures: FixtureRepo[] = [];
@@ -99,17 +100,27 @@ describe('researchRepo', () => {
 
   it('throws and releases the lease when the caller cancels during the final README read', async () => {
     const { cache, deps } = setup({ 'README.md': 'root' });
-    const { readFile: originalReadFile } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
     let finalReadStarted!: () => void;
     const finalRead = new Promise<void>((resolve) => { finalReadStarted = resolve; });
-    const readFile = vi.mocked(fsPromises.readFile).mockImplementation(async (...args) => {
-      const contents = await originalReadFile(...args);
-      if (!String(args[0]).endsWith('README.md')) return contents;
-      finalReadStarted();
-      await readGate;
-      return contents;
+    let readmeClosed = false;
+    const open = vi.mocked(fsPromises.open).mockImplementation(async (path, flags) => {
+      const handle = await originalOpen(path, flags);
+      if (!String(path).endsWith('README.md')) return handle;
+      return {
+        read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+          const result = await handle.read(buffer, offset, length, position);
+          finalReadStarted();
+          await readGate;
+          return result;
+        },
+        close: async () => {
+          readmeClosed = true;
+          await handle.close();
+        }
+      } as never;
     });
     const controller = new AbortController();
     const run = researchRepo('https://github.com/acme/widget', { query: 'q', signal: controller.signal }, deps);
@@ -118,28 +129,39 @@ describe('researchRepo', () => {
       controller.abort();
       releaseRead();
       await expect(run).rejects.toThrow('Operation aborted');
+      expect(readmeClosed).toBe(true);
       await expect(cache.close()).resolves.toBeUndefined();
       await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       releaseRead();
-      readFile.mockReset();
+      open.mockReset();
       await cache.close();
     }
   });
 
   it('returns a cache-closed failure and awaits cleanup when shutdown starts during the final README read', async () => {
     const { cache, deps } = setup({ 'README.md': 'root' });
-    const { readFile: originalReadFile } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    const { open: originalOpen } = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
     let releaseRead!: () => void;
     const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
     let finalReadStarted!: () => void;
     const finalRead = new Promise<void>((resolve) => { finalReadStarted = resolve; });
-    const readFile = vi.mocked(fsPromises.readFile).mockImplementation(async (...args) => {
-      const contents = await originalReadFile(...args);
-      if (!String(args[0]).endsWith('README.md')) return contents;
-      finalReadStarted();
-      await readGate;
-      return contents;
+    let readmeClosed = false;
+    const open = vi.mocked(fsPromises.open).mockImplementation(async (path, flags) => {
+      const handle = await originalOpen(path, flags);
+      if (!String(path).endsWith('README.md')) return handle;
+      return {
+        read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+          const result = await handle.read(buffer, offset, length, position);
+          finalReadStarted();
+          await readGate;
+          return result;
+        },
+        close: async () => {
+          readmeClosed = true;
+          await handle.close();
+        }
+      } as never;
     });
     const run = researchRepo('https://github.com/acme/widget', { query: 'q' }, deps);
     try {
@@ -147,11 +169,12 @@ describe('researchRepo', () => {
       const close = cache.close();
       releaseRead();
       await expect(run).resolves.toEqual({ ok: false, error: expect.objectContaining({ code: 'REPO_CACHE_CLOSED', failure: { kind: 'transient' } }) });
+      expect(readmeClosed).toBe(true);
       await expect(close).resolves.toBeUndefined();
       await expect(fsPromises.stat(cache.root)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       releaseRead();
-      readFile.mockReset();
+      open.mockReset();
       await cache.close();
     }
   });
@@ -166,11 +189,65 @@ describe('researchRepo', () => {
 });
 
 describe('resolveInside', () => {
+  it('refuses .git path segments before they can expose clone internals', async () => {
+    const { repo, deps } = setup({ 'README.md': 'root' });
+    mkdirSync(join(repo.work, '.GIT', 'objects'), { recursive: true });
+    mkdirSync(join(repo.work, '.git\\objects'), { recursive: true });
+    await expect(resolveInside(repo.work, '.git')).resolves.toBeUndefined();
+    await expect(resolveInside(repo.work, '.GIT/objects')).resolves.toBeUndefined();
+    await expect(resolveInside(repo.work, '.git\\objects')).resolves.toBeUndefined();
+    await expect(researchRepo('https://github.com/acme/widget/tree/main/.git', { query: 'q' }, deps)).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'REPO_PATH_NOT_FOUND' })
+    });
+  });
+
   it('refuses paths that climb out of the clone', async () => {
     const { repo } = setup({ 'README.md': 'root', 'src/a.ts': 'a' });
     expect(await resolveInside(repo.work, 'src')).toBe(join(repo.work, 'src'));
     expect(await resolveInside(repo.work, '../')).toBeUndefined();
     expect(await resolveInside(repo.work, 'src/../../')).toBeUndefined();
     expect(await resolveInside(repo.work, 'README.md')).toBeUndefined();
+  });
+});
+
+describe('readRepoOverview', () => {
+  it('reads a bounded README buffer and closes its file handle', async () => {
+    const { repo } = setup({ 'README.md': 'x'.repeat(READER_TEXT_CAP * 8) });
+    let requestedLength = 0;
+    const handle = {
+      read: vi.fn(async (buffer: Buffer, _offset: number, length: number) => {
+        requestedLength = length;
+        buffer.fill('x', 0, length);
+        return { bytesRead: length, buffer };
+      }),
+      close: vi.fn(async () => undefined)
+    };
+    const open = vi.mocked(fsPromises.open).mockResolvedValue(handle as never);
+    try {
+      const overview = await readRepoOverview(repo.work, {});
+      expect(overview?.readme).toHaveLength(READER_TEXT_CAP);
+      expect(open).toHaveBeenCalledWith(join(repo.work, 'README.md'), 'r');
+      expect(requestedLength).toBeLessThanOrEqual(READER_TEXT_CAP * 4);
+      expect(handle.close).toHaveBeenCalledOnce();
+    } finally {
+      open.mockReset();
+    }
+  });
+
+  it('closes the README handle when its bounded read fails', async () => {
+    const { repo } = setup({ 'README.md': 'root' });
+    const failure = new Error('read failed');
+    const handle = {
+      read: vi.fn(async () => { throw failure; }),
+      close: vi.fn(async () => undefined)
+    };
+    const open = vi.mocked(fsPromises.open).mockResolvedValue(handle as never);
+    try {
+      await expect(readRepoOverview(repo.work, {})).rejects.toThrow(failure);
+      expect(handle.close).toHaveBeenCalledOnce();
+    } finally {
+      open.mockReset();
+    }
   });
 });

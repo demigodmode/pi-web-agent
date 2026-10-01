@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { throwIfAborted } from '../abort.js';
 import { READER_TEXT_CAP } from '../readers/limits.js';
@@ -15,10 +15,15 @@ function inside(base: string, target: string): boolean {
   return target === base || target.startsWith(base + sep);
 }
 
+function hasGitSegment(pathScope: string): boolean {
+  return pathScope.split(/[\\/]+/).some((segment) => segment.toLowerCase() === '.git');
+}
+
 /** A folder inside the clone, or undefined for anything missing, not a folder, or outside it. */
 export async function resolveInside(root: string, pathScope?: string): Promise<string | undefined> {
   const base = await realpath(root);
   if (!pathScope) return base;
+  if (hasGitSegment(pathScope)) return undefined;
   const target = resolve(base, pathScope);
   if (!inside(base, target)) return undefined;
   try {
@@ -64,7 +69,15 @@ export async function readRepoOverview(
   }
 
   const readmePath = join(readmeDir, readmeName).slice(base.length + 1);
-  const readme = (await readFile(join(readmeDir, readmeName), 'utf8')).slice(0, READER_TEXT_CAP);
+  const handle = await open(join(readmeDir, readmeName), 'r');
+  let readme: string;
+  try {
+    const buffer = Buffer.alloc(READER_TEXT_CAP * 4);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    readme = buffer.subarray(0, bytesRead).toString('utf8').slice(0, READER_TEXT_CAP);
+  } finally {
+    await handle.close();
+  }
   throwIfAborted(signal);
   return { readmePath, readme, entries };
 }
