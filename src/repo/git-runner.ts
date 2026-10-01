@@ -45,6 +45,10 @@ export function proxyUrlForGit(proxy: ProxyConfig): string {
 
 const PROXY_ENV = /^(https?|all|no)_proxy$/i;
 
+function githubBasicCredential(token: string): string {
+  return Buffer.from(`x-access-token:${token}`).toString('base64');
+}
+
 /**
  * Git's environment. Nothing git reads from the parent survives (GIT_DIR, GIT_CONFIG_PARAMETERS,
  * proxy variables), system and user config are switched off so no insteadOf rewrite or credential
@@ -62,7 +66,7 @@ export function gitProcessEnv(env: GitEnv, base: NodeJS.ProcessEnv = process.env
     ['core.symlinks', 'false']
   ];
   if (env.proxyUrl) config.push(['http.proxy', env.proxyUrl]);
-  if (env.token) config.push(['http.https://github.com/.extraHeader', `Authorization: Bearer ${env.token}`]);
+  if (env.token) config.push(['http.https://github.com/.extraHeader', `Authorization: Basic ${githubBasicCredential(env.token)}`]);
 
   out.GIT_CONFIG_NOSYSTEM = '1';
   out.GIT_CONFIG_GLOBAL = devNull;
@@ -90,7 +94,7 @@ function killGroup(child: ChildProcess): void {
 function describeGitError(stderr: string, code: number | null, token: string | undefined): string {
   const line = stderr.split('\n').map((entry) => entry.trim()).filter(Boolean).at(-1)?.replace(/^fatal:\s*/, '');
   const message = line || `git exited with code ${code}`;
-  return token ? message.split(token).join('***') : message;
+  return token ? message.split(token).join('***').split(githubBasicCredential(token)).join('***') : message;
 }
 
 function spawnGit(args: string[], { cwd, signal, timeoutMs, env }: RunGitOptions): Promise<GitResult> {

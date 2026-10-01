@@ -10,7 +10,7 @@ import {
   proxyUrlForGit,
   runGit
 } from '../../src/repo/git-runner.js';
-import { FAKE_GIT_OLD, FAKE_GIT_SLEEP, fakeGit, isAlive, readPids } from './git-fixtures.js';
+import { FAKE_GIT_ERROR, FAKE_GIT_OLD, FAKE_GIT_SLEEP, fakeGit, isAlive, readPids } from './git-fixtures.js';
 
 const sleepingVersionGit = (key: string) => fakeGit(FAKE_GIT_SLEEP, { gitArgsPrefix: [FAKE_GIT_SLEEP, key] });
 const temps: string[] = [];
@@ -56,7 +56,7 @@ describe('git runner', () => {
       'protocol.file.allow': 'always',
       'core.symlinks': 'false',
       'http.proxy': 'http://u:p@proxy.local:3128/',
-      'http.https://github.com/.extraHeader': 'Authorization: Bearer sekret-token'
+      'http.https://github.com/.extraHeader': 'Authorization: Basic eC1hY2Nlc3MtdG9rZW46c2VrcmV0LXRva2Vu'
     });
   });
 
@@ -272,12 +272,17 @@ describe('git runner', () => {
     await expect(runGit(['--version'], { timeoutMs: 5_000, signal: controller.signal, env: {} })).rejects.toThrow('Operation aborted');
   });
 
-  it('keeps the token out of error messages', async () => {
-    const result = await runGit(['ls-remote', 'file:///definitely/not/here'], {
+  it('keeps raw and encoded Basic credentials out of git error messages', async () => {
+    const token = 'sekret-token';
+    const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
+    const result = await runGit(['fetch'], {
       timeoutMs: 10_000,
-      env: { token: 'sekret-token', extraAllowedProtocols: ['file'] }
+      env: { token, ...fakeGit(FAKE_GIT_ERROR) }
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.message).not.toContain('sekret-token');
+    if (!result.ok) {
+      expect(result.failure.message).not.toContain(token);
+      expect(result.failure.message).not.toContain(encoded);
+    }
   });
 });

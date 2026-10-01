@@ -8,6 +8,7 @@ import type { GitEnv } from '../../src/repo/git-runner.js';
 const here = dirname(fileURLToPath(import.meta.url));
 export const FAKE_GIT_SLEEP = join(here, 'fixtures', 'fake-git-sleep.mjs');
 export const FAKE_GIT_OLD = join(here, 'fixtures', 'fake-git-old.mjs');
+export const FAKE_GIT_ERROR = join(here, 'fixtures', 'fake-git-error.mjs');
 
 /** A GitEnv whose "git" is a Node script. */
 export function fakeGit(script: string, extra: Partial<GitEnv> = {}): GitEnv {
