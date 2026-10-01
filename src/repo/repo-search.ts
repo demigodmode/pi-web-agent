@@ -48,13 +48,17 @@ const BINARY_EXTENSIONS = new Set([
   '.woff2', '.ttf', '.otf', '.eot', '.mp3', '.mp4', '.mov', '.avi', '.webm', '.ogg', '.wav', '.flac', '.sqlite',
   '.db', '.pyc', '.o', '.a', '.lib', '.node'
 ]);
+const SKIPPED_EXTENSIONS = new Set(['.map', '.snap', '.lock', '.svg']);
+const DATA_EXTENSIONS = new Set(['.json', '.csv', '.tsv']);
 const SOURCE_EXTENSIONS = new Set([
   '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java', '.kt', '.kts', '.rb',
   '.php', '.cs', '.c', '.h', '.cc', '.cpp', '.hpp', '.swift', '.scala', '.sh', '.lua', '.ex', '.exs', '.clj', '.dart',
   '.vue', '.svelte', '.zig', '.hs', '.ml', '.sql'
 ]);
+const PROJECT_DOCUMENT_NAMES = new Set(['CHANGELOG', 'LICENSE', 'NOTICE', 'AUTHORS', 'COPYING', 'CONTRIBUTING']);
 const TEST_OR_DOC = /(^|\/)(tests?|__tests__|specs?|fixtures?|docs?|examples?)(\/|$)|\.(test|spec)\.[a-z0-9]+$|\.(md|markdown|rst|txt|adoc)$/i;
 const GENERATED = /\.min\.(js|css)$|(^|\/)(generated|__generated__)(\/|$)|\.(generated|gen)\.[a-z0-9]+$/i;
+const SCORE_WINDOW_LINES = 41;
 
 type Candidate = { path: string; score: number; text: string };
 type ReadCandidate = { candidate?: Candidate; bytesRead: number };
@@ -75,20 +79,44 @@ function matches(term: QueryTerm, haystack: string): boolean {
   return term.variants.some((variant) => haystack.includes(variant));
 }
 
+function maximumContentHits(text: string, terms: QueryTerm[]): number {
+  const lines = sourceLines(text);
+  if (lines.length === 0) return 0;
+  const counts = new Array<number>(terms.length).fill(0);
+  let distinct = 0;
+  let maximum = 0;
+  const add = (line: string, direction: 1 | -1) => {
+    const lower = line.toLowerCase();
+    terms.forEach((term, index) => {
+      if (!matches(term, lower)) return;
+      if (direction === 1 && counts[index]++ === 0) distinct++;
+      if (direction === -1 && --counts[index] === 0) distinct--;
+    });
+  };
+  const firstEnd = Math.min(lines.length, SCORE_WINDOW_LINES);
+  for (let index = 0; index < firstEnd; index++) add(lines[index], 1);
+  maximum = distinct;
+  for (let start = 1; start + SCORE_WINDOW_LINES <= lines.length; start++) {
+    add(lines[start - 1], -1);
+    add(lines[start + SCORE_WINDOW_LINES - 1], 1);
+    maximum = Math.max(maximum, distinct);
+  }
+  return maximum;
+}
+
 /** Distinct terms in the content count most, then terms in the path; code beats docs, tests and generated files. */
 export function scoreFile(path: string, text: string, terms: QueryTerm[]): number {
   const lowerPath = path.toLowerCase();
-  const lowerText = text.toLowerCase();
-  let contentHits = 0;
+  const contentHits = maximumContentHits(text, terms);
   let pathHits = 0;
   for (const term of terms) {
-    if (matches(term, lowerText)) contentHits++;
     if (matches(term, lowerPath)) pathHits++;
   }
   if (contentHits === 0 && pathHits === 0) return 0;
   let score = contentHits * 10 + pathHits * 6;
   if (SOURCE_EXTENSIONS.has(extname(lowerPath))) score += 3;
-  if (TEST_OR_DOC.test(path)) score -= 5;
+  const filename = path.split('/').at(-1) ?? path;
+  if (TEST_OR_DOC.test(path) || DATA_EXTENSIONS.has(extname(lowerPath)) || (extname(filename) === '' && PROJECT_DOCUMENT_NAMES.has(filename))) score -= 5;
   if (GENERATED.test(path)) score -= 8;
   return Math.max(1, score);
 }
@@ -289,7 +317,8 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
         if (!SKIP_DIRS.has(item.name)) stack.push(abs);
         continue;
       }
-      if (!item.isFile() || LOCKFILES.has(item.name) || BINARY_EXTENSIONS.has(extname(item.name).toLowerCase())) continue;
+      const extension = extname(item.name).toLowerCase();
+      if (!item.isFile() || LOCKFILES.has(item.name) || SKIPPED_EXTENSIONS.has(extension) || BINARY_EXTENSIONS.has(extension)) continue;
       if (scanned >= maxScannedFiles || scannedBytes >= maxScannedBytes || timedOut()) break;
       scanned++;
       throwIfAborted(options.signal);

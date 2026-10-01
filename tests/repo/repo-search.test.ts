@@ -52,7 +52,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { MAX_SEARCH_FILE_BYTES, buildExcerpts, fitToBudget, searchRepo } from '../../src/repo/repo-search.js';
+import { MAX_SEARCH_FILE_BYTES, buildExcerpts, fitToBudget, scoreFile, searchRepo } from '../../src/repo/repo-search.js';
 import { queryTerms } from '../../src/repo/repo-terms.js';
 
 const temps: string[] = [];
@@ -105,19 +105,69 @@ describe('searchRepo walk and scoring', () => {
     expect(result.files[0].score).toBeGreaterThan(result.files[1].score);
   });
 
-  it('skips vendored folders, lockfiles, binaries and huge files', async () => {
+  it('ranks dense cooccurring terms above the same terms scattered through other files', async () => {
+    const spacedTerms = Array.from({ length: 120 }, (_, index) => {
+      if (index === 0) return 'refresh';
+      if (index === 60) return 'oauth';
+      if (index === 119) return 'tokens';
+      return `line ${index}`;
+    }).join('\n');
+    const root = tree({
+      'data/records.json': spacedTerms,
+      'CHANGELOG': spacedTerms,
+      'src/query.graphql': 'query RefreshTokens { refresh oauth tokens }'
+    });
+
+    const result = await searchRepo(root, { query: 'refresh oauth tokens' });
+
+    expect(result.files.map((file) => file.path)).toEqual(['src/query.graphql', 'CHANGELOG', 'data/records.json']);
+    expect(result.files[0].score).toBeGreaterThan(result.files[1].score);
+    expect(result.files[1].score).toBe(result.files[2].score);
+  });
+
+  it('scores only the most term-dense content window', () => {
+    const spacedTerms = Array.from({ length: 100 }, (_, index) =>
+      index === 0 ? 'refresh' : index === 50 ? 'oauth' : index === 99 ? 'tokens' : `line ${index}`
+    ).join('\n');
+    const terms = queryTerms('refresh oauth tokens');
+
+    expect(scoreFile('src/query.graphql', 'refresh oauth tokens', terms)).toBeGreaterThan(
+      scoreFile('src/query.graphql', spacedTerms, terms)
+    );
+  });
+
+  it('skips vendored folders, lockfiles, generated artifacts, binaries and huge files', async () => {
     const root = tree({
       'src/auth/token-refresh.ts': impl,
       'node_modules/oauth-lib/refresh-token.js': impl,
       'vendor/refresh.go': impl,
       'dist/bundle.js': impl,
       'package-lock.json': '{"refresh":"oauth token"}',
+      'source-map.map': 'refresh oauth tokens SECRET-VALUE',
+      'render.snap': 'refresh oauth tokens SECRET-VALUE',
+      'dependency.lock': 'refresh oauth tokens SECRET-VALUE',
+      'logo.svg': 'refresh oauth tokens SECRET-VALUE',
       'assets/refresh-token.png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x72, 0x65]),
       'data/blob.dat': Buffer.concat([Buffer.from('refresh oauth token'), Buffer.from([0]), Buffer.from('x')]),
       'big/refresh-token.ts': `// refresh oauth token\n${'x'.repeat(MAX_SEARCH_FILE_BYTES)}`
     });
     const result = await searchRepo(root, { query: 'refresh OAuth tokens' });
     expect(result.files.map((file) => file.path)).toEqual(['src/auth/token-refresh.ts']);
+  });
+
+  it('penalizes structured data and all-caps extensionless project documents like docs', () => {
+    const terms = queryTerms('refresh oauth tokens');
+    const content = 'refresh oauth tokens';
+
+    expect(scoreFile('data/records.json', content, terms)).toBe(25);
+    expect(scoreFile('metrics.csv', content, terms)).toBe(25);
+    expect(scoreFile('events.tsv', content, terms)).toBe(25);
+    expect(scoreFile('CHANGELOG', content, terms)).toBe(25);
+    expect(scoreFile('LICENSE', content, terms)).toBe(25);
+    expect(scoreFile('NOTICE', content, terms)).toBe(25);
+    expect(scoreFile('AUTHORS', content, terms)).toBe(25);
+    expect(scoreFile('COPYING', content, terms)).toBe(25);
+    expect(scoreFile('CONTRIBUTING', content, terms)).toBe(25);
   });
 
   it('never reads through symlinks', async () => {
