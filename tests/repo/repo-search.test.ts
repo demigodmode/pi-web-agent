@@ -291,16 +291,16 @@ describe('searchRepo walk and scoring', () => {
     expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
   });
 
-  it('rejects a normalized .git search scope without exposing its contents', async () => {
+  it.each(['.GIT', '.GIT.'])('rejects a normalized %s search scope without exposing its contents', async (gitDirectory) => {
     const root = tree({
-      'src/.GIT/secret.ts': 'refresh oauth token SECRET-VALUE',
+      [`src/${gitDirectory}/secret.ts`]: 'refresh oauth token SECRET-VALUE',
       'src/auth/token-refresh.ts': impl
     });
 
-    const result = await searchRepo(root, { query: 'refresh OAuth tokens', pathScope: 'src/.GIT' });
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', pathScope: `src/${gitDirectory}` });
 
     expect(result).toMatchObject({ scopeFound: false, files: [] });
-    expect(handleCalls.openPaths).not.toContain(join(root, 'src/.GIT/secret.ts'));
+    expect(handleCalls.openPaths).not.toContain(join(root, 'src', gitDirectory, 'secret.ts'));
     expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
   });
 
