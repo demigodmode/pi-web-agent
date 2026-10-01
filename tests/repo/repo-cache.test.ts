@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { abortError } from '../../src/abort.js';
@@ -160,13 +160,25 @@ function deferred() {
 
 describe('repo cache', () => {
   it('uses a per-user default cache base', async () => {
-    const c = cache({});
-    const user = typeof process.getuid === 'function' ? String(process.getuid()) : undefined;
+    const parent = baseDir();
+    tmpdirGate.path = parent;
+    let c: RepoCache | undefined;
     try {
-      expect(dirname(c.root)).toBe(join(tmpdir(), `pi-web-agent-repos-${user}`));
+      c = cache({});
+      let user = 'unknown';
+      if (typeof process.getuid === 'function') user = String(process.getuid());
+      else {
+        try {
+          user = userInfo().username.replace(/[^a-z0-9_-]/gi, '-') || 'unknown';
+        } catch {
+          // The cache uses unknown when the native account lookup fails.
+        }
+      }
+      expect(dirname(c.root)).toBe(join(parent, `pi-web-agent-repos-${user}`));
       expect(basename(c.root)).toMatch(/^testboot-\d+-[0-9a-f]+$/);
     } finally {
-      await c.close();
+      await c?.close();
+      tmpdirGate.reset();
     }
   });
 
@@ -174,51 +186,59 @@ describe('repo cache', () => {
     const parent = baseDir();
     tmpdirGate.path = parent;
     const lookup = vi.fn(() => { throw new Error('unavailable'); });
-    const c = cache({
-      platform: 'win32',
-      userInfo: lookup
-    });
-    const result = await c.acquire('k', fakeClone());
+    let c: RepoCache | undefined;
+    let result: Awaited<ReturnType<RepoCache['acquire']>> | undefined;
+    let root = '';
     try {
-      expect(dirname(c.root)).toBe(join(parent, 'pi-web-agent-repos-unknown'));
+      c = cache({
+        platform: 'win32',
+        userInfo: lookup
+      });
+      root = c.root;
+      result = await c.acquire('k', fakeClone());
+      expect(dirname(root)).toBe(join(parent, 'pi-web-agent-repos-unknown'));
       expect(lookup).toHaveBeenCalledOnce();
       expect(result.ok).toBe(true);
     } finally {
-      if (result.ok) result.lease.release();
-      await c.close();
+      if (result?.ok) result.lease.release();
+      await c?.close();
       tmpdirGate.reset();
     }
-    expect(existsSync(c.root)).toBe(false);
+    expect(existsSync(root)).toBe(false);
   });
 
   it('sanitizes the Windows user name for the default cache base', async () => {
     const parent = baseDir();
     tmpdirGate.path = parent;
-    const c = cache({
-      platform: 'win32',
-      userInfo: () => ({ username: 'A user/name', uid: 1, gid: 1, shell: '', homedir: '' })
-    });
+    let c: RepoCache | undefined;
     try {
+      c = cache({
+        platform: 'win32',
+        userInfo: () => ({ username: 'A user/name', uid: 1, gid: 1, shell: '', homedir: '' })
+      });
       expect(dirname(c.root)).toBe(join(parent, 'pi-web-agent-repos-A-user-name'));
     } finally {
-      await c.close();
+      await c?.close();
       tmpdirGate.reset();
     }
   });
 
-  it('keeps the numeric uid default cache base on linux', async () => {
+  it.skipIf(typeof process.getuid !== 'function')('keeps the numeric uid default cache base on linux', async () => {
     const parent = baseDir();
     tmpdirGate.path = parent;
     const lookup = vi.fn(() => { throw new Error('should not be called'); });
-    const c = cache({
-      platform: 'linux',
-      userInfo: lookup
-    });
+    const getuid = process.getuid;
+    let c: RepoCache | undefined;
     try {
-      expect(dirname(c.root)).toBe(join(parent, `pi-web-agent-repos-${process.getuid!()}`));
+      if (!getuid) throw new Error('getuid was unavailable after the test was scheduled');
+      c = cache({
+        platform: 'linux',
+        userInfo: lookup
+      });
+      expect(dirname(c.root)).toBe(join(parent, `pi-web-agent-repos-${getuid()}`));
       expect(lookup).not.toHaveBeenCalled();
     } finally {
-      await c.close();
+      await c?.close();
       tmpdirGate.reset();
     }
   });
