@@ -209,8 +209,10 @@ describe('resolveInside', () => {
     mkdirSync(join(repo.work, 'nested', '.GiT.', 'objects'), { recursive: true });
 
     // Linux permits these names, so the pre-normalization resolver reaches them.
-    expect(await fsPromises.realpath(join(repo.work, '.git.'))).toBe(join(repo.work, '.git.'));
-    expect(await fsPromises.realpath(join(repo.work, '.git '))).toBe(join(repo.work, '.git '));
+    if (process.platform !== 'win32') {
+      expect(await fsPromises.realpath(join(repo.work, '.git.'))).toBe(join(repo.work, '.git.'));
+      expect(await fsPromises.realpath(join(repo.work, '.git '))).toBe(join(repo.work, '.git '));
+    }
     await expect(resolveInside(repo.work, '.git.')).resolves.toBeUndefined();
     await expect(resolveInside(repo.work, '.git ')).resolves.toBeUndefined();
     await expect(resolveInside(repo.work, 'nested/.GiT./objects')).resolves.toBeUndefined();
