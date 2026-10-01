@@ -78,10 +78,57 @@ export function scoreFile(path: string, text: string, terms: QueryTerm[]): numbe
   return Math.max(1, score);
 }
 
-export function buildExcerpts(text: string, _terms: QueryTerm[], contextLines = DEFAULT_CONTEXT_LINES): RepoSearchExcerpt[] {
+/** About `contextLines` lines either side of every matching line, overlapping windows merged. */
+export function buildExcerpts(text: string, terms: QueryTerm[], contextLines = DEFAULT_CONTEXT_LINES): RepoSearchExcerpt[] {
   const lines = text.split('\n');
-  const end = Math.min(lines.length, contextLines * 2);
-  return [{ startLine: 1, endLine: end, text: lines.slice(0, end).join('\n') }];
+  const windows: Array<[number, number]> = [];
+  lines.forEach((line, index) => {
+    const lower = line.toLowerCase();
+    if (!terms.some((term) => matches(term, lower))) return;
+    const start = Math.max(0, index - contextLines);
+    const end = Math.min(lines.length - 1, index + contextLines);
+    const last = windows.at(-1);
+    if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+    else windows.push([start, end]);
+  });
+  if (windows.length === 0) {
+    // Only the path matched: the top of the file is the best we have.
+    const end = Math.min(lines.length, contextLines * 2);
+    return [{ startLine: 1, endLine: end, text: lines.slice(0, end).join('\n') }];
+  }
+  return windows.map(([start, end]) => ({ startLine: start + 1, endLine: end + 1, text: lines.slice(start, end + 1).join('\n') }));
+}
+
+/**
+ * Trims excerpts to `charBudget` characters in total. Each file gets a fair share of what's left,
+ * unused room rolls over to the next file, and cuts land on a line break when there is one.
+ */
+export function fitToBudget(files: RepoSearchFile[], charBudget: number): RepoSearchFile[] {
+  if (!Number.isFinite(charBudget)) return files;
+  let remaining = charBudget;
+  const out: RepoSearchFile[] = [];
+  files.forEach((file, index) => {
+    const share = Math.floor(remaining / (files.length - index));
+    let used = 0;
+    const excerpts: RepoSearchExcerpt[] = [];
+    for (const excerpt of file.excerpts) {
+      const room = share - used;
+      if (room <= 0) break;
+      if (excerpt.text.length <= room) {
+        excerpts.push(excerpt);
+        used += excerpt.text.length;
+        continue;
+      }
+      const lineBreak = excerpt.text.lastIndexOf('\n', room - 1);
+      const text = excerpt.text.slice(0, lineBreak > 0 ? lineBreak : room);
+      excerpts.push({ startLine: excerpt.startLine, endLine: excerpt.startLine + text.split('\n').length - 1, text });
+      used += text.length;
+      break;
+    }
+    remaining -= used;
+    if (excerpts.length > 0) out.push({ ...file, excerpts });
+  });
+  return out;
 }
 
 function keepTop(top: Candidate[], candidate: Candidate, limit: number): void {
@@ -200,5 +247,5 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
     score: candidate.score,
     excerpts: buildExcerpts(candidate.text, terms, options.contextLines)
   }));
-  return { scopeFound: true, terms: terms.map((term) => term.term), files };
+  return { scopeFound: true, terms: terms.map((term) => term.term), files: fitToBudget(files, options.charBudget ?? Number.POSITIVE_INFINITY) };
 }

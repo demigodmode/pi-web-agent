@@ -37,7 +37,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { MAX_SEARCH_FILE_BYTES, searchRepo } from '../../src/repo/repo-search.js';
+import { MAX_SEARCH_FILE_BYTES, buildExcerpts, fitToBudget, searchRepo } from '../../src/repo/repo-search.js';
+import { queryTerms } from '../../src/repo/repo-terms.js';
 
 const temps: string[] = [];
 afterEach(() => {
@@ -192,5 +193,57 @@ describe('searchRepo walk and scoring', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(searchRepo(root, { query: 'refresh', signal: controller.signal })).rejects.toThrow('Operation aborted');
+  });
+});
+
+describe('excerpts', () => {
+  const numbered = (count: number, hits: Record<number, string>) =>
+    Array.from({ length: count }, (_, i) => hits[i + 1] ?? `line ${i + 1}`).join('\n');
+
+  it('merges nearby matches into one excerpt with 1-based line numbers', () => {
+    const text = numbered(100, { 10: 'refresh here', 25: 'oauth there' });
+    const excerpts = buildExcerpts(text, queryTerms('refresh oauth'), 20);
+    expect(excerpts).toHaveLength(1);
+    expect(excerpts[0]).toMatchObject({ startLine: 1, endLine: 45 });
+    expect(excerpts[0].text.split('\n')[9]).toBe('refresh here');
+  });
+
+  it('keeps far-apart matches as separate excerpts', () => {
+    const text = numbered(200, { 10: 'refresh', 150: 'oauth' });
+    const excerpts = buildExcerpts(text, queryTerms('refresh oauth'), 5);
+    expect(excerpts.map((e) => [e.startLine, e.endLine])).toEqual([
+      [5, 15],
+      [145, 155]
+    ]);
+  });
+
+  it('shows the top of the file when only the path matched', () => {
+    const excerpts = buildExcerpts(numbered(100, {}), queryTerms('refresh'), 10);
+    expect(excerpts).toEqual([{ startLine: 1, endLine: 20, text: numbered(20, {}) }]);
+  });
+
+  it('fits all files into the budget, sharing it fairly and cutting on line breaks', () => {
+    const big = { startLine: 1, endLine: 400, text: Array.from({ length: 400 }, (_, i) => `line ${i + 1} ${'x'.repeat(20)}`).join('\n') };
+    const files = [
+      { path: 'a.ts', score: 30, excerpts: [big] },
+      { path: 'b.ts', score: 20, excerpts: [big] },
+      { path: 'c.ts', score: 10, excerpts: [{ startLine: 3, endLine: 4, text: 'short\ntext' }] }
+    ];
+    const fitted = fitToBudget(files, 2_000);
+    const total = fitted.flatMap((f) => f.excerpts).reduce((sum, e) => sum + e.text.length, 0);
+    expect(total).toBeLessThanOrEqual(2_000);
+    expect(fitted.map((f) => f.path)).toEqual(['a.ts', 'b.ts', 'c.ts']);
+    const cut = fitted[0].excerpts[0];
+    expect(cut.text.endsWith('\n')).toBe(false);
+    expect(cut.endLine).toBe(cut.startLine + cut.text.split('\n').length - 1);
+  });
+
+  it('respects the char budget inside searchRepo', async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 4; i++) files[`src/f${i}.ts`] = Array.from({ length: 300 }, (_, n) => `refresh oauth token ${i}-${n}`).join('\n');
+    const result = await searchRepo(tree(files), { query: 'refresh oauth tokens', charBudget: 3_000 });
+    const total = result.files.flatMap((f) => f.excerpts).reduce((sum, e) => sum + e.text.length, 0);
+    expect(total).toBeLessThanOrEqual(3_000);
+    expect(result.files.length).toBe(4);
   });
 });
