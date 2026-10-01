@@ -10,4 +10,5 @@ const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']
 if (process.env.FAKE_GIT_PID_FILE) {
   writeFileSync(process.env.FAKE_GIT_PID_FILE, JSON.stringify({ pid: process.pid, grandchild: grandchild.pid }));
 }
+if (process.env.FAKE_GIT_STARTED_FILE) writeFileSync(process.env.FAKE_GIT_STARTED_FILE, 'started');
 setInterval(() => {}, 1000);
