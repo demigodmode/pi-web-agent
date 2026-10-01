@@ -10,6 +10,7 @@ const handleCalls = vi.hoisted(() => ({
   openEntered: undefined as (() => void) | undefined,
   releaseOpen: undefined as (() => void) | undefined,
   onRead: undefined as (() => void) | undefined,
+  openPaths: [] as string[],
   realpathPaths: [] as string[],
   onRealpath: undefined as (() => void) | undefined,
   reverseReaddir: false
@@ -30,6 +31,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return result;
     },
     open: async (...args: Parameters<typeof original.open>) => {
+      handleCalls.openPaths.push(String(args[0]));
       const handle = await original.open(...args);
       if (handleCalls.blockOpen) {
         handleCalls.openEntered?.();
@@ -65,6 +67,7 @@ afterEach(() => {
   handleCalls.openEntered = undefined;
   handleCalls.releaseOpen = undefined;
   handleCalls.onRead = undefined;
+  handleCalls.openPaths.length = 0;
   handleCalls.realpathPaths.length = 0;
   handleCalls.onRealpath = undefined;
   handleCalls.reverseReaddir = false;
@@ -272,6 +275,32 @@ describe('searchRepo walk and scoring', () => {
     });
     const result = await searchRepo(root, { query: 'refresh OAuth tokens' });
     expect(result.files.map((file) => file.path)).toEqual(['src/auth/token-refresh.ts']);
+    expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
+  });
+
+  it('skips a root .git file without opening its gitdir contents', async () => {
+    const root = tree({
+      'src/auth/token-refresh.ts': impl,
+      '.git': 'gitdir: ../outside\nrefresh oauth token SECRET-VALUE'
+    });
+
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens' });
+
+    expect(result.files.map((file) => file.path)).toEqual(['src/auth/token-refresh.ts']);
+    expect(handleCalls.openPaths).not.toContain(join(root, '.git'));
+    expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
+  });
+
+  it('rejects a normalized .git search scope without exposing its contents', async () => {
+    const root = tree({
+      'src/.GIT/secret.ts': 'refresh oauth token SECRET-VALUE',
+      'src/auth/token-refresh.ts': impl
+    });
+
+    const result = await searchRepo(root, { query: 'refresh OAuth tokens', pathScope: 'src/.GIT' });
+
+    expect(result).toMatchObject({ scopeFound: false, files: [] });
+    expect(handleCalls.openPaths).not.toContain(join(root, 'src/.GIT/secret.ts'));
     expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
   });
 
