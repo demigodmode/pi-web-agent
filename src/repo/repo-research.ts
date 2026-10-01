@@ -44,34 +44,103 @@ function blobUrl(meta: RepoMeta, path: string, startLine: number, endLine: numbe
   return `https://github.com/${meta.owner}/${meta.repo}/blob/${meta.sha}/${encodePath(path)}#L${startLine}-L${endLine}`;
 }
 
+function excerptSection(meta: RepoMeta, path: string, startLine: number, text: string): string {
+  const endLine = startLine + text.split('\n').length - 1;
+  return `${path} (lines ${startLine}-${endLine})\n${blobUrl(meta, path, startLine, endLine)}\n${text}`;
+}
+
+function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResult['files'][number]['excerpts'][number], maxChars: number): string | undefined {
+  const full = excerptSection(meta, path, excerpt.startLine, excerpt.text);
+  if (full.length <= maxChars) return full;
+
+  const lines = excerpt.text.split('\n');
+  let best: string | undefined;
+  for (const line of lines) {
+    const candidate = best === undefined ? line : `${best}\n${line}`;
+    if (excerptSection(meta, path, excerpt.startLine, candidate).length > maxChars) break;
+    best = candidate;
+  }
+  if (best !== undefined && best.length > 0) return excerptSection(meta, path, excerpt.startLine, best);
+
+  const line = lines[0] ?? '';
+  let low = 1;
+  let high = line.length;
+  let shortened = '';
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = line.slice(0, middle);
+    if (excerptSection(meta, path, excerpt.startLine, candidate).length <= maxChars) {
+      shortened = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return shortened ? excerptSection(meta, path, excerpt.startLine, shortened) : undefined;
+}
+
 function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: RepoOverview | undefined, reused: boolean): WebFetchResponse {
   const name = `${meta.owner}/${meta.repo}`;
   const sections = [
     `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.` +
       (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '')
   ];
-  for (const file of search.files) {
-    for (const excerpt of file.excerpts) {
-      sections.push(`${file.path} (lines ${excerpt.startLine}-${excerpt.endLine})\n${blobUrl(meta, file.path, excerpt.startLine, excerpt.endLine)}\n${excerpt.text}`);
+  let length = sections[0].length;
+  let truncated = false;
+  let exhausted = false;
+
+  for (let index = 0; !exhausted && search.files.some((file) => file.excerpts[index]); index++) {
+    for (const file of search.files) {
+      const excerpt = file.excerpts[index];
+      if (!excerpt) continue;
+      const available = READER_TEXT_CAP - length - 2;
+      const full = excerptSection(meta, file.path, excerpt.startLine, excerpt.text);
+      const section = fitExcerptSection(meta, file.path, excerpt, available);
+      if (!section) {
+        truncated = true;
+        exhausted = true;
+        break;
+      }
+      sections.push(section);
+      length += section.length + 2;
+      if (section !== full) {
+        truncated = true;
+        exhausted = true;
+        break;
+      }
     }
   }
+
+  const appendPlain = (section: string) => {
+    const available = READER_TEXT_CAP - length - 2;
+    if (section.length <= available) {
+      sections.push(section);
+      length += section.length + 2;
+      return;
+    }
+    if (available > 0) {
+      sections.push(section.slice(0, available));
+      length += available + 2;
+    }
+    truncated = true;
+  };
   if (search.files.length === 0) {
-    sections.push(search.terms.length ? 'No files matched those terms.' : 'The question had no specific terms to search the code for.');
+    appendPlain(search.terms.length ? 'No files matched those terms.' : 'The question had no specific terms to search the code for.');
   }
   // The README only fills in when the code search found little (#70).
   if (search.files.length < 2 && overview) {
-    if (overview.readme) sections.push(`${overview.readmePath}:\n${overview.readme.slice(0, README_EXCERPT_CHARS)}`);
+    if (overview.readme) appendPlain(`${overview.readmePath}:\n${overview.readme.slice(0, README_EXCERPT_CHARS)}`);
     if (search.files.length === 0) {
       const listing = overview.entries.map((entry) => (entry.dir ? `[dir] ${entry.name}` : entry.name)).join('\n');
-      sections.push(`Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`);
+      appendPlain(`Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`);
     }
   }
   const text = sections.join('\n\n');
   return {
     status: 'ok',
     url: treeUrl(meta),
-    content: { title: name, text: text.slice(0, READER_TEXT_CAP) },
-    metadata: { method: 'github', cacheHit: reused, truncated: text.length > READER_TEXT_CAP }
+    content: { title: name, text },
+    metadata: { method: 'github', cacheHit: reused, truncated }
   };
 }
 

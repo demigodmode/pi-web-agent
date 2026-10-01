@@ -124,6 +124,32 @@ describe('researchRepo', () => {
     expect(result.response.content!.text).not.toContain('lib/other.ts');
   });
 
+  it('fits sparse excerpts from long paths without cutting a citation section', async () => {
+    const source = Array.from({ length: 2_000 }, (_, index) =>
+      index % 60 === 0 ? 'needle' : 'x'
+    ).join('\n');
+    const files = Object.fromEntries(
+      ['a', 'b', 'c', 'd'].map((letter, index) => [`src/${letter.repeat(index % 2 === 0 ? 130 : 180)}.ts`, source])
+    );
+    const { repo, deps } = setup(files);
+    const result = await researchRepo('https://github.com/acme/widget', { query: 'needle' }, deps);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = result.response.content!.text;
+    expect(text.length).toBeLessThanOrEqual(READER_TEXT_CAP);
+    expect(result.response.metadata.truncated).toBe(true);
+    const sections = text.split('\n\n').slice(1);
+    expect(sections.length).toBeGreaterThan(0);
+    for (const section of sections) {
+      const match = /^(src\/[^\n]+) \(lines (\d+)-(\d+)\)\n(https:\/\/github\.com\/acme\/widget\/blob\/[^\n]+#L(\d+)-L(\d+))\n(.+)$/s.exec(section);
+      expect(match).not.toBeNull();
+      if (!match) continue;
+      expect(match[4]).toBe(`https://github.com/acme/widget/blob/${repo.sha}/${match[1]}#L${match[2]}-L${match[3]}`);
+      expect(match[7].length).toBeGreaterThan(0);
+      expect(match[7].split('\n')).toHaveLength(Number(match[3]) - Number(match[2]) + 1);
+    }
+  });
+
   it('reuses the clone on a follow-up question', async () => {
     const { deps } = setup({ 'README.md': 'hi' });
     await researchRepo('https://github.com/acme/widget', { query: 'a' }, deps);
