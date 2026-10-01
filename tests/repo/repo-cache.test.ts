@@ -132,6 +132,7 @@ vi.mock('../../src/abort.js', async (importOriginal) => {
 
 const temps: string[] = [];
 const caches: RepoCache[] = [];
+const deferredReleases: Array<() => void> = [];
 const baseDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'pwa-cache-'));
   temps.push(dir);
@@ -143,10 +144,28 @@ const cache = (options: Parameters<typeof createRepoCache>[0]) => {
   return created;
 };
 afterEach(async () => {
-  await Promise.all(caches.splice(0).map((c) => c.close()));
-  for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
+  raceGate.release();
+  rmGate.release();
+  for (const release of deferredReleases.splice(0)) release();
+  tmpdirGate.reset();
+  lstatUidGate.reset();
+
+  const closed = await Promise.allSettled(caches.splice(0).map((c) => c.close()));
+  const cleanupErrors: unknown[] = [];
+  for (const dir of temps.splice(0)) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+  }
   raceGate.reset();
-});
+  rmGate.reset();
+
+  const rejected = closed.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  if (cleanupErrors[0]) throw cleanupErrors[0];
+}, 30_000);
 
 function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSignal[] } {
   const calls: AbortSignal[] = [];
@@ -166,9 +185,16 @@ function fakeClone(bytes = 10, gate?: Promise<void>): CloneFn & { calls: AbortSi
   return fn;
 }
 
+async function settleDefaultCacheStartup(cache: RepoCache): Promise<void> {
+  const result = await cache.acquire('startup-readiness', fakeClone());
+  if (!result.ok) throw new Error('startup clone failed');
+  result.lease.release();
+}
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((r) => (resolve = r));
+  deferredReleases.push(resolve);
   return { promise, resolve };
 }
 
@@ -188,6 +214,8 @@ describe('repo cache', () => {
           // The cache uses unknown when the native account lookup fails.
         }
       }
+      await settleDefaultCacheStartup(c);
+      expect(existsSync(dirname(c.root))).toBe(true);
       expect(dirname(c.root)).toBe(join(parent, `pi-web-agent-repos-${user}`));
       expect(basename(c.root)).toMatch(/^testboot-\d+-[0-9a-f]+$/);
     } finally {
@@ -230,6 +258,8 @@ describe('repo cache', () => {
         platform: 'win32',
         userInfo: () => ({ username: 'A user/name', uid: 1, gid: 1, shell: '', homedir: '' })
       });
+      await settleDefaultCacheStartup(c);
+      expect(existsSync(dirname(c.root))).toBe(true);
       expect(dirname(c.root)).toBe(join(parent, 'pi-web-agent-repos-A-user-name'));
     } finally {
       await c?.close();
@@ -249,6 +279,8 @@ describe('repo cache', () => {
         platform: 'linux',
         userInfo: lookup
       });
+      await settleDefaultCacheStartup(c);
+      expect(existsSync(dirname(c.root))).toBe(true);
       expect(dirname(c.root)).toBe(join(parent, `pi-web-agent-repos-${getuid()}`));
       expect(lookup).not.toHaveBeenCalled();
     } finally {

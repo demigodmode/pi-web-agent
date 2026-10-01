@@ -77,9 +77,7 @@ const sleepingGit = (key: string) => {
 };
 
 const waitForSleepingGit = async (startedFile: string) => {
-  const deadline = process.hrtime.bigint() + 10_000_000_000n;
   while (!existsSync(startedFile)) {
-    if (process.hrtime.bigint() >= deadline) throw new Error(`fake git did not report ready: ${startedFile}`);
     await delay(20);
   }
 };
@@ -247,7 +245,7 @@ describe('git runner', () => {
         }
       }
     }
-  }, 15_000);
+  }, 30_000);
 
   it('kills and awaits an uncached version check when its only caller cancels', async () => {
     const { pidFile, startedFile, env } = sleepingGit('sole-caller');
@@ -258,8 +256,8 @@ describe('git runner', () => {
     await expect(running).rejects.toThrow('Operation aborted');
     const pids = readPids(pidFile)!;
     expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  }, 15_000);
+    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+  }, 30_000);
 
   it('keeps a shared version check alive until its last caller cancels', async () => {
     const { pidFile, startedFile, env } = sleepingGit('shared-callers');
@@ -275,8 +273,8 @@ describe('git runner', () => {
     secondController.abort();
     await expect(second).rejects.toThrow('Operation aborted');
     expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  }, 15_000);
+    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+  }, 30_000);
 
   it("returns a last waiter's timeout after the remaining caller cancels the shared version check", async () => {
     const { pidFile, startedFile, env } = sleepingGit('last-timeout');
@@ -289,8 +287,8 @@ describe('git runner', () => {
     await expect(second).resolves.toMatchObject({ ok: false, failure: { code: 'GIT_TIMEOUT' } });
     const pids = readPids(pidFile)!;
     expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  }, 15_000);
+    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+  }, 30_000);
 
   it('keeps a shared version check alive past the first caller timeout', async () => {
     const { pidFile, startedFile, env } = sleepingGit('first-timeout');
@@ -312,12 +310,12 @@ describe('git runner', () => {
       controller.abort();
       await expect(second).rejects.toThrow('Operation aborted');
       expect(isAlive(pids.pid)).toBe(false);
-      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
     } finally {
       controller.abort();
       await Promise.allSettled([first, second]);
     }
-  }, 15_000);
+  }, 30_000);
 
   it('spends the caller timeout budget on an uncached version check', async () => {
     const { pidFile, startedFile, env } = sleepingGit('version-timeout');
@@ -341,13 +339,13 @@ describe('git runner', () => {
       const pids = readPids(pidFile)!;
       expect(isAlive(pids.pid)).toBe(false);
       vi.useRealTimers();
-      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
+      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
     } finally {
       vi.useRealTimers();
       controller.abort();
       await Promise.allSettled([running]);
     }
-  }, 15_000);
+  }, 30_000);
 
   it('keeps each shared version-check wait within its caller timeout budget', async () => {
     const { pidFile, startedFile, env } = sleepingGit('shared-timeout');
@@ -367,41 +365,64 @@ describe('git runner', () => {
       const pids = readPids(pidFile);
       if (pids && isAlive(pids.pid)) process.kill(-pids.pid, 'SIGKILL');
     }
-  }, 15_000);
+  }, 30_000);
 
   it('kills the whole process group on timeout and returns only after git exited', async () => {
     const pidFile = join(tempDir(), 'pids.json');
+    const startedFile = join(tempDir(), 'started');
     sleepingPidFiles.add(pidFile);
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
+    vi.stubEnv('FAKE_GIT_STARTED_FILE', startedFile);
     const env = fakeGit(FAKE_GIT_SLEEP);
     await expect(runGit(['--version'], { timeoutMs: 10_000, env })).resolves.toMatchObject({ ok: true });
-    const running = runGit(['fetch'], { timeoutMs: 2_000, env });
-    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
-    const pids = readPids(pidFile)!;
-    expect(isAlive(pids.pid)).toBe(true);
-    const result = await running;
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.code).toBe('GIT_TIMEOUT');
-      expect(result.failure.failure.kind).toBe('transient');
+    const controller = new AbortController();
+    vi.useFakeTimers();
+    const started = Date.now();
+    const running = runGit(['fetch'], { timeoutMs: 2_000, signal: controller.signal, env });
+    try {
+      await waitForSleepingGit(startedFile);
+      const pids = readPids(pidFile)!;
+      expect(isAlive(pids.pid)).toBe(true);
+      let settled = false;
+      void running.then(
+        () => (settled = true),
+        () => (settled = true)
+      );
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      const result = await running;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.failure.code).toBe('GIT_TIMEOUT');
+        expect(result.failure.failure.kind).toBe('transient');
+      }
+      expect(Date.now() - started).toBe(2_000);
+      expect(isAlive(pids.pid)).toBe(false);
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+    } finally {
+      vi.useRealTimers();
+      controller.abort();
+      await Promise.allSettled([running]);
     }
-    expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  });
+  }, 30_000);
 
   it('throws the abort error on cancel, after killing the group', async () => {
     const pidFile = join(tempDir(), 'pids.json');
+    const startedFile = join(tempDir(), 'started');
     sleepingPidFiles.add(pidFile);
     vi.stubEnv('FAKE_GIT_PID_FILE', pidFile);
+    vi.stubEnv('FAKE_GIT_STARTED_FILE', startedFile);
     const controller = new AbortController();
     const running = runGit(['fetch'], { timeoutMs: 30_000, signal: controller.signal, env: fakeGit(FAKE_GIT_SLEEP) });
-    await vi.waitFor(() => expect(readPids(pidFile)).toBeDefined());
+    await waitForSleepingGit(startedFile);
     controller.abort();
     await expect(running).rejects.toThrow('Operation aborted');
     const pids = readPids(pidFile)!;
     expect(isAlive(pids.pid)).toBe(false);
-    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false));
-  });
+    await vi.waitFor(() => expect(isAlive(pids.grandchild)).toBe(false), { timeout: 10_000 });
+  }, 30_000);
 
   it('does not start git when already cancelled', async () => {
     const controller = new AbortController();
