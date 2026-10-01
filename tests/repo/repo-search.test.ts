@@ -397,6 +397,29 @@ describe('searchRepo walk and scoring', () => {
     expect(result).toMatchObject({ partial: true, budget: 'time', scannedFiles: 0 });
   });
 
+  it('starts the search deadline before extracting query terms', async () => {
+    const root = tree({ 'a.ts': impl });
+    let elapsed = 0;
+    const result = await searchRepo(root, {
+      get query() {
+        elapsed = 10;
+        return 'refresh OAuth tokens';
+      },
+      maxSearchMs: 10,
+      now: () => elapsed
+    });
+
+    expect(result).toEqual({
+      scopeFound: true,
+      terms: ['refresh', 'oauth', 'auth', 'tokens'],
+      files: [],
+      partial: true,
+      budget: 'time',
+      scannedFiles: 0
+    });
+    expect(handleCalls.openPaths).toEqual([]);
+  });
+
   it('stops after scope resolution reaches the deadline', async () => {
     const root = tree({ 'src/a.ts': impl });
     let elapsed = 0;

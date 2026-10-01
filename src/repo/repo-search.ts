@@ -271,12 +271,12 @@ async function scopeHasSymlink(root: string, pathScope: string | undefined, sign
  */
 export async function searchRepo(root: string, options: RepoSearchOptions): Promise<RepoSearchResult> {
   throwIfAborted(options.signal);
+  const now = options.now ?? performance.now.bind(performance);
+  const searchStartedAt = now();
   const terms = queryTerms(options.query);
   if (options.pathScope && hasGitSegment(options.pathScope)) {
     return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
   }
-  const now = options.now ?? performance.now.bind(performance);
-  const searchStartedAt = now();
   const maxFiles = options.maxFiles ?? REPO_MAX_FILES;
   const maxScannedFiles = options.maxScannedFiles ?? MAX_SCANNED_FILES;
   const maxScannedBytes = options.maxScannedBytes ?? MAX_SCANNED_BYTES;
