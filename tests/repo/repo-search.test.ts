@@ -131,6 +131,21 @@ describe('searchRepo walk and scoring', () => {
     expect(result.files.map((file) => file.path)).toEqual(['src/auth/token-refresh.ts']);
   });
 
+  it('rejects direct and intermediate symlinks in a search scope', async () => {
+    const root = tree({
+      'src/auth/token-refresh.ts': impl,
+      'src/auth/secret.ts': 'refresh oauth token SECRET-VALUE'
+    });
+    symlinkSync(join(root, 'src/auth'), join(root, 'direct'));
+    symlinkSync(join(root, 'src'), join(root, 'alias'));
+
+    for (const pathScope of ['direct', 'alias/auth']) {
+      const result = await searchRepo(root, { query: 'refresh OAuth tokens', pathScope });
+      expect(result).toMatchObject({ scopeFound: false, files: [] });
+      expect(JSON.stringify(result)).not.toContain('SECRET-VALUE');
+    }
+  });
+
   it('reports a missing or escaping scope', async () => {
     const root = tree({ 'src/a.ts': impl });
     await expect(searchRepo(root, { query: 'refresh', pathScope: 'nope' })).resolves.toMatchObject({ scopeFound: false, files: [] });

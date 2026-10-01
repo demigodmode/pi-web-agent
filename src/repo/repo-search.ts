@@ -1,5 +1,5 @@
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
-import { extname, join, relative, sep } from 'node:path';
+import { extname, join, relative, resolve, sep } from 'node:path';
 import { throwIfAborted } from '../abort.js';
 import { REPO_MAX_FILES } from './limits.js';
 import { resolveInside } from './repo-overview.js';
@@ -136,6 +136,22 @@ async function safeDirectory(base: string, dir: string, signal?: AbortSignal): P
   return real && inside(base, real) ? real : undefined;
 }
 
+async function scopeHasSymlink(root: string, pathScope: string | undefined, signal?: AbortSignal): Promise<boolean> {
+  if (!pathScope) return false;
+  const base = await realpath(root);
+  throwIfAborted(signal);
+  let current = base;
+  for (const segment of pathScope.split(/[\\/]+/)) {
+    if (!segment || segment === '.') continue;
+    current = resolve(current, segment);
+    if (!inside(base, current)) return false;
+    const info = await lstat(current).catch(() => undefined);
+    throwIfAborted(signal);
+    if (info?.isSymbolicLink()) return true;
+  }
+  return false;
+}
+
 /**
  * Keyword search over a clone (#70). No model calls. Never follows symlinks, and any file whose
  * real path leaves the clone is skipped. Throws abortError() when `signal` fires.
@@ -143,6 +159,9 @@ async function safeDirectory(base: string, dir: string, signal?: AbortSignal): P
 export async function searchRepo(root: string, options: RepoSearchOptions): Promise<RepoSearchResult> {
   throwIfAborted(options.signal);
   const terms = queryTerms(options.query);
+  if (await scopeHasSymlink(root, options.pathScope, options.signal)) {
+    return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
+  }
   const start = await resolveInside(root, options.pathScope);
   throwIfAborted(options.signal);
   if (!start) return { scopeFound: false, terms: terms.map((term) => term.term), files: [] };
