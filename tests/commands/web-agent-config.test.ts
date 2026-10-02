@@ -1955,27 +1955,27 @@ describe('search provider switching', () => {
     };
 
     let state = createSettingsDraftState(loaded, 'project');
-    
+
     // Switch to Google SERP
     state = applySettingsValue(state, 'backend:search:provider', 'google-serp');
     expect(state.backends.search.baseUrls?.searxng).toBe('https://searx.invalid/sub/');
     expect(state.backends.search.baseUrl).toBeUndefined();
-    
+
     // Set Google SERP endpoint to URL2
     state = applySettingsValue(state, 'backend:search:baseUrl', 'https://serp.invalid/search');
     expect(state.backends.search.baseUrl).toBe('https://serp.invalid/search');
-    
+
     // Switch back to SearXNG
     state = applySettingsValue(state, 'backend:search:provider', 'searxng');
     expect(state.backends.search.provider).toBe('searxng');
     expect(state.backends.search.baseUrls?.['google-serp']).toBe('https://serp.invalid/search');
-    
+
     // Set SearXNG endpoint to URL3 (should clear the old URL from baseUrls)
     state = applySettingsValue(state, 'backend:search:baseUrl', 'https://searx-new.invalid/sub/');
     expect(state.backends.search.baseUrl).toBe('https://searx-new.invalid/sub/');
     // The old URL should be cleared from baseUrls[searxng]
     expect(state.backends.search.baseUrls?.searxng).toBeUndefined();
-    
+
     // Verify request goes to the new URL (URL3)
     const requests: Array<{ url: string }> = [];
     vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0]) => {
@@ -1983,7 +1983,7 @@ describe('search provider switching', () => {
       requests.push({ url });
       return new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
     }));
-    
+
     try {
       const backends = createBackendSet(state.backends, {
         networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '127.0.0.1', family: 4 }] }),
@@ -1992,10 +1992,10 @@ describe('search provider switching', () => {
         }),
         policy: { sleep: async () => undefined, random: () => 0 }
       });
-      
+
       const result = await backends.search({ query: 'test' });
       await backends.close();
-      
+
       // Request should go to URL3, not the old URL1
       expect(requests.some((r) => r.url.startsWith('https://searx-new.invalid/'))).toBe(true);
       expect(requests.some((r) => r.url.startsWith('https://searx.invalid/sub/'))).toBe(false);

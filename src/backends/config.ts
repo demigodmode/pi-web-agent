@@ -221,6 +221,16 @@ function searchBaseUrlApplies(search: SearchBackendConfig, provider: SearchProvi
  * own is left out of the set instead (usableSearchProviders), never pointed at another's URL.
  */
 export function resolveSearchBaseUrl(search: SearchBackendConfig, provider: SearchProviderName): string | undefined {
+  // When the provider is the currently selected one, prefer the current baseUrl first,
+  // then fall back to baseUrls[provider]. This ensures Settings edits take effect.
+  if (provider === search.provider) {
+    const current = search.baseUrl?.trim();
+    if (current) return current;
+    const own = search.baseUrls?.[provider]?.trim();
+    if (own) return own;
+    return searchBaseUrlApplies(search, provider) ? undefined : undefined;
+  }
+  // For non-selected providers, use their own baseUrls slot if set, otherwise apply legacy rules
   const own = search.baseUrls?.[provider]?.trim();
   if (own) return own;
   return searchBaseUrlApplies(search, provider) ? search.baseUrl?.trim() || undefined : undefined;

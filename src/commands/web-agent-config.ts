@@ -584,6 +584,18 @@ export function applySettingsValue(
       delete currentBackends.search.baseUrl;
     }
 
+    // After switching to a new endpoint provider, move its preserved endpoint from baseUrls to baseUrl
+    if (newIsEndpointBased && oldIsEndpointBased && oldProvider !== newValue) {
+      const newProviderEndpoint = currentBackends.search.baseUrls?.[newValue as SearchProviderName];
+      if (newProviderEndpoint) {
+        currentBackends.search.baseUrl = newProviderEndpoint;
+        // Clean up the baseUrls slot for the new provider
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[newValue as SearchProviderName];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
+    }
+
     // baseUrl belongs to the endpoint-backed providers; the others drop it.
     if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
       delete currentBackends.search.baseUrl;
@@ -642,14 +654,27 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:baseUrl') {
+    const selectedProvider = currentBackends.search.provider as SearchProviderName;
     if (newValue.trim()) {
       // Keep an endpoint-backed provider (searxng, google-serp); anything else is promoted to searxng.
-      if (!BASE_URL_SEARCH_PROVIDERS.includes(currentBackends.search.provider)) {
+      if (!BASE_URL_SEARCH_PROVIDERS.includes(selectedProvider)) {
         currentBackends.search.provider = 'searxng';
       }
       currentBackends.search.baseUrl = newValue.trim();
+      // Remove the selected provider's entry from baseUrls so baseUrl takes effect
+      if (currentBackends.search.baseUrls?.[selectedProvider]) {
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[selectedProvider];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
     } else {
       delete currentBackends.search.baseUrl;
+      // When clearing, also remove from baseUrls
+      if (currentBackends.search.baseUrls?.[selectedProvider]) {
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[selectedProvider];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
     }
   }
 
