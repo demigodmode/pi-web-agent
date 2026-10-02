@@ -21,6 +21,7 @@
   <img src="https://img.shields.io/badge/You.com-475569?style=flat-square" alt="You.com">
   <img src="https://img.shields.io/badge/Exa-475569?style=flat-square" alt="Exa">
   <img src="https://img.shields.io/badge/Tavily-475569?style=flat-square" alt="Tavily">
+  <img src="https://img.shields.io/badge/Google%20SERP-475569?style=flat-square" alt="Google SERP">
 </p>
 
 One public tool, `web_explore`, that does bounded web research for Pi: search, fetch, targeted browser rendering, ranking, and honest caveats, all behind a single call.
@@ -31,6 +32,8 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 
 - **One tool.** `web_explore` handles direct links, discovery, HTTP reads, targeted headless rendering, source ranking, source-quality checks, and caveats internally.
 - **Reads the real content behind links.** Paste a GitHub, PDF, or YouTube URL and it pulls the actual thing (GitHub files/issues/PRs from the API, PDF text, YouTube transcripts), keyless. So "summarize this PDF" or "what does this repo do" works off the source, not the page shell.
+- **Answers questions about a GitHub repo from its code.** Paste a repo or folder link and it clones that exact commit (shallow, over HTTPS), searches the code for your question, and cites excerpts with links pinned to the commit. Needs `git` 2.32+. Private repos work with `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read it says why instead of guessing from the README.
+- **Esc actually stops it.** Cancelling a running `web_explore` stops searches, page reads, and the headless browser. Page reads give up after 15 seconds (PDFs 60, Firecrawl 45), and one page that fails to load doesn't fail the whole run.
 - **Seven search backends.** DuckDuckGo (keyless default), SearXNG, Brave, You.com, Exa, Tavily, and any Google SERP endpoint you point it at.
 - **Optional search fanout.** Query several backends at once, dedupe, and rank pages that more than one provider agreed on to the top. Off by default; flip it to `on` or `auto`.
 - **Honest by default.** Weak, narrow, blocked, or cautionary evidence gets flagged instead of dressed up as confidence.
@@ -49,7 +52,7 @@ Compared to other web tooling for agents:
 
 ## Install
 
-> `pi-web-agent` requires Pi 0.74+ (Pi packages moved to the `@earendil-works/*` scope). Update Pi before updating this package. On older Pi, stay on `@demigodmode/pi-web-agent@0.6.x`.
+> `pi-web-agent` requires Pi 0.74+ (Pi packages moved to the `@earendil-works/*` scope). Update Pi before updating this package. On older Pi, stay on `@demigodmode/pi-web-agent@0.6.x`. The extension works on Pi 0.99 and 1.0; `typebox` is a peer dependency that Pi already provides.
 
 ```bash
 pi install npm:@demigodmode/pi-web-agent
@@ -93,6 +96,7 @@ Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Sw
 | Google SERP | search (hosted) | base URL + `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` |
 | Firecrawl | fetch (self-hosted) | base URL + `PI_WEB_AGENT_FIRECRAWL_API_KEY` |
 | GitHub reader | content | `GITHUB_TOKEN` (optional, raises the rate limit) |
+| GitHub repo research | content | `git` 2.32+ on your PATH; `GITHUB_TOKEN` or `gh auth login` for private repos |
 
 Full config shape (fallback, SearXNG/Firecrawl options, fanout): see the [self-hosted backends docs](https://demigodmode.github.io/pi-web-agent/self-hosted-backends).
 
@@ -143,6 +147,8 @@ npm run build
 ```
 
 Local Pi work uses `.pi/extensions/pi-web-agent.ts`; run `/reload` after changes.
+
+Feature and fix PRs target `develop`; `main` only moves on release. See [Releases](https://demigodmode.github.io/pi-web-agent/releases).
 
 ## License
 

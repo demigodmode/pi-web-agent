@@ -54,6 +54,38 @@ Set `YDC_API_KEY` in the environment where Pi runs, then reload/restart Pi and r
 
 If You.com still reports an HTTP warning, check that the key is valid and that the Pi process can reach the You.com Search API.
 
+## `/web-agent doctor` says Google SERP is missing its endpoint or key
+
+`google-serp` needs both an endpoint and a key. Set `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` in the environment where Pi runs, and set `backends.search.baseUrl` (or **Search endpoint URL** in settings) to your vendor's search URL. Reload/restart Pi and run doctor again.
+
+If the key is sent in a header other than `X-API-Key`, set `backends.search.keyHeader`. If the vendor wants `Authorization: Bearer <key>`, include `Bearer ` in the key itself. A bad key or an empty balance reported inside a 200 response shows up as an auth or quota failure rather than "no results". See [Backends](/self-hosted-backends#google-serp-endpoint) for the full shape.
+
+## Asking about a GitHub repo gets a refusal
+
+Repo questions stop with a reason instead of falling back to the README. The common ones:
+
+- `git isn't installed, so repo code can't be searched.` Install `git` and make sure it is on the PATH of the process running Pi.
+- `git 2.32 or newer is needed to search repo code.` Update git. `/web-agent doctor` shows the version it found on its `repo research:` line.
+- `... is NNN MB, over the 300MB limit; ask about a specific file URL instead.` Ask about a file URL, or a smaller repo.
+- `Cloning owner/repo timed out after 60s.` Usually a slow connection or a big repo. Try again, or paste a `/tree/` folder link. The clone is still capped at 60 seconds.
+- `owner/repo wasn't found, or the token doesn't have access to it.` Check the spelling. For a private repo, run `gh auth login` or set `GITHUB_TOKEN` in the environment where Pi runs.
+- `GitHub rate limit hit; set GITHUB_TOKEN or sign in with gh for a higher limit.` Unauthenticated GitHub calls have a low hourly limit. A token raises it.
+- `GitHub rejected the token` means `GITHUB_TOKEN` is wrong or expired.
+
+You can only put two repo links in one question. A third is ignored.
+
+## The repo cache folder is refused
+
+You may see `the repo cache folder ... is a symlink`, `is not a directory`, `is owned by another user`, or `is readable by other users (expected 0700)`. Clones go in `pi-web-agent-repos-<your-user-id>` in your temp directory, and pi-web-agent won't use that folder if it can't confirm it is private to you. If it is yours and only holds old clones, delete it and ask again. If it is owned by someone else, leave it alone and check why it is there.
+
+## A repo answer says it searched only the first files
+
+Big repos hit the search limits (20,000 files, 64MB, or 10 seconds) and the answer says it searched only the first N files. Paste a `/tree/` folder link to the part you care about, for example `https://github.com/owner/repo/tree/main/src/auth`.
+
+## Esc stopped `web_explore` but I wanted it to finish
+
+A cancel stops everything underneath and nothing continues in the background. Ask again. Reads that hang on their own give up by themselves: 15 seconds for a page, 60 for a PDF, 45 for Firecrawl. A page that times out or drops the connection is reported as a failed read and the run uses the other sources.
+
 ## `/web-agent doctor` mentions managed Chromium fallback
 
 Headless rendering first tries a detectable Chromium-family browser:
@@ -93,7 +125,7 @@ If you want the diagnostic report directly, use:
 The settings UI currently has two sections:
 
 - **Presentation**: `defaultMode` and `web_explore`
-- **Backends**: search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for Brave/Firecrawl API keys
+- **Backends**: search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
 

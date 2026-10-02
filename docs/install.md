@@ -79,13 +79,14 @@ For a self-hosted or hosted-backend setup, open:
 
 Choose **Backends** to set:
 
-- search provider: `duckduckgo`, `searxng`, `brave`, `youcom`, `exa`, or `tavily`
+- search provider: `duckduckgo`, `searxng`, `brave`, `youcom`, `exa`, `tavily`, or `google-serp`
 - SearXNG URL, for example `http://localhost:8080`
+- Google SERP endpoint URL, for example `https://google.serper.dev/search`
 - fetch provider: `http` or `firecrawl`
 - Firecrawl URL, for example `http://localhost:3002`
 - optional fallback behavior
 
-The hosted search backends don't need a `baseUrl`; each reads a key from the environment, then you pick the provider in `/web-agent settings`. They're discovery-only, so `web_explore` still reads pages, ranks sources, and writes caveats itself.
+The hosted search backends don't need a `baseUrl` (except `google-serp`, which needs the endpoint of the vendor you use); each reads a key from the environment, then you pick the provider in `/web-agent settings`. They're discovery-only, so `web_explore` still reads pages, ranks sources, and writes caveats itself.
 
 If your Firecrawl instance requires a key, prefer an environment variable:
 
@@ -109,9 +110,17 @@ Secrets live in the environment, not in config the settings UI writes. The ones 
 - `TAVILY_API_KEY`: Tavily search
 - `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`: Google SERP endpoint search (`baseUrl` + header key, any vendor)
 - `PI_WEB_AGENT_FIRECRAWL_API_KEY`: Firecrawl fetch
-- `GITHUB_TOKEN`: optional, raises the GitHub reader's API rate limit (GitHub links work without it)
+- `GITHUB_TOKEN`: optional, raises the GitHub reader's API rate limit and gives repo research access to private repos (GitHub links work without it; `gh auth login` works as a fallback for repo research)
 
 This package integrates with existing self-hosted services. SearXNG/Firecrawl installation, Docker Compose files, reverse proxies, TLS, and auth setup belong to those projects' docs.
+
+## Repo research needs git
+
+Pasting a GitHub repo link makes `web_explore` clone that repo, so `git` 2.32 or newer has to be on your PATH. This applies on Windows, macOS, and Linux. Nothing else in the package needs git. `/web-agent doctor` has a `repo research:` line that shows your git version and where the GitHub token comes from.
+
+## Pi versions
+
+The extension works on Pi 0.99 and 1.0. `typebox` is a peer dependency that Pi already provides to extensions, so if you installed an older version of this package, update or reinstall it so the old bundled copy goes away.
 
 ## Watch out for mixed setups
 
