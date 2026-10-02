@@ -11,7 +11,7 @@ import {
   validateBackendUrl
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
-import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
+import { DEFAULT_BACKEND_CONFIG, extractBackendConfigOverride, mergeBackendConfigLayers } from '../../src/backends/config.js';
 import { createBackendSet } from '../../src/backends/factory.js';
 import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import type { BrowserResolutionResult } from '../../src/fetch/browser-resolution.js';
@@ -967,14 +967,14 @@ describe('web-agent config commands', () => {
 
     const doctorOutput = notify.mock.calls[0][0];
     expect(doctorOutput).not.toContain('secretpw');
-    expect(doctorOutput).toContain('proxy: http://***@[broken');
+    expect(doctorOutput).toContain('proxy: (invalid URL)');
 
     notify.mockClear();
     await handler('show', { ui: { notify } });
 
     const showOutput = notify.mock.calls[0][0];
     expect(showOutput).not.toContain('secretpw');
-    expect(showOutput).toContain('proxy: http://***@[broken');
+    expect(showOutput).toContain('proxy: (invalid URL)');
   });
 
   it('renders effective config from the store for show', async () => {
@@ -1750,8 +1750,9 @@ describe('network allow list settings', () => {
     const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
 
     expect(switched.backends.search.provider).toBe('google-serp');
-    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' });
-    expect(switched.backends.search.baseUrl).toBeUndefined();
+    // When switching to a new endpoint provider that has a baseUrls entry, move it to baseUrl
+    expect(switched.backends.search.baseUrl).toBe('https://google.example/search');
+    expect(switched.backends.search.baseUrls).toEqual({ 'searxng': 'http://preserved' });
   });
 
   it('keeps keyHeader when switching the selected provider away from google-serp if keyHeader is set', () => {
@@ -1929,9 +1930,80 @@ describe('search provider switching', () => {
     const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
 
     expect(switched.backends.search.provider).toBe('google-serp');
-    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' });
-    expect(switched.backends.search.baseUrl).toBeUndefined();
+    // When switching to a new endpoint provider that has a baseUrls entry, move it to baseUrl
+    expect(switched.backends.search.baseUrl).toBe('https://google.example/search');
+    expect(switched.backends.search.baseUrls).toEqual({ 'searxng': 'http://preserved' });
   });
+  it('settings edits affect endpoint resolver when switching between providers', async () => {
+    // Start with SearXNG at URL1
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    let state = createSettingsDraftState(loaded, 'project');
+    
+    // Switch to Google SERP
+    state = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+    expect(state.backends.search.baseUrls?.searxng).toBe('https://searx.invalid/sub/');
+    expect(state.backends.search.baseUrl).toBeUndefined();
+    
+    // Set Google SERP endpoint to URL2
+    state = applySettingsValue(state, 'backend:search:baseUrl', 'https://serp.invalid/search');
+    expect(state.backends.search.baseUrl).toBe('https://serp.invalid/search');
+    
+    // Switch back to SearXNG
+    state = applySettingsValue(state, 'backend:search:provider', 'searxng');
+    expect(state.backends.search.provider).toBe('searxng');
+    expect(state.backends.search.baseUrls?.['google-serp']).toBe('https://serp.invalid/search');
+    
+    // Set SearXNG endpoint to URL3 (should clear the old URL from baseUrls)
+    state = applySettingsValue(state, 'backend:search:baseUrl', 'https://searx-new.invalid/sub/');
+    expect(state.backends.search.baseUrl).toBe('https://searx-new.invalid/sub/');
+    // The old URL should be cleared from baseUrls[searxng]
+    expect(state.backends.search.baseUrls?.searxng).toBeUndefined();
+    
+    // Verify request goes to the new URL (URL3)
+    const requests: Array<{ url: string }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url });
+      return new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    
+    try {
+      const backends = createBackendSet(state.backends, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '127.0.0.1', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+      
+      const result = await backends.search({ query: 'test' });
+      await backends.close();
+      
+      // Request should go to URL3, not the old URL1
+      expect(requests.some((r) => r.url.startsWith('https://searx-new.invalid/'))).toBe(true);
+      expect(requests.some((r) => r.url.startsWith('https://searx.invalid/sub/'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('does not move whitespace-only baseUrl when switching providers', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },
