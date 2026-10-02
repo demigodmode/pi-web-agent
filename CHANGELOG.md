@@ -21,6 +21,7 @@ The format is intentionally simple and release-oriented.
 - Page fetches and the GitHub and YouTube readers give up after 15 seconds instead of hanging on a server that never answers. PDFs get 60 seconds since they can be big, and Firecrawl scrapes get 45. A page that times out is treated as a failed read and the run moves on to other sources; Firecrawl still gets its usual one retry. (#59)
 - The guard proxy no longer opens an outbound connection for a request whose client hung up while the address was still being looked up. (#59)
 - One flaky site can't take down a whole `web_explore` run anymore (#76). A connection that drops, a refused port, a DNS or TLS failure or a redirect loop on one page used to throw all the way up and fail the run. Now that page is just a failed read with the reason attached, and the answer comes from the other sources.
+- A proxy URL that isn't valid no longer shows its password in error messages or in `/web-agent doctor`, `show` and settings. (#93)
 
 ### Breaking
 - None.
