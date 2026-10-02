@@ -119,11 +119,20 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
 
 /**
  * Envelope codes whose meaning the vendor documents. Checked before the wording, because a
- * code is unambiguous where prose is not. 1504 is the upstream-timeout code SerpBase documents
- * (https://serpbase.dev/docs): the search engine behind the API timed out, so the call is worth
- * one retry instead of being written off as a malformed response.
+ * code is unambiguous where prose is not. These are SerpBase's documented business status
+ * codes (https://serpbase.dev/docs): the transport-level ones (1500, 1502, 1503, 1504) mean
+ * the engine behind the API failed, so the call is worth one retry instead of being written
+ * off as a malformed response.
  */
 const ENVELOPE_CODES: Record<string, FailureKind> = {
+  '1000': 'bad_request',
+  '1001': 'auth_failed',
+  '1004': 'bad_request',
+  '1020': 'quota_exhausted',
+  '1029': 'rate_limited',
+  '1500': 'transient',
+  '1502': 'transient',
+  '1503': 'transient',
   '1504': 'transient'
 };
 
@@ -139,24 +148,26 @@ const ENVELOPE_KINDS: Array<[RegExp, FailureKind]> = [
 
 /**
  * Some vendors answer HTTP 200 with the failure in the body instead of a 4xx, e.g.
- * `{"status": 1001, "error": "unauthorized"}`. Returns undefined when the body
- * reports success (`status: 0`) or does not carry a status envelope at all. Callers
- * check it before trusting a normalized body, so an error envelope can never be read
- * as a successful search that happens to have results.
+ * `{"status": 1001, "error": "unauthorized"}`. Returns undefined when the body reports
+ * success (`status: 0`), carries no status envelope, or carries a status that cannot be
+ * read as a failure. Callers check it before trusting a normalized body, so an error
+ * envelope can never be read as a successful search that happens to have results.
  *
- * The numeric codes are mostly vendor-specific and not documented consistently, so the
- * kind comes from the vendor's own wording (or a documented code, see ENVELOPE_CODES)
- * and the code is kept for the message. Anything unrecognized stays `bad_response`,
- * which the fallback policy already treats as non-retryable against that provider.
+ * A non-zero `status` alone is not a failure: some vendors echo the HTTP status in the body
+ * (`{"status": 200, "organic": [...]}`), and treating that as an error dropped every row and
+ * wrote the vendor off for the rest of the run. Only a documented code (ENVELOPE_CODES) or
+ * an error message makes the body a failure; anything else falls through to normalize, which
+ * still rejects a body with no usable results.
  */
 export function classifyEnvelopeFailure(json: unknown): EnvelopeFailure | undefined {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return undefined;
   const body = json as Record<string, unknown>;
   const status = body.status;
   if (typeof status !== 'number' || status === 0) return undefined;
+  const documented = ENVELOPE_CODES[String(status)];
   const wording = [body.error, body.message].find((value): value is string => typeof value === 'string');
-  const kind =
-    ENVELOPE_CODES[String(status)] ?? ENVELOPE_KINDS.find(([pattern]) => pattern.test(wording ?? ''))?.[1] ?? 'bad_response';
+  if (documented === undefined && wording === undefined) return undefined;
+  const kind = documented ?? ENVELOPE_KINDS.find(([pattern]) => pattern.test(wording ?? ''))?.[1] ?? 'bad_response';
   const message = wording ? `"${wording}" (provider status ${status})` : `provider status ${status}`;
   return { failure: { kind, httpStatus: 200, providerCode: String(status) }, message };
 }

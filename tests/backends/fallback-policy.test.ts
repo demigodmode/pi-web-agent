@@ -103,7 +103,7 @@ describe('withSearchPolicy', () => {
     const result = await search({ query: 'q' });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(d.sleep).toHaveBeenCalledWith(500);
+    expect(d.sleep).toHaveBeenCalledWith(500, undefined);
     expect(result.metadata.attempts?.map((a) => a.outcome)).toEqual(['retried', 'failed']);
     // The policy keeps the kind it acted on; the vendor code stays on the provider result.
     expect(result.error?.failure?.kind).toBe('transient');

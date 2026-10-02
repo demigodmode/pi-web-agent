@@ -98,24 +98,35 @@ describe('classifyHttpFailure documented provider rules', () => {
 });
 
 describe('classifyEnvelopeFailure', () => {
-  it('reads the documented 1504 code as retryable even when the wording says nothing about it', () => {
-    // The wording decides nothing here on purpose: no timeout/upstream phrase, so the code is
-    // what makes this call worth a retry instead of a non-retryable bad_response.
-    expect(classifyEnvelopeFailure({ status: 1504, error: 'Failed to fetch search results' })).toEqual({
-      failure: { kind: 'transient', httpStatus: 200, providerCode: '1504' },
-      message: '"Failed to fetch search results" (provider status 1504)'
+  it('reads a documented code even when the wording says nothing about it', () => {
+    // No timeout/upstream phrase in the wording, so the code is what makes this call worth a
+    // retry instead of a non-retryable bad_response.
+    expect(classifyEnvelopeFailure({ status: 1001, error: 'Unauthorized' })).toEqual({
+      failure: { kind: 'auth_failed', httpStatus: 200, providerCode: '1001' },
+      message: '"Unauthorized" (provider status 1001)'
     });
+    expect(classifyEnvelopeFailure({ status: 1504 })?.failure.kind).toBe('transient');
+    expect(classifyEnvelopeFailure({ status: 1020, message: 'nothing' })?.failure.kind).toBe('quota_exhausted');
   });
 
   it('falls back to the wording, then to bad_response, and reports success as no failure', () => {
-    expect(classifyEnvelopeFailure({ status: 1001, error: 'Unauthorized' })?.failure).toMatchObject({
-      kind: 'auth_failed',
-      providerCode: '1001'
-    });
     expect(classifyEnvelopeFailure({ status: 2000, message: 'Upstream timeout' })?.failure.kind).toBe('transient');
-    expect(classifyEnvelopeFailure({ status: 9999 })?.failure.kind).toBe('bad_response');
-    expect(classifyEnvelopeFailure({ status: 9999 })?.message).toBe('provider status 9999');
+    // An unrecognized code with unrecognized wording is not retryable.
+    expect(classifyEnvelopeFailure({ status: 2000, message: 'something else' })?.failure).toMatchObject({
+      kind: 'bad_response',
+      providerCode: '2000'
+    });
     expect(classifyEnvelopeFailure({ status: 0, error: 'ignored' })).toBeUndefined();
     expect(classifyEnvelopeFailure({ organic: [] })).toBeUndefined();
+  });
+
+  it('does not treat a body that only echoes the HTTP status as a failure', () => {
+    // Some vendors answer `{"status": 200, "organic": [...]}` instead of SerpBase's `0`. Reading
+    // 200 as a provider code dropped every row and, since bad_response is not retried, wrote the
+    // vendor off for the rest of the run.
+    expect(classifyEnvelopeFailure({ status: 200, organic: [{ title: 'A', link: 'https://a.test/' }] })).toBeUndefined();
+    expect(classifyEnvelopeFailure({ status: 200, organic: [] })).toBeUndefined();
+    // No wording and no documented code: leave it to normalize() rather than guess a failure.
+    expect(classifyEnvelopeFailure({ status: 9999 })).toBeUndefined();
   });
 });

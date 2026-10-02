@@ -743,6 +743,7 @@ export function collapseBackendConfigToOverride(
       ? { ...config.search }
       : {
           ...(config.search.baseUrl !== inheritedConfig.search.baseUrl ? { baseUrl: config.search.baseUrl } : {}),
+          ...(!sameJson(config.search.baseUrls, inheritedConfig.search.baseUrls) ? { baseUrls: config.search.baseUrls } : {}),
           ...(config.search.keyHeader !== inheritedConfig.search.keyHeader ? { keyHeader: config.search.keyHeader } : {}),
           ...(config.search.fallback !== inheritedConfig.search.fallback ? { fallback: config.search.fallback } : {}),
           ...(!sameJson(config.search.options, inheritedConfig.search.options) ? { options: config.search.options } : {}),

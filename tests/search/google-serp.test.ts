@@ -104,6 +104,8 @@ describe('google-serp search', () => {
 
     expect(broke.error?.failure).toMatchObject({ kind: 'quota_exhausted', providerCode: '4001' });
 
+    // An unrecognized status with no error message is not read as an envelope failure; the body
+    // has no usable `organic` array, so it fails at normalize as a bad_response instead.
     const unrecognized = await createGoogleSerpSearchTool({
       baseUrl: ENDPOINT,
       apiKey: 'key',
@@ -111,9 +113,31 @@ describe('google-serp search', () => {
     })({ query: 'q' });
 
     expect(unrecognized.error).toMatchObject({
-      message: 'Google SERP search request failed: provider status 9999.',
-      failure: { kind: 'bad_response', providerCode: '9999' }
+      code: 'BAD_RESPONSE',
+      failure: { kind: 'bad_response', httpStatus: 200 }
     });
+  });
+
+  it('accepts a success body that only echoes the HTTP status', async () => {
+    // Some vendors echo the HTTP status (`{"status": 200, "organic": [...]}`) instead of
+    // SerpBase's `0`. Reading 200 as a provider code dropped these rows and, since bad_response
+    // is not retried, wrote the vendor off for the rest of the run.
+    const search = createGoogleSerpSearchTool({
+      baseUrl: ENDPOINT,
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        status: 200,
+        organic: [{ title: 'Playwright', link: 'https://playwright.dev/', snippet: 'Browsers.' }]
+      }))
+    });
+
+    const result = await search({ query: 'q' });
+
+    expect(result.status).toBe('ok');
+    expect(result.results).toEqual([
+      { title: 'Playwright', url: 'https://playwright.dev/', snippet: 'Browsers.' }
+    ]);
+    expect(result.error).toBeUndefined();
   });
 
   it('returns ok with an empty list for a successful empty response', async () => {
