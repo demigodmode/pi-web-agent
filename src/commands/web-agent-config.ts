@@ -574,28 +574,9 @@ export function applySettingsValue(
     const oldProvider = currentBackends.search.provider as SearchProviderName;
     currentBackends.search.provider = newValue as SearchProviderName;
 
-    // When switching between endpoint providers, preserve the old URL in baseUrls
-    const oldIsEndpointBased = BASE_URL_SEARCH_PROVIDERS.includes(oldProvider);
-    const newIsEndpointBased = BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName);
-
-    if (oldIsEndpointBased && newIsEndpointBased && oldProvider !== newValue && currentBackends.search.baseUrl?.trim()) {
-      // Move old baseUrl to baseUrls[oldProvider] if not already set
-      if (!currentBackends.search.baseUrls?.[oldProvider]) {
-        currentBackends.search.baseUrls = { ...currentBackends.search.baseUrls, [oldProvider]: currentBackends.search.baseUrl };
-      }
+    // Switching between endpoint providers drops the old URL: one provider's endpoint must never be used by the other.
+    if (oldProvider !== newValue && BASE_URL_SEARCH_PROVIDERS.includes(oldProvider) && BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
       delete currentBackends.search.baseUrl;
-    }
-
-    // After switching to a new endpoint provider, move its preserved endpoint from baseUrls to baseUrl
-    if (newIsEndpointBased && oldIsEndpointBased && oldProvider !== newValue) {
-      const newProviderEndpoint = currentBackends.search.baseUrls?.[newValue as SearchProviderName];
-      if (newProviderEndpoint) {
-        currentBackends.search.baseUrl = newProviderEndpoint;
-        // Clean up the baseUrls slot for the new provider
-        const newBaseUrls = { ...currentBackends.search.baseUrls };
-        delete newBaseUrls[newValue as SearchProviderName];
-        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
-      }
     }
 
     // baseUrl belongs to the endpoint-backed providers; the others drop it.
