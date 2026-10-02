@@ -12,6 +12,8 @@ import {
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
+import { createBackendSet } from '../../src/backends/factory.js';
+import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import type { BrowserResolutionResult } from '../../src/fetch/browser-resolution.js';
 
 beforeEach(() => {
@@ -1557,6 +1559,53 @@ describe('network allow list settings', () => {
 
     const rangesCleared = applySettingsValue(untrusted, 'backend:network:allowRanges', '');
     expect(rangesCleared.backends.network).toEqual({ trustProxyDns: false });
+  });
+
+  it('never sends the google serp key to the old searxng url after switching providers in settings', async () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: { search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' } }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+    const switched = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:provider', 'google-serp');
+
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url, headers: new Headers(init?.headers) });
+      return new Response(JSON.stringify({ organic: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'google-secret');
+    try {
+      const backends = createBackendSet(switched.backends, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+      const result = await backends.search({ query: 'q' });
+      await backends.close();
+
+      // Google SERP has no endpoint of its own yet, so it must not borrow SearXNG's.
+      expect(requests.filter((request) => request.url.startsWith('https://searx.invalid/'))).toEqual([]);
+      expect(requests.some((request) => request.headers.get('x-api-key') === 'google-secret')).toBe(false);
+      expect(result.status).toBe('error');
+      expect(switched.backends.search.baseUrls?.searxng).toBe('https://searx.invalid/sub/');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it('preserves old searxng baseUrl in baseUrls when switching to google-serp', () => {
