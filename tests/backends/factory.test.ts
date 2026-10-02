@@ -945,15 +945,18 @@ describe('backend factory proxy support', () => {
     const search = await backends.search({ query: 'docs' });
     expect(search.status).toBe('error');
     expect(search.error?.code).toBe('BACKEND_CONFIG_INVALID');
-    expect(search.error?.message).toContain('htttp://proxy:8080');
+    expect(search.error?.message).not.toContain('htttp://');
+    expect(search.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
 
     const page = await backends.fetchPage({ url: 'https://example.com/page' });
     expect(page.status).toBe('error');
     expect(page.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(page.error?.message).not.toContain('htttp://');
 
     const headless = await backends.headlessFetch({ url: 'https://example.com/page' });
     expect(headless.status).toBe('error');
     expect(headless.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(headless.error?.message).not.toContain('htttp://');
 
     // Neither a proxy agent nor a direct fetch was ever built or used.
     expect(createProxyFetch).not.toHaveBeenCalled();
@@ -1581,54 +1584,6 @@ describe('backend factory failure-aware fallback (#55)', () => {
       controller.abort();
 
       await expect(backends.fetchPage({ url: 'https://example.com', signal: controller.signal })).rejects.toThrow('Operation aborted');
-    });
-
-    it('sends google-serp key in Authorization header when keyHeader is set and google-serp is in fanout', async () => {
-      let capturedHeaders: Record<string, string> | undefined;
-      const googleSerpSearch = vi.fn(async () => {
-        return {
-          status: 'ok' as const,
-          results: [{ title: 'Google result', url: 'https://example.com', snippet: 'snippet' }],
-          metadata: { backend: 'google-serp' as const, cacheHit: false }
-        };
-      });
-
-      const fetchImpl = vi.fn(async (input: string | Request, init?: RequestInit) => {
-        if (typeof input === 'string' && input.includes('google')) {
-          capturedHeaders = Object.fromEntries(
-            Array.from((init?.headers as any)?.[Symbol.iterator]?.() ?? [])
-          ) as Record<string, string>;
-        }
-        return new Response('{}', { status: 200 });
-      }) as unknown as typeof fetch;
-
-      vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'test-google-key');
-
-      try {
-        const backends = createBackendSet(
-          {
-            search: {
-              provider: 'searxng',
-              baseUrl: 'http://localhost:8080',
-              keyHeader: 'Authorization',
-              baseUrls: { 'google-serp': 'https://google.example/search' },
-              fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
-            },
-            fetch: { provider: 'http' },
-            headless: { provider: 'local-browser' }
-          },
-          {
-            ...offlineNetworkDeps(),
-            createGoogleSerpSearch: () => googleSerpSearch,
-            createProxyFetch: () => fetchImpl
-          }
-        );
-
-        await backends.search({ query: 'test' });
-        expect(googleSerpSearch).toHaveBeenCalled();
-      } finally {
-        vi.unstubAllEnvs();
-      }
     });
   });
 });

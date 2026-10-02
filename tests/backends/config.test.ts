@@ -152,7 +152,7 @@ describe('backend config', () => {
       backends: {
         search: { provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' }
       }
-    }).search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
+    }).search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' });
   });
 
   it('accepts google-serp with an endpoint and duckduckgo fallback', () => {

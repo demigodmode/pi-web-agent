@@ -1702,7 +1702,7 @@ describe('network allow list settings', () => {
             baseUrl: 'http://localhost:8080',
             keyHeader: 'Authorization',
             baseUrls: { 'google-serp': 'https://google.example/search' },
-            fanout: { mode: 'on' as const, providers: ['searxng', 'google-serp'] as const }
+            fanout: { mode: 'on' as const, providers: ['searxng' as const, 'google-serp' as const] }
           }
         }
       },
@@ -1713,7 +1713,7 @@ describe('network allow list settings', () => {
           baseUrl: 'http://localhost:8080',
           keyHeader: 'Authorization',
           baseUrls: { 'google-serp': 'https://google.example/search' },
-          fanout: { mode: 'on' as const, providers: ['searxng', 'google-serp'] as const }
+          fanout: { mode: 'on' as const, providers: ['searxng' as const, 'google-serp' as const] }
         },
         fetch: { provider: 'http' as const },
         headless: { provider: 'local-browser' as const }
