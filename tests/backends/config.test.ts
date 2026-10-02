@@ -131,7 +131,7 @@ describe('backend config', () => {
     expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
   });
 
-  it('extracts the google-serp key header only for that provider', () => {
+  it('extracts the google-serp key header regardless of selected provider', () => {
     expect(extractBackendConfigOverride({
       backends: {
         search: {

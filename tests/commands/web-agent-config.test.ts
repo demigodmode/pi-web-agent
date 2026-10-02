@@ -1788,8 +1788,117 @@ describe('network allow list settings', () => {
     expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search' });
     expect(switched.backends.search.keyHeader).toBe('Authorization');
   });
+});
 
-  it('keeps keyHeader with primary searxng and google-serp in fanout', () => {
+describe('search provider switching', () => {
+  it('never sends the google serp key to the old searxng url after switching providers in settings', async () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: { search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' } }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+    const switched = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:provider', 'google-serp');
+
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url, headers: new Headers(init?.headers) });
+      return new Response(JSON.stringify({ organic: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'google-secret');
+    try {
+      const backends = createBackendSet(switched.backends, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+      const result = await backends.search({ query: 'q' });
+      await backends.close();
+
+      // Google SERP has no endpoint of its own yet, so it must not borrow SearXNG's.
+      expect(requests.filter((request) => request.url.startsWith('https://searx.invalid/'))).toEqual([]);
+      expect(requests.some((request) => request.headers.get('x-api-key') === 'google-secret')).toBe(false);
+      expect(result.status).toBe('error');
+      expect(switched.backends.search.baseUrls?.searxng).toBe('https://searx.invalid/sub/');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('preserves old searxng baseUrl in baseUrls when switching to google-serp', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'http://localhost:8080' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toEqual({ searxng: 'http://localhost:8080' });
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('preserves old google-serp baseUrl in baseUrls when switching to searxng', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'google-serp' as const, baseUrl: 'https://google.example/search' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'google-serp' as const,
+          baseUrl: 'https://google.example/search'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'searxng');
+
+    expect(switched.backends.search.provider).toBe('searxng');
+    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search' });
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('does not overwrite existing baseUrls entries when switching providers', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },
       project: {
@@ -1800,9 +1909,7 @@ describe('network allow list settings', () => {
           search: {
             provider: 'searxng' as const,
             baseUrl: 'http://localhost:8080',
-            keyHeader: 'Authorization',
-            baseUrls: { 'google-serp': 'https://google.example/search' },
-            fanout: { mode: 'on' as const, providers: ['searxng' as const, 'google-serp' as const] }
+            baseUrls: { 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' }
           }
         }
       },
@@ -1811,9 +1918,7 @@ describe('network allow list settings', () => {
         search: {
           provider: 'searxng' as const,
           baseUrl: 'http://localhost:8080',
-          keyHeader: 'Authorization',
-          baseUrls: { 'google-serp': 'https://google.example/search' },
-          fanout: { mode: 'on' as const, providers: ['searxng' as const, 'google-serp' as const] }
+          baseUrls: { 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' }
         },
         fetch: { provider: 'http' as const },
         headless: { provider: 'local-browser' as const }
@@ -1821,6 +1926,38 @@ describe('network allow list settings', () => {
     };
 
     const state = createSettingsDraftState(loaded, 'project');
-    expect(state.backends.search.keyHeader).toBe('Authorization');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' });
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+  it('does not move whitespace-only baseUrl when switching providers', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: '   ' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: '   '
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toBeUndefined();
   });
 });

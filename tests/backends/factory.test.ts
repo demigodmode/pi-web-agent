@@ -70,7 +70,7 @@ describe('backend factory', () => {
     expect(result.error?.message).toContain('set backends.proxy.url to ""');
   });
 
-  it('e2e I2: google-serp key header extracted and sent in fanout via config file', async () => {
+  it('extracts and sends the google-serp key header in fanout via config file', async () => {
     const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
     const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
 

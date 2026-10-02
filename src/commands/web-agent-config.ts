@@ -576,7 +576,7 @@ export function applySettingsValue(
     const oldIsEndpointBased = BASE_URL_SEARCH_PROVIDERS.includes(oldProvider);
     const newIsEndpointBased = BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName);
 
-    if (oldIsEndpointBased && newIsEndpointBased && oldProvider !== newValue && currentBackends.search.baseUrl) {
+    if (oldIsEndpointBased && newIsEndpointBased && oldProvider !== newValue && currentBackends.search.baseUrl?.trim()) {
       // Move old baseUrl to baseUrls[oldProvider] if not already set
       if (!currentBackends.search.baseUrls?.[oldProvider]) {
         currentBackends.search.baseUrls = { ...currentBackends.search.baseUrls, [oldProvider]: currentBackends.search.baseUrl };
