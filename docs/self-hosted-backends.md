@@ -13,8 +13,9 @@ Hosted options:
 - You.com Search for API-backed source discovery
 - Exa for API-backed source discovery
 - Tavily for API-backed source discovery
+- Google SERP for any hosted vendor that returns Google results (Serper, SerpBase, and similar)
 
-These are all hosted, so they use an API key instead of a `baseUrl`.
+These are all hosted, so they use an API key. Only `google-serp` also needs a `baseUrl`, since you choose the vendor.
 
 This keeps the public Pi tool the same: the model still calls `web_explore`. The backend config only changes what `web_explore` uses internally.
 
@@ -441,7 +442,7 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 }
 ```
 
-When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, and Firecrawl failures stay visible instead of silently switching to external/default backends.
+When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, Google SERP, and Firecrawl failures stay visible instead of silently switching to external/default backends.
 
 Fallback also looks at why a backend failed before moving on:
 
@@ -595,7 +596,7 @@ Then try a normal research prompt:
 Find current docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, Exa, Tavily, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
+The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, Exa, Tavily, Google SERP, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
 
 ## Troubleshooting
 
@@ -626,4 +627,4 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, or Tavily to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
+`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, Tavily, or Google SERP to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
