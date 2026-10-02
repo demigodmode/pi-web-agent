@@ -44,6 +44,8 @@ You can also include direct links in the prompt. `web_explore` reads HTTP/HTTPS 
 
 For GitHub, PDF, and YouTube links, `web_explore` fetches the real content automatically instead of scraping the page. GitHub files, issues, PRs, and repo READMEs come from the raw/API endpoints; PDFs are extracted to text; YouTube links return the transcript. All keyless. Set `GITHUB_TOKEN` in the environment if you want a higher GitHub rate limit, but it works without one. Scanned PDFs and videos without captions are noted rather than failing. Pasting a link and asking to summarize returns the extracted content (long transcripts or PDFs capped around 24k characters), so it's a reliable way to get summaries of videos, PDFs, or repo files.
 
+If you paste a link to a whole GitHub repo (or a folder inside one), `web_explore` clones that exact commit and answers from the code, with citations that point at the commit it read. That needs `git` 2.32 or newer; private repos need `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read, it says why. Press Esc if a run is taking too long; it stops everything underneath.
+
 ## Presentation defaults
 
 The package renders web research output in `compact` mode by default.

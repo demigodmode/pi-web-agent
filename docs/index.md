@@ -36,8 +36,10 @@ Right now it gives you:
 - a `/web-agent` settings UI for presentation and backend config
 - direct-link and forum/thread-aware research handling
 - keyless GitHub, PDF, and YouTube readers that pull the real content behind those links
+- questions about a pasted GitHub repo answered from a clone of its code, with commit-pinned citations
+- Esc cancels a running research pass, and one page failing to load doesn't fail the run
 - local-browser headless rendering with managed Chromium fallback
-- optional hosted discovery through Brave, You.com, Exa, or Tavily without changing the public `web_explore` tool
+- optional hosted discovery through Brave, You.com, Exa, Tavily, or a Google SERP endpoint without changing the public `web_explore` tool
 - bounded research behavior that is willing to say when evidence was weak, narrow, blocked, or cautionary
 
 ## Start here

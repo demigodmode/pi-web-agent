@@ -19,9 +19,10 @@ Internally, `web_explore` can do a few things:
 - read HTTP/HTTPS links from the prompt before search
 - strip common tracking params from direct links
 - plan search queries
-- run web search through the configured search backend: DuckDuckGo, SearXNG, Brave, You.com, Exa, or Tavily
+- run web search through the configured search backend: DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, or Google SERP
 - optionally fan search across multiple configured providers at once when fanout is enabled, dedupe and rerank the merged results
 - read GitHub, PDF, and YouTube links through dedicated readers instead of scraping the page
+- clone and search a GitHub repo when you paste a repo or folder link
 - pick candidate pages
 - prefer forum/thread sources when the query asks for discussions
 - read pages over HTTP
@@ -59,6 +60,14 @@ When you put a repo link in your question yourself (`https://github.com/owner/re
 - Private repos work if you're signed in with the GitHub CLI (`gh auth login`) or have `GITHUB_TOKEN` set. The token is sent as an HTTP header, never on the command line.
 - It needs `git` 2.32 or newer. `/web-agent doctor` shows a `repo research:` line with your git version and where the GitHub token comes from.
 - Repo links that only turn up in search results still get the lighter README reader.
+- The search walks at most 20,000 files, 64MB, or 10 seconds. If it hits one of those, the answer says it searched only the first N files and suggests a `/tree/` folder link.
+- If GitHub's rate limit is hit, the answer says so and suggests `GITHUB_TOKEN` or `gh auth login`. A repo that doesn't exist, or that your token can't see, gets a "wasn't found" refusal.
+
+## Cancelling and timeouts
+
+Esc on a running `web_explore` stops searches, page fetches, repo clones, and the headless browser. Nothing retries or falls back after a cancel.
+
+Reads that could otherwise hang have timeouts. Page fetches and the GitHub and YouTube readers give up after 15 seconds, PDFs after 60, and Firecrawl scrapes after 45. A page that times out, drops the connection, refuses the port, fails DNS or TLS, or loops on redirects counts as a failed read of that one page. The run moves on to the other sources.
 
 ## What preview and verbose show
 
