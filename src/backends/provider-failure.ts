@@ -163,7 +163,9 @@ export function classifyEnvelopeFailure(json: unknown): EnvelopeFailure | undefi
   if (!json || typeof json !== 'object' || Array.isArray(json)) return undefined;
   const body = json as Record<string, unknown>;
   const status = body.status;
-  if (typeof status !== 'number' || status === 0) return undefined;
+  // Treat 0 and 2xx status codes (success indicators) as no failure. This must come before
+  // documented-code and wording checks: a 2xx body is success even if it carries a message.
+  if (typeof status !== 'number' || status === 0 || (status >= 200 && status < 300)) return undefined;
   const documented = ENVELOPE_CODES[String(status)];
   const wording = [body.error, body.message].find((value): value is string => typeof value === 'string');
   if (documented === undefined && wording === undefined) return undefined;

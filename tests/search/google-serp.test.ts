@@ -140,6 +140,26 @@ describe('google-serp search', () => {
     expect(result.error).toBeUndefined();
   });
 
+  it('accepts a success body with 2xx status and a message field', async () => {
+    const search = createGoogleSerpSearchTool({
+      baseUrl: ENDPOINT,
+      apiKey: 'key',
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        status: 200,
+        message: 'OK',
+        organic: [{ title: 'Example', link: 'https://example.com/', snippet: 'An example.' }]
+      }))
+    });
+
+    const result = await search({ query: 'q' });
+
+    expect(result.status).toBe('ok');
+    expect(result.results).toEqual([
+      { title: 'Example', url: 'https://example.com/', snippet: 'An example.' }
+    ]);
+    expect(result.error).toBeUndefined();
+  });
+
   it('returns ok with an empty list for a successful empty response', async () => {
     const search = createGoogleSerpSearchTool({
       baseUrl: ENDPOINT,
