@@ -40,6 +40,34 @@ describe('backend factory', () => {
     expect(backends.headlessFetch).toEqual(expect.any(Function));
   });
 
+  it('rejects search with invalid proxy URL without leaking credentials', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'htttp://u:secretpw@proxy' } },
+      offlineNetworkDeps()
+    );
+
+    const result = await backends.search({ query: 'test' });
+    expect(result.status).toBe('error');
+    expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(result.error?.message).not.toContain('secretpw');
+    expect(result.error?.message).not.toContain('htttp://');
+    expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+  });
+
+  it('rejects fetchPage with invalid proxy URL without leaking credentials', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'http://u:secretpw@[broken' } },
+      offlineNetworkDeps()
+    );
+
+    const result = await backends.fetchPage({ url: 'https://example.com' });
+    expect(result.status).toBe('error');
+    expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(result.error?.message).not.toContain('secretpw');
+    expect(result.error?.message).not.toContain('http://u:');
+    expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+  });
+
   it('creates self-hosted search and fetch backends', () => {
     const backends = createBackendSet(
       {
