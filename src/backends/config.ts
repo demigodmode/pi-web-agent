@@ -286,7 +286,7 @@ export function extractBackendConfigOverride(
     if (BASE_URL_SEARCH_PROVIDERS.includes(backends.search.provider as SearchProviderName) && typeof backends.search.baseUrl === 'string') {
       override.search.baseUrl = backends.search.baseUrl;
     }
-    if (backends.search.provider === 'google-serp' && typeof backends.search.keyHeader === 'string') {
+    if (typeof backends.search.keyHeader === 'string') {
       override.search.keyHeader = backends.search.keyHeader;
     }
     if (backends.search.fallback === 'duckduckgo') {

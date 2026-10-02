@@ -1688,4 +1688,39 @@ describe('network allow list settings', () => {
     expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search' });
     expect(switched.backends.search.keyHeader).toBe('Authorization');
   });
+
+  it('keeps keyHeader with primary searxng and google-serp in fanout', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: {
+            provider: 'searxng' as const,
+            baseUrl: 'http://localhost:8080',
+            keyHeader: 'Authorization',
+            baseUrls: { 'google-serp': 'https://google.example/search' },
+            fanout: { mode: 'on' as const, providers: ['searxng', 'google-serp'] as const }
+          }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080',
+          keyHeader: 'Authorization',
+          baseUrls: { 'google-serp': 'https://google.example/search' },
+          fanout: { mode: 'on' as const, providers: ['searxng', 'google-serp'] as const }
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    expect(state.backends.search.keyHeader).toBe('Authorization');
+  });
 });
