@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applySettingsValue,
+  buildBackendSettingsItems,
   collapseBackendConfigToOverride,
   collapsePresentationConfigToOverride,
   createBackendUrlEditor,
@@ -2031,5 +2032,130 @@ describe('search provider switching', () => {
 
     expect(switched.backends.search.provider).toBe('google-serp');
     expect(switched.backends.search.baseUrls).toBeUndefined();
+  });
+});
+
+describe('settings endpoints after switching providers', () => {
+  const theme = new Proxy({}, { get: () => (...args: unknown[]) => args[args.length - 1] });
+  type Search = { provider: 'searxng' | 'google-serp'; baseUrl?: string };
+
+  function draftFor(search: Search) {
+    const backends = { search, fetch: { provider: 'http' as const }, headless: { provider: 'local-browser' as const } };
+    return createSettingsDraftState(
+      {
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: { search } },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: backends
+      } as never,
+      'project'
+    );
+  }
+
+  function endpointRow(state: ReturnType<typeof draftFor>) {
+    return buildBackendSettingsItems('project', state.backends, theme).find((item) => item.id === 'backend:search:baseUrl')?.currentValue;
+  }
+
+  // Save the draft, then load it back the way the extension does.
+  function saveAndReload(state: ReturnType<typeof draftFor>) {
+    const saved = JSON.parse(JSON.stringify(collapseBackendConfigToOverride(state.backends, DEFAULT_BACKEND_CONFIG)));
+    return mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, extractBackendConfigOverride({ backends: saved }));
+  }
+
+  async function searchRequests(config: ReturnType<typeof saveAndReload>) {
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url, headers: new Headers(init?.headers) });
+      const body = url.includes('serp') ? { organic: [] } : { results: [] };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'google-secret');
+    try {
+      const backends = createBackendSet(config, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+      await backends.search({ query: 'q' });
+      await backends.close();
+      return requests;
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  }
+
+  const cases = [
+    { a: 'searxng' as const, b: 'google-serp' as const, url1: 'https://searx-one.invalid/sub/', url2: 'https://serp-two.invalid/search', url3: 'https://searx-three.invalid/sub/' },
+    { a: 'google-serp' as const, b: 'searxng' as const, url1: 'https://serp-one.invalid/search', url2: 'https://searx-two.invalid/sub/', url3: 'https://serp-three.invalid/search' }
+  ];
+
+  for (const { a, b, url1, url2, url3 } of cases) {
+    it(`uses the endpoint you just entered after switching ${a} -> ${b} -> ${a}`, async () => {
+      let state = draftFor({ provider: a, baseUrl: url1 });
+      state = applySettingsValue(state, 'backend:search:provider', b);
+      state = applySettingsValue(state, 'backend:search:baseUrl', url2);
+      state = applySettingsValue(state, 'backend:search:provider', a);
+      expect(endpointRow(state)).toBe(url1);
+
+      state = applySettingsValue(state, 'backend:search:baseUrl', url3);
+      expect(endpointRow(state)).toBe(url3);
+
+      const requests = await searchRequests(saveAndReload(state));
+      expect(requests.some((request) => request.url.startsWith(url3))).toBe(true);
+      expect(requests.filter((request) => request.url.startsWith(url1))).toEqual([]);
+      // The google key only ever goes to a google endpoint.
+      for (const request of requests.filter((r) => r.headers.get('x-api-key'))) {
+        expect(request.url.includes('serp')).toBe(true);
+      }
+    });
+
+    it(`clearing the endpoint after switching ${a} -> ${b} -> ${a} really clears it`, async () => {
+      let state = draftFor({ provider: a, baseUrl: url1 });
+      state = applySettingsValue(state, 'backend:search:provider', b);
+      state = applySettingsValue(state, 'backend:search:provider', a);
+      state = applySettingsValue(state, 'backend:search:baseUrl', '');
+      expect(endpointRow(state)).toBe('not set');
+
+      const requests = await searchRequests(saveAndReload(state));
+      expect(requests.filter((request) => request.url.startsWith(url1))).toEqual([]);
+    });
+  }
+
+  it('the proxy row never shows credentials from a url that cannot be parsed', () => {
+    for (const url of ['http://u:secretpw@[broken', 'http://u:secret/pw@[broken', 'http://u:secret?pw@[broken']) {
+      const state = draftFor({ provider: 'searxng', baseUrl: 'https://searx.invalid/' });
+      const row = buildBackendSettingsItems('project', { ...state.backends, proxy: { url } }, theme).find((item) => item.id === 'backend:proxy:url');
+      expect(row?.currentValue).toBe('(invalid URL)');
+      expect(String(row?.currentValue)).not.toContain('secret');
+    }
+  });
+
+  it('doctor and show never print credentials from a broken proxy url, even with / or ? in the password', async () => {
+    for (const url of ['http://u:secret/pw@[broken', 'http://u:secret?pw@[broken']) {
+      let handler: any;
+      registerWebAgentConfigCommands({ registerCommand: vi.fn((_name: string, command: any) => { handler = command.handler; }) } as never, {
+        load: vi.fn().mockResolvedValue({
+          global: { path: '/global/config.json', exists: true, rawConfig: { tools: {} } },
+          project: { path: '/project/config.json', exists: false },
+          effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+          effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' }, proxy: { url } }
+        }),
+        resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+        runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+        checkTypebox: vi.fn().mockResolvedValue(true),
+        checkBackends: vi.fn().mockResolvedValue([]),
+        checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+        checkRepoResearch: vi.fn().mockResolvedValue('repo research: ok'),
+        reset: vi.fn()
+      } as never);
+      const notify = vi.fn();
+      await handler('doctor', { ui: { notify } });
+      await handler('show', { ui: { notify } });
+      for (const [text] of notify.mock.calls) expect(String(text)).not.toContain('secret');
+    }
   });
 });

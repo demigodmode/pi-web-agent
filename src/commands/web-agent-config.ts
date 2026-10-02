@@ -4,6 +4,7 @@ import {
   DUCKDUCKGO_FALLBACK_PROVIDERS,
   isValidProxyUrl,
   mergeBackendConfigLayers,
+  resolveSearchBaseUrl,
   stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders,
@@ -306,7 +307,7 @@ export function createBackendUrlEditor(
   };
 }
 
-function buildBackendSettingsItems(
+export function buildBackendSettingsItems(
   scope: PresentationScope,
   backends: BackendConfig,
   theme: any,
@@ -332,7 +333,8 @@ function buildBackendSettingsItems(
     {
       id: 'backend:search:baseUrl',
       label: 'Search endpoint URL',
-      currentValue: backends.search.baseUrl ?? 'not set',
+      // Show the URL the selected provider will actually use, not just the raw baseUrl field.
+      currentValue: resolveSearchBaseUrl(backends.search, backends.search.provider) ?? 'not set',
       submenu: createBackendUrlEditor(theme, 'Search endpoint URL', 'http://localhost:8080', onUrlEditorOpenChange)
     },
     {
