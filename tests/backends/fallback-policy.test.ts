@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { abortableSleep } from '../../src/abort.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from '../../src/backends/fallback-policy.js';
 import { createProviderHealth } from '../../src/backends/provider-health.js';
+import { createGoogleSerpSearchTool } from '../../src/search/google-serp.js';
 import type { FailureInfo, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../../src/types.js';
 
 const ok = (backend: SearchProviderName, count = 1): WebSearchResponse => ({
@@ -83,6 +84,29 @@ describe('withSearchPolicy', () => {
     const search = vi.fn(async () => ok('tavily'));
     await withSearchPolicy('tavily', search, d, 'tavily-keyless')({ query: 'q' });
     expect(search).toHaveBeenCalled();
+  });
+
+  it('retries the real google-serp provider once when a 200 body carries its documented timeout', async () => {
+    const d = deps();
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 1504, error: 'Failed to fetch search results' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+    const search = withSearchPolicy(
+      'google-serp',
+      createGoogleSerpSearchTool({ baseUrl: 'https://serp.example/search', apiKey: 'key', fetchImpl }),
+      d
+    );
+
+    const result = await search({ query: 'q' });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(d.sleep).toHaveBeenCalledWith(500, undefined);
+    expect(result.metadata.attempts?.map((a) => a.outcome)).toEqual(['retried', 'failed']);
+    // The policy keeps the kind it acted on; the vendor code stays on the provider result.
+    expect(result.error?.failure?.kind).toBe('transient');
   });
 });
 

@@ -191,6 +191,49 @@ describe('backend factory', () => {
     }
   });
 
+  it('creates google-serp search from the endpoint, header, and environment API key', () => {
+    const original = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = 'serp-key';
+    const createGoogleSerpSearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        {
+          ...DEFAULT_BACKEND_CONFIG,
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://serp.example/search',
+            keyHeader: 'Authorization'
+          }
+        },
+        { ...offlineNetworkDeps(), createGoogleSerpSearch }
+      );
+
+      expect(createGoogleSerpSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://serp.example/search',
+          apiKey: 'serp-key',
+          keyHeader: 'Authorization'
+        })
+      );
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+      else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
+    }
+  });
+
+  it('keeps the Google SERP base URL hint on a later, skipped call', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'google-serp' } }, offlineNetworkDeps());
+    const first = await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+    expect(first.error?.message).toContain('requires backends.search.baseUrl');
+    expect(second.metadata.attempts?.[0]).toMatchObject({
+      outcome: 'skipped',
+      detail: 'Google SERP search requires backends.search.baseUrl.'
+    });
+    expect(second.error?.message).toContain('requires backends.search.baseUrl');
+  });
+
   it('records youcom as the search fallback source', async () => {
     const primary = vi.fn().mockResolvedValue({
       status: 'error',
@@ -614,6 +657,125 @@ describe('backend factory', () => {
     expect(result.metadata.fanout?.mode).toBe('on');
     expect(duckMock).toHaveBeenCalled();
     expect(searxngMock).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The two endpoint-backed providers both read their URL from config, so a fanout set has to keep
+ * them apart. These tests capture the real requests (stub global fetch, real provider code) rather
+ * than the constructor calls, because the bug was about what went over the wire.
+ */
+describe('backend factory endpoint-backed fanout providers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const responseJson = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  function captureRequests() {
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, headers: { ...((init?.headers as Record<string, string>) ?? {}) } });
+        return url.startsWith('http://localhost:8080')
+          ? responseJson({ results: [{ title: 'searxng result', url: 'https://s.test/1', content: 's' }] })
+          : responseJson({ status: 0, organic: [{ title: 'google result', link: 'https://g.test/1', snippet: 's' }] });
+      })
+    );
+    return requests;
+  }
+
+  const duck = async () => ({
+    status: 'ok' as const,
+    results: [{ title: 'duck', url: 'https://d.test/1', snippet: 's' }],
+    metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+  });
+
+  async function withGoogleKey(run: () => Promise<void>) {
+    const original = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = 'serp-key';
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+      else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
+    }
+  }
+
+  it('never posts the Google key to SearXNG when only one baseUrl is configured', async () => {
+    await withGoogleKey(async () => {
+      const requests = captureRequests();
+      const backends = createBackendSet(
+        {
+          search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fanout: { mode: 'on' } },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const result = await backends.search({ query: 'q' });
+
+      expect(result.status).toBe('ok');
+      // SearXNG queried the endpoint the user gave it, and nothing else was called: google-serp has
+      // no endpoint of its own here, so the fanout set leaves it out instead of handing it this URL.
+      expect(requests.map((r) => r.url)).toEqual(['http://localhost:8080/search?q=q&format=json']);
+      expect(JSON.stringify(requests.map((r) => r.headers))).not.toContain('serp-key');
+    });
+  });
+
+  it('sends each endpoint-backed fanout provider to its own url, key included on the Google one only', async () => {
+    await withGoogleKey(async () => {
+      const requests = captureRequests();
+      const backends = createBackendSet(
+        {
+          search: {
+            provider: 'searxng',
+            baseUrl: 'http://localhost:8080',
+            baseUrls: { 'google-serp': 'https://serp.example/search' },
+            fanout: { mode: 'on' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const result = await backends.search({ query: 'q' });
+
+      expect(result.status).toBe('ok');
+      expect(requests.map((r) => r.url).sort()).toEqual([
+        'http://localhost:8080/search?q=q&format=json',
+        'https://serp.example/search'
+      ]);
+      expect(requests.find((r) => r.url === 'https://serp.example/search')?.headers['X-API-Key']).toBe('serp-key');
+      expect(JSON.stringify(requests.find((r) => r.url.startsWith('http://localhost:8080'))?.headers ?? {})).not.toContain('serp-key');
+    });
+  });
+
+  it('does not send a SearXNG request to the Google endpoint when google-serp is selected', async () => {
+    await withGoogleKey(async () => {
+      const requests = captureRequests();
+      const backends = createBackendSet(
+        {
+          search: { provider: 'google-serp', baseUrl: 'https://serp.example/search', fanout: { mode: 'on' } },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const result = await backends.search({ query: 'q' });
+
+      expect(result.status).toBe('ok');
+      // The reverse configuration: no SearXNG query at all, and the one request that went out is
+      // the Google SERP profile carrying the key.
+      expect(requests.map((r) => r.url)).toEqual(['https://serp.example/search']);
+      expect(requests[0].headers['X-API-Key']).toBe('serp-key');
+    });
   });
 });
 

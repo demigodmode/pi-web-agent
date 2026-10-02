@@ -107,6 +107,30 @@ describe('createJsonSearchProvider', () => {
     expect(result).toMatchObject({ status: 'ok', results: [{ title: 'T', url: 'https://x.test/' }], metadata: { backend: 'exa', cacheHit: false } });
     expect(result.presentation).toBeDefined();
   });
+
+  it('consults the body failure before normalizing, so an error envelope with results still fails', async () => {
+    const bodyFailure = vi.fn((body: unknown) => {
+      const status = (body as { status?: unknown }).status;
+      return typeof status === 'number' && status !== 0
+        ? { failure: { kind: 'auth_failed' as const, httpStatus: 200, providerCode: String(status) }, message: 'Unauthorized' }
+        : undefined;
+    });
+
+    // Both bodies used to report success: the empty one as a valid empty search, the other one as a
+    // search that returned the row inside an error envelope.
+    for (const body of [
+      { status: 1001, results: [] },
+      { status: 1001, results: [{ title: 'T', url: 'https://x.test/' }] }
+    ]) {
+      const result = await provider(vi.fn(async () => json(body)) as any, { bodyFailure })({ query: 'q' });
+
+      expect(result).toMatchObject({
+        status: 'error',
+        results: [],
+        error: { code: 'FETCH_FAILED', failure: { kind: 'auth_failed', providerCode: '1001' } }
+      });
+    }
+  });
 });
 
 describe('json provider cancellation', () => {

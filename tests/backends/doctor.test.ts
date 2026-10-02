@@ -373,4 +373,50 @@ describe('backend doctor checks', () => {
       if (original !== undefined) process.env.PI_WEB_AGENT_BRAVE_API_KEY = original;
     }
   });
+
+  it('checks the configured google-serp endpoint and rejects an error envelope with an empty organic array', async () => {
+    const original = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = 'serp-key';
+
+    try {
+      const healthy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 0, organic: [{ title: 'A', link: 'https://example.com' }] })
+      } as unknown as Response);
+
+      const ok = await checkBackendHealth({
+        ...DEFAULT_BACKEND_CONFIG,
+        search: { provider: 'google-serp', baseUrl: 'https://serp.example/search' }
+      }, { fetchImpl: healthy });
+
+      expect(ok).toContain('search backend: google-serp ok');
+      expect(healthy).toHaveBeenCalledWith(
+        'https://serp.example/search',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Accept: 'application/json', 'Content-Type': 'application/json', 'X-API-Key': 'serp-key' })
+        })
+      );
+
+      // The shape a rejected key comes back in: HTTP 200, empty organic array, failure in the
+      // envelope. Reporting this as "ok" would send users looking in the wrong place.
+      const rejected = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 1001, error: 'Unauthorized', organic: [] })
+      } as unknown as Response);
+
+      const warned = await checkBackendHealth({
+        ...DEFAULT_BACKEND_CONFIG,
+        search: { provider: 'google-serp', baseUrl: 'https://serp.example/search' }
+      }, { fetchImpl: rejected });
+
+      expect(warned).toContain('search backend: google-serp warning ("Unauthorized" (provider status 1001))');
+      expect(warned).not.toContain('search backend: google-serp ok');
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+      else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
+    }
+  });
 });

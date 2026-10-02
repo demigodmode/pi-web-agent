@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyHttpFailure } from '../../src/backends/provider-failure.js';
+import { classifyEnvelopeFailure, classifyHttpFailure } from '../../src/backends/provider-failure.js';
 
 const now = Date.parse('2026-09-16T12:00:00Z');
 const parts = (status: number, body?: unknown, headers: Record<string, string> = {}) => ({
@@ -94,5 +94,39 @@ describe('classifyHttpFailure documented provider rules', () => {
 
   it('DuckDuckGo: 403 is a bot wall, not auth', () => {
     expect(classifyHttpFailure('duckduckgo', parts(403), now).kind).toBe('blocked');
+  });
+});
+
+describe('classifyEnvelopeFailure', () => {
+  it('reads a documented code even when the wording says nothing about it', () => {
+    // No timeout/upstream phrase in the wording, so the code is what makes this call worth a
+    // retry instead of a non-retryable bad_response.
+    expect(classifyEnvelopeFailure({ status: 1001, error: 'Unauthorized' })).toEqual({
+      failure: { kind: 'auth_failed', httpStatus: 200, providerCode: '1001' },
+      message: '"Unauthorized" (provider status 1001)'
+    });
+    expect(classifyEnvelopeFailure({ status: 1504 })?.failure.kind).toBe('transient');
+    expect(classifyEnvelopeFailure({ status: 1020, message: 'nothing' })?.failure.kind).toBe('quota_exhausted');
+  });
+
+  it('falls back to the wording, then to bad_response, and reports success as no failure', () => {
+    expect(classifyEnvelopeFailure({ status: 2000, message: 'Upstream timeout' })?.failure.kind).toBe('transient');
+    // An unrecognized code with unrecognized wording is not retryable.
+    expect(classifyEnvelopeFailure({ status: 2000, message: 'something else' })?.failure).toMatchObject({
+      kind: 'bad_response',
+      providerCode: '2000'
+    });
+    expect(classifyEnvelopeFailure({ status: 0, error: 'ignored' })).toBeUndefined();
+    expect(classifyEnvelopeFailure({ organic: [] })).toBeUndefined();
+  });
+
+  it('does not treat a body that only echoes the HTTP status as a failure', () => {
+    // Some vendors answer `{"status": 200, "organic": [...]}` instead of SerpBase's `0`. Reading
+    // 200 as a provider code dropped every row and, since bad_response is not retried, wrote the
+    // vendor off for the rest of the run.
+    expect(classifyEnvelopeFailure({ status: 200, organic: [{ title: 'A', link: 'https://a.test/' }] })).toBeUndefined();
+    expect(classifyEnvelopeFailure({ status: 200, organic: [] })).toBeUndefined();
+    // No wording and no documented code: leave it to normalize() rather than guess a failure.
+    expect(classifyEnvelopeFailure({ status: 9999 })).toBeUndefined();
   });
 });

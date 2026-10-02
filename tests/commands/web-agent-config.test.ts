@@ -143,6 +143,55 @@ describe('web-agent config draft helpers', () => {
     ).toEqual({});
   });
 
+  it('carries a hand-written baseUrls entry through a collapse instead of dropping it', () => {
+    // A layer can add a per-provider endpoint (baseUrls) the parent does not have. The collapse
+    // used to omit baseUrls, so saving anything from /web-agent settings dropped the endpoint
+    // and fanout discarded the provider without saying anything.
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.example/search',
+            baseUrls: { searxng: 'http://localhost:8080' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        {
+          search: { provider: 'google-serp', baseUrl: 'https://google.example/search' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        }
+      )
+    ).toEqual({ search: { baseUrls: { searxng: 'http://localhost:8080' } } });
+  });
+
+  it('omits baseUrls when it matches the parent scope', () => {
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.example/search',
+            baseUrls: { searxng: 'http://localhost:8080' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.example/search',
+            baseUrls: { searxng: 'http://localhost:8080' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        }
+      )
+    ).toEqual({});
+  });
+
   it('records an explicit proxy disable when clearing a proxy inherited from the parent scope', () => {
     expect(
       collapseBackendConfigToOverride(
