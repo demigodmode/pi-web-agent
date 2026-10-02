@@ -243,6 +243,48 @@ describe('backend config', () => {
       search: { provider: 'tavily', fallback: 'duckduckgo' }
     })).toEqual([]);
   });
+
+  it('keeps keyHeader in a layer without a provider', () => {
+    // When a layer sets baseUrls and keyHeader without changing the provider,
+    // the keyHeader should be preserved
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: {
+          baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+          keyHeader: 'Authorization'
+        }
+      }
+    });
+
+    expect(override.search).toEqual({
+      baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+      keyHeader: 'Authorization'
+    });
+  });
+
+  it('merges keyHeader across layers when provider changes', () => {
+    // When switching providers and keyHeader is set, it should be carried forward
+    const merged = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      {
+        search: {
+          provider: 'searxng',
+          baseUrl: 'http://localhost:8080',
+          baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+          keyHeader: 'Authorization',
+          fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
+        }
+      },
+      {
+        search: {
+          provider: 'brave',
+          fanout: { mode: 'on', providers: ['brave', 'google-serp'] }
+        }
+      }
+    );
+
+    expect(merged.search.keyHeader).toBe('Authorization');
+  });
 });
 
 describe('fanout config', () => {

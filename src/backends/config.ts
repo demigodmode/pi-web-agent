@@ -298,9 +298,6 @@ export function extractBackendConfigOverride(
     if (BASE_URL_SEARCH_PROVIDERS.includes(backends.search.provider as SearchProviderName) && typeof backends.search.baseUrl === 'string') {
       override.search.baseUrl = backends.search.baseUrl;
     }
-    if (typeof backends.search.keyHeader === 'string') {
-      override.search.keyHeader = backends.search.keyHeader;
-    }
     if (backends.search.fallback === 'duckduckgo') {
       override.search.fallback = 'duckduckgo';
     }
@@ -315,6 +312,11 @@ export function extractBackendConfigOverride(
   const baseUrls = extractSearchBaseUrls(backends?.search?.baseUrls);
   if (baseUrls) {
     override.search = { ...(override.search ?? {}), baseUrls };
+  }
+
+  const keyHeader = typeof backends?.search?.keyHeader === 'string' ? backends.search.keyHeader : undefined;
+  if (keyHeader) {
+    override.search = { ...(override.search ?? {}), keyHeader };
   }
 
   const fanout = extractFanoutConfig(backends?.search?.fanout);
@@ -466,7 +468,9 @@ function mergeSearchConfig(
   const baseUrls = { ...current.baseUrls, ...override.baseUrls };
   const withBaseUrls = Object.keys(baseUrls).length > 0 ? { baseUrls } : {};
   if (override.provider && override.provider !== current.provider) {
-    return { ...override, provider: override.provider, ...withBaseUrls };
+    const keyHeader = override.keyHeader ?? (current.keyHeader ? current.keyHeader : undefined);
+    const withKeyHeader = keyHeader ? { keyHeader } : {};
+    return { ...override, provider: override.provider, ...withBaseUrls, ...withKeyHeader };
   }
   return { ...current, ...override, ...withBaseUrls };
 }

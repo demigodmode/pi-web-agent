@@ -130,6 +130,77 @@ describe('backend factory', () => {
     }
   });
 
+  it('sends the google serp key header to google only when it is in fanout', async () => {
+    const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
+
+      if (urlStr.includes('google')) {
+        return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
+      } else if (urlStr.includes('brave')) {
+        return new Response(JSON.stringify({ results: [{ title: 'Brave', url: 'https://example.com' }] }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer google-key');
+    vi.stubEnv('PI_WEB_AGENT_BRAVE_API_KEY', 'Bearer brave-key');
+
+    try {
+      // Global config: google-serp as primary with keyHeader and baseUrl set, fanout with brave
+      const globalConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.invalid/search',
+            keyHeader: 'Authorization',
+            fanout: { mode: 'on', providers: ['google-serp', 'brave'] }
+          }
+        }
+      });
+
+      // Project config: switch to brave as primary, keep fanout with google-serp
+      // The google endpoint should be preserved in baseUrls
+      const projectConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'brave',
+            baseUrls: { 'google-serp': 'https://google.invalid/search' },
+            fanout: { mode: 'on', providers: ['brave', 'google-serp'] }
+          }
+        }
+      });
+
+      const mergedConfig = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, globalConfig, projectConfig);
+      expect(mergedConfig.search.keyHeader).toBe('Authorization');
+      expect(mergedConfig.search.baseUrls?.['google-serp']).toBe('https://google.invalid/search');
+
+      const backends = createBackendSet(mergedConfig, offlineNetworkDeps());
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('ok');
+
+      // Google SERP should get the Authorization header
+      const googleReq = capturedRequests.find(r => r.url.includes('google'));
+      expect(googleReq).toBeDefined();
+      expect(googleReq!.headers['authorization']).toBe('Bearer google-key');
+
+      // Brave should get its own API key
+      const braveReq = capturedRequests.find(r => r.url.includes('brave'));
+      expect(braveReq).toBeDefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
 
   it('creates self-hosted search and fetch backends', () => {
     const backends = createBackendSet(
