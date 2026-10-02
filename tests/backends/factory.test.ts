@@ -73,17 +73,17 @@ describe('backend factory', () => {
     const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
 
     const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.url;
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
       const headers = new Headers(init?.headers);
       const headersObj: Record<string, string> = {};
       headers.forEach((value, key) => {
         headersObj[key] = value;
       });
-      capturedRequests.push({ url, headers: headersObj });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
 
-      if (url.includes('serp.invalid')) {
+      if (urlStr.includes('serp.invalid')) {
         return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
-      } else if (url.includes('searx.invalid')) {
+      } else if (urlStr.includes('searx.invalid')) {
         return new Response(JSON.stringify({ results: [{ title: 'SearXNG', url: 'https://example.com' }] }), { status: 200 });
       }
       return new Response('{}', { status: 200 });
@@ -133,13 +133,13 @@ describe('backend factory', () => {
     const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
 
     const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.url;
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
       const headers = new Headers(init?.headers);
       const headersObj: Record<string, string> = {};
       headers.forEach((value, key) => {
         headersObj[key] = value;
       });
-      capturedRequests.push({ url, headers: headersObj });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
 
       // Return errors to trigger a fallback path that would expose the bug
       return new Response(JSON.stringify({ status: 400, error: 'invalid config' }), { status: 400 });
@@ -164,7 +164,7 @@ describe('backend factory', () => {
 
       // Verify the config structure: baseUrl is for google-serp, searxng's URL is separate
       expect(config.search.baseUrl).toBe('https://serp.invalid/search');
-      expect(config.search.baseUrls.searxng).toBe('https://searx.invalid/sub/');
+      expect(config.search.baseUrls?.searxng).toBe('https://searx.invalid/sub/');
 
       const backends = createBackendSet(config, offlineNetworkDeps());
 
