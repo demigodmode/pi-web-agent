@@ -193,9 +193,11 @@ If your vendor spells the header differently, set `keyHeader`:
 }
 ```
 
+The key is sent as-is in the header, so if the header needs a scheme (like `Authorization: Bearer <key>`), include the scheme in the key itself.
+
 Two things worth knowing:
 
-- Vendors in this space often answer **HTTP 200 with a non-zero `status` in the body** when the key is bad or the balance is empty. That envelope is checked, so a bad key shows up as an auth or quota failure instead of "no results".
+- Vendors in this space often answer HTTP 200 with a status envelope in the body. A 2xx status in the body is treated as success even if it carries a message field. Higher status codes (e.g., 1001 for unauthorized, 1504 for transient) are checked against documented error codes and wording to classify the failure, so a bad key or empty balance shows up as an auth or quota failure instead of "no results".
 - SerpApi needs the key as a query parameter and returns `organic_results`, so it is a separate profile rather than part of this one.
 
 Run `/web-agent doctor` after editing config: it sends the same one-result probe and reports `search backend: google-serp ok`, a warning with the reason, or the missing base URL/key.

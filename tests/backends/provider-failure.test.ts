@@ -129,4 +129,12 @@ describe('classifyEnvelopeFailure', () => {
     // No wording and no documented code: leave it to normalize() rather than guess a failure.
     expect(classifyEnvelopeFailure({ status: 9999 })).toBeUndefined();
   });
+
+  it('treats a 2xx status in the body as success even with a message field', () => {
+    // A 2xx response in the body envelope means success, even if it echoes a message.
+    expect(classifyEnvelopeFailure({ status: 200, message: 'OK' })).toBeUndefined();
+    expect(classifyEnvelopeFailure({ status: 201, message: 'success' })).toBeUndefined();
+    // Do not let wording (e.g., "credit used") turn a 2xx into a quota exhausted failure.
+    expect(classifyEnvelopeFailure({ status: 200, message: '1 credit used' })).toBeUndefined();
+  });
 });
