@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.14.0] - 2026-10-02
+### Added
 - Paste a GitHub repo link into your question and `web_explore` now downloads that repo (one commit, shallow) and reads it locally (#72). Clones stay around for the session so follow-ups are quick, and get cleaned up when the session ends. Private repos work with `gh auth login` or `GITHUB_TOKEN`. Repos over 300MB, a clone that takes over 60 seconds or a missing `git` stop the answer with a clear reason instead of falling back to the README.
 - Questions about a pasted repo are now answered from the code itself (#70). Very large repos can be searched partially; a tree or folder link narrows the search to that directory. Results favor nearby matching terms, skip vendored files and build output at the search root, rank generated and minified files lower, and return excerpts from up to four files with links pinned to the commit read. The README adds context when the search finds little.
 - A `google-serp` search backend: point `backends.search.baseUrl` at any hosted Google SERP vendor (Serper, SerpBase, and similar), set its key in `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and set `backends.search.keyHeader` if it doesn't use `X-API-Key`. It POSTs `{ q, num }` and reads the common `organic[]` shape, so switching vendors is a base-URL change. Without the key the provider stays absent and nothing else changes, and a failure reported inside a 2xx body (bad key, empty balance) is classified as auth/quota instead of "no results". SerpApi's query-param profile is not part of this. (#46)
