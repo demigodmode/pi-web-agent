@@ -2,13 +2,16 @@
 
 ## Normal release flow
 
-1. update `CHANGELOG.md` under `## Unreleased`
+1. on `develop`, update `CHANGELOG.md` under `## Unreleased`
 2. run `npm run release:dry-run`
-3. run `npm run release`
-4. push `main` and the new tag, for example `git push origin main v1.8.0`
-5. let GitHub Actions publish the tagged release to npm and rebuild the docs site
+3. run `npm run release`, which commits and tags on `develop`
+4. push `develop` and open a PR from `develop` into `main`, then merge it with a merge commit (not squash or rebase) so the tagged commit ends up on `main`
+5. push the tag by name, for example `git push origin v1.8.0`
+6. let GitHub Actions publish the tagged release to npm and rebuild the docs site
 
-The bump is inferred from what's under `## Unreleased`: a `### Breaking` entry makes it major, `### Added` makes it minor, otherwise it's a patch. `npm run release` moves the Unreleased notes into a dated version section, bumps `package.json`, commits, and tags. The tag is lightweight, so if `git push --follow-tags` skips it, push the tag by name.
+The publish workflow refuses a tag that isn't on `main`, so merge first and push the tag after. Feature PRs target `develop`; only release merges go to `main`.
+
+The bump is inferred from what's under `## Unreleased`: a `### Breaking` entry makes it major, `### Added` makes it minor, otherwise it's a patch. `npm run release` moves the Unreleased notes into a dated version section, bumps `package.json`, commits, and tags. The tag is lightweight, so `git push --follow-tags` can skip it; push the tag by name.
 
 On the tag push, the publish workflow runs two jobs. The first creates the GitHub release, pulling that version's notes out of `CHANGELOG.md` via `scripts/release-notes.mjs`. The second builds, tests, and publishes to npm with provenance.
 
@@ -24,4 +27,4 @@ If the publish job fails with a transient Sigstore/Rekor provenance error, rerun
 
 The docs site publishes through GitHub Pages.
 
-With Pages enabled for the repo, pushes to `main` should rebuild and redeploy the docs automatically through the docs workflow.
+With Pages enabled for the repo, pushes to `main` (so, release merges) should rebuild and redeploy the docs automatically through the docs workflow.
