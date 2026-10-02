@@ -569,16 +569,27 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
-    currentBackends.search.provider = newValue;
+    const oldProvider = currentBackends.search.provider as SearchProviderName;
+    currentBackends.search.provider = newValue as SearchProviderName;
+
+    // When switching between endpoint providers, preserve the old URL in baseUrls
+    const oldIsEndpointBased = BASE_URL_SEARCH_PROVIDERS.includes(oldProvider);
+    const newIsEndpointBased = BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName);
+
+    if (oldIsEndpointBased && newIsEndpointBased && oldProvider !== newValue && currentBackends.search.baseUrl) {
+      // Move old baseUrl to baseUrls[oldProvider] if not already set
+      if (!currentBackends.search.baseUrls?.[oldProvider]) {
+        currentBackends.search.baseUrls = { ...currentBackends.search.baseUrls, [oldProvider]: currentBackends.search.baseUrl };
+      }
+      delete currentBackends.search.baseUrl;
+    }
+
     // baseUrl belongs to the endpoint-backed providers; the others drop it.
-    if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue)) {
+    if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
       delete currentBackends.search.baseUrl;
     }
     if (newValue !== 'searxng') {
       delete currentBackends.search.options;
-    }
-    if (newValue !== 'google-serp') {
-      delete currentBackends.search.keyHeader;
     }
     if (newValue === 'duckduckgo') {
       delete currentBackends.search.fallback;

@@ -1558,4 +1558,134 @@ describe('network allow list settings', () => {
     const rangesCleared = applySettingsValue(untrusted, 'backend:network:allowRanges', '');
     expect(rangesCleared.backends.network).toEqual({ trustProxyDns: false });
   });
+
+  it('preserves old searxng baseUrl in baseUrls when switching to google-serp', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'http://localhost:8080' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toEqual({ searxng: 'http://localhost:8080' });
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('preserves old google-serp baseUrl in baseUrls when switching to searxng', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'google-serp' as const, baseUrl: 'https://google.example/search' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'google-serp' as const,
+          baseUrl: 'https://google.example/search'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'searxng');
+
+    expect(switched.backends.search.provider).toBe('searxng');
+    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search' });
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('does not overwrite existing baseUrls entries when switching providers', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: {
+            provider: 'searxng' as const,
+            baseUrl: 'http://localhost:8080',
+            baseUrls: { 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' }
+          }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080',
+          baseUrls: { 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' }
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' });
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('keeps keyHeader when switching the selected provider away from google-serp if keyHeader is set', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: {
+            provider: 'google-serp' as const,
+            baseUrl: 'https://google.example/search',
+            keyHeader: 'Authorization'
+          }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'google-serp' as const,
+          baseUrl: 'https://google.example/search',
+          keyHeader: 'Authorization'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'searxng');
+
+    expect(switched.backends.search.provider).toBe('searxng');
+    expect(switched.backends.search.baseUrls).toEqual({ 'google-serp': 'https://google.example/search' });
+    expect(switched.backends.search.keyHeader).toBe('Authorization');
+  });
 });
