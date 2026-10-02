@@ -926,6 +926,57 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('Install Chrome, Chromium, Edge, or Brave');
   });
 
+  it('hides credentials from unparseable proxy urls in doctor and show output', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: {
+          path: '/global/config.json',
+          exists: true,
+          rawConfig: { tools: {} }
+        },
+        project: {
+          path: '/project/config.json',
+          exists: false
+        },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' },
+          proxy: { url: 'http://u:secretpw@[broken' }
+        }
+      }),
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkBackends: vi.fn().mockResolvedValue([]),
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: ok'),
+      reset: vi.fn()
+    });
+
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+
+    const doctorOutput = notify.mock.calls[0][0];
+    expect(doctorOutput).not.toContain('secretpw');
+    expect(doctorOutput).toContain('proxy: http://***@[broken');
+
+    notify.mockClear();
+    await handler('show', { ui: { notify } });
+
+    const showOutput = notify.mock.calls[0][0];
+    expect(showOutput).not.toContain('secretpw');
+    expect(showOutput).toContain('proxy: http://***@[broken');
+  });
+
   it('renders effective config from the store for show', async () => {
     let handler: any;
     const pi = {

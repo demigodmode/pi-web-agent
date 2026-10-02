@@ -102,6 +102,18 @@ export function stripProxyCredentials(url: string): string {
   try {
     parsed = new URL(url);
   } catch {
+    // URL parsing failed; redact any visible userinfo before returning
+    // Match scheme://userinfo@ pattern
+    const withScheme = /^([^\/?#]*\/\/)[^\/?#@]*@/;
+    if (withScheme.test(url)) {
+      return url.replace(withScheme, '$1***@');
+    }
+    // If no scheme, match userinfo@ before the first /
+    const withoutScheme = /^([^@\/]*@)/;
+    const beforeSlash = url.split('/')[0];
+    if (withoutScheme.test(beforeSlash)) {
+      return url.replace(/^[^@\/]*@/, '***@');
+    }
     return url;
   }
   if (!parsed.username && !parsed.password) return url; // already credential-free

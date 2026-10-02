@@ -570,6 +570,14 @@ describe('proxy config', () => {
     expect(stripProxyCredentials('http://127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
     expect(stripProxyCredentials('not a url')).toBe('not a url');
   });
+
+  it('redacts credentials from unparseable proxy urls', () => {
+    const result = stripProxyCredentials('http://u:secretpw@[broken');
+    expect(result).not.toContain('secretpw');
+    expect(result).not.toContain('u:');
+    // The scheme and *** should remain
+    expect(result).toContain('http://***@');
+  });
 });
 
 describe('network config', () => {

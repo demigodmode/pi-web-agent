@@ -52,6 +52,7 @@ describe('backend factory', () => {
     expect(result.error?.message).not.toContain('secretpw');
     expect(result.error?.message).not.toContain('htttp://');
     expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+    expect(result.error?.message).toContain('set backends.proxy.url to ""');
   });
 
   it('rejects fetchPage with invalid proxy URL without leaking credentials', async () => {
@@ -66,6 +67,7 @@ describe('backend factory', () => {
     expect(result.error?.message).not.toContain('secretpw');
     expect(result.error?.message).not.toContain('http://u:');
     expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+    expect(result.error?.message).toContain('set backends.proxy.url to ""');
   });
 
   it('e2e I2: google-serp key header extracted and sent in fanout via config file', async () => {
