@@ -68,6 +68,125 @@ describe('backend factory', () => {
     expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
   });
 
+  it('e2e I2: google-serp key header extracted and sent in fanout via config file', async () => {
+    const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.url;
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url, headers: headersObj });
+
+      if (url.includes('serp.invalid')) {
+        return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
+      } else if (url.includes('searx.invalid')) {
+        return new Response(JSON.stringify({ results: [{ title: 'SearXNG', url: 'https://example.com' }] }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer test-key');
+
+    try {
+      // Simulate file config: primary searxng, keyHeader set, google-serp in fanout with baseUrl
+      const fileConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'searxng',
+            baseUrl: 'https://searx.invalid/',
+            keyHeader: 'Authorization',
+            baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+            fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
+          }
+        }
+      });
+
+      const mergedConfig = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, fileConfig);
+      const backends = createBackendSet(mergedConfig, offlineNetworkDeps());
+
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('ok');
+
+      // Verify keyHeader was extracted and google-serp got it
+      const googleReq = capturedRequests.find(r => r.url.includes('serp.invalid'));
+      expect(googleReq).toBeDefined();
+      expect(googleReq!.headers['authorization']).toBe('Bearer test-key');
+      expect(googleReq!.headers['x-api-key']).toBeUndefined();
+
+      // Verify searxng did not get the google key
+      const searxngReq = capturedRequests.find(r => r.url.includes('searx.invalid'));
+      expect(searxngReq).toBeDefined();
+      expect(searxngReq!.headers['authorization']).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('e2e I1: switched provider with fix isolates old baseUrl in baseUrls', async () => {
+    const { mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.url;
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url, headers: headersObj });
+
+      // Return errors to trigger a fallback path that would expose the bug
+      return new Response(JSON.stringify({ status: 400, error: 'invalid config' }), { status: 400 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer google-key');
+
+    try {
+      // With the fix: when switching from searxng to google-serp,
+      // searxng's baseUrl is moved to baseUrls.searxng and NOT left at top level
+      // So google-serp won't mistakenly use the searxng endpoint
+      const postSwitchConfig = {
+        search: {
+          provider: 'google-serp' as const,
+          baseUrl: 'https://serp.invalid/search',
+          baseUrls: { searxng: 'https://searx.invalid/sub/' }  // old URL isolated here, not at top level
+        }
+      };
+
+      const config = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, postSwitchConfig);
+
+      // Verify the config structure: baseUrl is for google-serp, searxng's URL is separate
+      expect(config.search.baseUrl).toBe('https://serp.invalid/search');
+      expect(config.search.baseUrls.searxng).toBe('https://searx.invalid/sub/');
+
+      const backends = createBackendSet(config, offlineNetworkDeps());
+
+      // Search will fail because server returns 400, but we can verify the endpoints used
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('error');
+
+      // Critical: the google-serp endpoint was queried (not the old searxng URL)
+      const googleReqs = capturedRequests.filter(req => req.url.includes('serp.invalid'));
+      expect(googleReqs.length).toBeGreaterThan(0);
+
+      // And no direct request should have gone to the searxng endpoint at top level
+      // (If the bug existed, searxng's URL would be in the top-level baseUrl, so google-serp would use it)
+      const searxngReqs = capturedRequests.filter(req => req.url.includes('searx.invalid'));
+      // With the fix: no requests to searxng because google-serp has its own baseUrl and won't use baseUrls.searxng
+      expect(searxngReqs).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('creates self-hosted search and fetch backends', () => {
     const backends = createBackendSet(
       {
