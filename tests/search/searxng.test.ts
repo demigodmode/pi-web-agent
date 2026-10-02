@@ -93,4 +93,48 @@ describe('searxng search backend', () => {
       expect(result.error?.failure?.kind).toBe('bad_response');
     }
   });
+
+  it('preserves path in baseUrl with trailing slash', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ title: 'Result', url: 'https://example.com', content: 'snippet' }]
+    })));
+
+    const search = createSearxngSearchTool({ baseUrl: 'https://host/searx/', fetchImpl });
+    await search({ query: 'test' });
+
+    expect(fetchImpl).toHaveBeenCalledWith('https://host/searx/search?q=test&format=json');
+  });
+
+  it('preserves path in baseUrl without trailing slash', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ title: 'Result', url: 'https://example.com', content: 'snippet' }]
+    })));
+
+    const search = createSearxngSearchTool({ baseUrl: 'https://host/searx', fetchImpl });
+    await search({ query: 'test' });
+
+    expect(fetchImpl).toHaveBeenCalledWith('https://host/searx/search?q=test&format=json');
+  });
+
+  it('handles root path with port correctly', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ title: 'Result', url: 'https://example.com', content: 'snippet' }]
+    })));
+
+    const search = createSearxngSearchTool({ baseUrl: 'http://host:8080', fetchImpl });
+    await search({ query: 'test' });
+
+    expect(fetchImpl).toHaveBeenCalledWith('http://host:8080/search?q=test&format=json');
+  });
+
+  it('handles root path with port and trailing slash', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ title: 'Result', url: 'https://example.com', content: 'snippet' }]
+    })));
+
+    const search = createSearxngSearchTool({ baseUrl: 'http://host:8080/', fetchImpl });
+    await search({ query: 'test' });
+
+    expect(fetchImpl).toHaveBeenCalledWith('http://host:8080/search?q=test&format=json');
+  });
 });

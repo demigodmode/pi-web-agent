@@ -419,4 +419,92 @@ describe('backend doctor checks', () => {
       else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
     }
   });
+
+  it('preserves SearXNG path in baseUrl with trailing slash', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] })
+    } as Response);
+
+    await checkBackendHealth({
+      search: {
+        provider: 'searxng',
+        baseUrl: 'https://host/searx/',
+        options: { categories: ['general'] }
+      },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    }, { fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://host/searx/search?q=pi-web-agent-doctor&format=json&categories=general',
+      expect.any(Object)
+    );
+  });
+
+  it('preserves SearXNG path in baseUrl without trailing slash', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] })
+    } as Response);
+
+    await checkBackendHealth({
+      search: {
+        provider: 'searxng',
+        baseUrl: 'https://host/searx',
+        options: { language: 'en' }
+      },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    }, { fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://host/searx/search?q=pi-web-agent-doctor&format=json&language=en',
+      expect.any(Object)
+    );
+  });
+
+  it('handles SearXNG with port correctly', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] })
+    } as Response);
+
+    await checkBackendHealth({
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://host:8080',
+        options: {}
+      },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    }, { fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://host:8080/search?q=pi-web-agent-doctor&format=json',
+      expect.any(Object)
+    );
+  });
+
+  it('handles SearXNG with port and trailing slash', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] })
+    } as Response);
+
+    await checkBackendHealth({
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://host:8080/',
+        options: {}
+      },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    }, { fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://host:8080/search?q=pi-web-agent-doctor&format=json',
+      expect.any(Object)
+    );
+  });
 });
