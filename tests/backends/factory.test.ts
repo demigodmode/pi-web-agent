@@ -40,6 +40,168 @@ describe('backend factory', () => {
     expect(backends.headlessFetch).toEqual(expect.any(Function));
   });
 
+  it('rejects search with invalid proxy URL without leaking credentials', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'htttp://u:secretpw@proxy' } },
+      offlineNetworkDeps()
+    );
+
+    const result = await backends.search({ query: 'test' });
+    expect(result.status).toBe('error');
+    expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(result.error?.message).not.toContain('secretpw');
+    expect(result.error?.message).not.toContain('htttp://');
+    expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+    expect(result.error?.message).toContain('set backends.proxy.url to ""');
+  });
+
+  it('rejects fetchPage with invalid proxy URL without leaking credentials', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'http://u:secretpw@[broken' } },
+      offlineNetworkDeps()
+    );
+
+    const result = await backends.fetchPage({ url: 'https://example.com' });
+    expect(result.status).toBe('error');
+    expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(result.error?.message).not.toContain('secretpw');
+    expect(result.error?.message).not.toContain('http://u:');
+    expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+    expect(result.error?.message).toContain('set backends.proxy.url to ""');
+  });
+
+  it('extracts and sends the google-serp key header in fanout via config file', async () => {
+    const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
+
+      if (urlStr.includes('serp.invalid')) {
+        return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
+      } else if (urlStr.includes('searx.invalid')) {
+        return new Response(JSON.stringify({ results: [{ title: 'SearXNG', url: 'https://example.com' }] }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer test-key');
+
+    try {
+      // Simulate file config: primary searxng, keyHeader set, google-serp in fanout with baseUrl
+      const fileConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'searxng',
+            baseUrl: 'https://searx.invalid/',
+            keyHeader: 'Authorization',
+            baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+            fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
+          }
+        }
+      });
+
+      const mergedConfig = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, fileConfig);
+      const backends = createBackendSet(mergedConfig, offlineNetworkDeps());
+
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('ok');
+
+      // Verify keyHeader was extracted and google-serp got it
+      const googleReq = capturedRequests.find(r => r.url.includes('serp.invalid'));
+      expect(googleReq).toBeDefined();
+      expect(googleReq!.headers['authorization']).toBe('Bearer test-key');
+      expect(googleReq!.headers['x-api-key']).toBeUndefined();
+
+      // Verify searxng did not get the google key
+      const searxngReq = capturedRequests.find(r => r.url.includes('searx.invalid'));
+      expect(searxngReq).toBeDefined();
+      expect(searxngReq!.headers['authorization']).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('sends the google serp key header to google only when it is in fanout', async () => {
+    const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
+
+      if (urlStr.includes('google')) {
+        return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
+      } else if (urlStr.includes('brave')) {
+        return new Response(JSON.stringify({ results: [{ title: 'Brave', url: 'https://example.com' }] }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer google-key');
+    vi.stubEnv('PI_WEB_AGENT_BRAVE_API_KEY', 'Bearer brave-key');
+
+    try {
+      // Global config: google-serp as primary with keyHeader and baseUrl set, fanout with brave
+      const globalConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.invalid/search',
+            keyHeader: 'Authorization',
+            fanout: { mode: 'on', providers: ['google-serp', 'brave'] }
+          }
+        }
+      });
+
+      // Project config: switch to brave as primary, keep fanout with google-serp
+      // The google endpoint should be preserved in baseUrls
+      const projectConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'brave',
+            baseUrls: { 'google-serp': 'https://google.invalid/search' },
+            fanout: { mode: 'on', providers: ['brave', 'google-serp'] }
+          }
+        }
+      });
+
+      const mergedConfig = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, globalConfig, projectConfig);
+      expect(mergedConfig.search.keyHeader).toBe('Authorization');
+      expect(mergedConfig.search.baseUrls?.['google-serp']).toBe('https://google.invalid/search');
+
+      const backends = createBackendSet(mergedConfig, offlineNetworkDeps());
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('ok');
+
+      // Google SERP should get the Authorization header
+      const googleReq = capturedRequests.find(r => r.url.includes('google'));
+      expect(googleReq).toBeDefined();
+      expect(googleReq!.headers['authorization']).toBe('Bearer google-key');
+
+      // Brave should get its own API key
+      const braveReq = capturedRequests.find(r => r.url.includes('brave'));
+      expect(braveReq).toBeDefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('creates self-hosted search and fetch backends', () => {
     const backends = createBackendSet(
       {
@@ -917,15 +1079,18 @@ describe('backend factory proxy support', () => {
     const search = await backends.search({ query: 'docs' });
     expect(search.status).toBe('error');
     expect(search.error?.code).toBe('BACKEND_CONFIG_INVALID');
-    expect(search.error?.message).toContain('htttp://proxy:8080');
+    expect(search.error?.message).not.toContain('htttp://');
+    expect(search.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
 
     const page = await backends.fetchPage({ url: 'https://example.com/page' });
     expect(page.status).toBe('error');
     expect(page.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(page.error?.message).not.toContain('htttp://');
 
     const headless = await backends.headlessFetch({ url: 'https://example.com/page' });
     expect(headless.status).toBe('error');
     expect(headless.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(headless.error?.message).not.toContain('htttp://');
 
     // Neither a proxy agent nor a direct fetch was ever built or used.
     expect(createProxyFetch).not.toHaveBeenCalled();

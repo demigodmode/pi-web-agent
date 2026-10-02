@@ -4,6 +4,7 @@ import {
   DUCKDUCKGO_FALLBACK_PROVIDERS,
   isValidProxyUrl,
   mergeBackendConfigLayers,
+  resolveSearchBaseUrl,
   stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders,
@@ -306,7 +307,7 @@ export function createBackendUrlEditor(
   };
 }
 
-function buildBackendSettingsItems(
+export function buildBackendSettingsItems(
   scope: PresentationScope,
   backends: BackendConfig,
   theme: any,
@@ -332,7 +333,8 @@ function buildBackendSettingsItems(
     {
       id: 'backend:search:baseUrl',
       label: 'Search endpoint URL',
-      currentValue: backends.search.baseUrl ?? 'not set',
+      // Show the URL the selected provider will actually use, not just the raw baseUrl field.
+      currentValue: resolveSearchBaseUrl(backends.search, backends.search.provider) ?? 'not set',
       submenu: createBackendUrlEditor(theme, 'Search endpoint URL', 'http://localhost:8080', onUrlEditorOpenChange)
     },
     {
@@ -569,16 +571,20 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
-    currentBackends.search.provider = newValue;
+    const oldProvider = currentBackends.search.provider as SearchProviderName;
+    currentBackends.search.provider = newValue as SearchProviderName;
+
+    // Switching between endpoint providers drops the old URL: one provider's endpoint must never be used by the other.
+    if (oldProvider !== newValue && BASE_URL_SEARCH_PROVIDERS.includes(oldProvider) && BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
+      delete currentBackends.search.baseUrl;
+    }
+
     // baseUrl belongs to the endpoint-backed providers; the others drop it.
-    if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue)) {
+    if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
       delete currentBackends.search.baseUrl;
     }
     if (newValue !== 'searxng') {
       delete currentBackends.search.options;
-    }
-    if (newValue !== 'google-serp') {
-      delete currentBackends.search.keyHeader;
     }
     if (newValue === 'duckduckgo') {
       delete currentBackends.search.fallback;
@@ -631,14 +637,27 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:baseUrl') {
+    const selectedProvider = currentBackends.search.provider as SearchProviderName;
     if (newValue.trim()) {
       // Keep an endpoint-backed provider (searxng, google-serp); anything else is promoted to searxng.
-      if (!BASE_URL_SEARCH_PROVIDERS.includes(currentBackends.search.provider)) {
+      if (!BASE_URL_SEARCH_PROVIDERS.includes(selectedProvider)) {
         currentBackends.search.provider = 'searxng';
       }
       currentBackends.search.baseUrl = newValue.trim();
+      // Remove the selected provider's entry from baseUrls so baseUrl takes effect
+      if (currentBackends.search.baseUrls?.[selectedProvider]) {
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[selectedProvider];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
     } else {
       delete currentBackends.search.baseUrl;
+      // When clearing, also remove from baseUrls
+      if (currentBackends.search.baseUrls?.[selectedProvider]) {
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[selectedProvider];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
     }
   }
 

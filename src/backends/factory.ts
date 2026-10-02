@@ -170,7 +170,7 @@ export function createBackendSet(
   // instead. No connectivity check is needed: the url itself is the problem.
   if (proxy && !isValidProxyUrl(proxy.url)) {
     const message =
-      `backends.proxy.url (${proxy.url}) is not a valid http or https URL. ` +
+      'backends.proxy.url is not a valid http or https URL. ' +
       'Web requests are blocked until it is fixed; set backends.proxy.url to "" to disable the proxy.';
     return {
       search: async () => {

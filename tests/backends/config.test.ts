@@ -131,7 +131,7 @@ describe('backend config', () => {
     expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
   });
 
-  it('extracts the google-serp key header only for that provider', () => {
+  it('extracts the google-serp key header regardless of selected provider', () => {
     expect(extractBackendConfigOverride({
       backends: {
         search: {
@@ -152,7 +152,7 @@ describe('backend config', () => {
       backends: {
         search: { provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' }
       }
-    }).search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080' });
+    }).search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' });
   });
 
   it('accepts google-serp with an endpoint and duckduckgo fallback', () => {
@@ -242,6 +242,48 @@ describe('backend config', () => {
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'tavily', fallback: 'duckduckgo' }
     })).toEqual([]);
+  });
+
+  it('keeps keyHeader in a layer without a provider', () => {
+    // When a layer sets baseUrls and keyHeader without changing the provider,
+    // the keyHeader should be preserved
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: {
+          baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+          keyHeader: 'Authorization'
+        }
+      }
+    });
+
+    expect(override.search).toEqual({
+      baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+      keyHeader: 'Authorization'
+    });
+  });
+
+  it('merges keyHeader across layers when provider changes', () => {
+    // When switching providers and keyHeader is set, it should be carried forward
+    const merged = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      {
+        search: {
+          provider: 'searxng',
+          baseUrl: 'http://localhost:8080',
+          baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+          keyHeader: 'Authorization',
+          fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
+        }
+      },
+      {
+        search: {
+          provider: 'brave',
+          fanout: { mode: 'on', providers: ['brave', 'google-serp'] }
+        }
+      }
+    );
+
+    expect(merged.search.keyHeader).toBe('Authorization');
   });
 });
 
@@ -568,7 +610,18 @@ describe('proxy config', () => {
     expect(stripProxyCredentials('http://user:secret@127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
     expect(stripProxyCredentials('https://user@proxy.example:8443')).toBe('https://proxy.example:8443');
     expect(stripProxyCredentials('http://127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
-    expect(stripProxyCredentials('not a url')).toBe('not a url');
+  });
+
+  it('returns (invalid URL) for unparseable proxy urls without special chars in password', () => {
+    expect(stripProxyCredentials('http://u:secretpw@[broken')).toBe('(invalid URL)');
+  });
+
+  it('returns (invalid URL) for malformed urls with credentials containing /', () => {
+    expect(stripProxyCredentials('http://u:secret/pw@[broken')).toBe('(invalid URL)');
+  });
+
+  it('returns (invalid URL) for malformed urls with credentials containing ?', () => {
+    expect(stripProxyCredentials('http://u:secret?pw@[broken')).toBe('(invalid URL)');
   });
 });
 

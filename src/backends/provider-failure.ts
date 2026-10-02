@@ -173,4 +173,3 @@ export function classifyEnvelopeFailure(json: unknown): EnvelopeFailure | undefi
   const message = wording ? `"${wording}" (provider status ${status})` : `provider status ${status}`;
   return { failure: { kind, httpStatus: 200, providerCode: String(status) }, message };
 }
-

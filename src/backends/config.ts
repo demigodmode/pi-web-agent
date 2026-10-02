@@ -102,7 +102,8 @@ export function stripProxyCredentials(url: string): string {
   try {
     parsed = new URL(url);
   } catch {
-    return url;
+    // URL parsing failed; fail closed to avoid credential leaks
+    return '(invalid URL)';
   }
   if (!parsed.username && !parsed.password) return url; // already credential-free
   parsed.username = '';
@@ -220,6 +221,16 @@ function searchBaseUrlApplies(search: SearchBackendConfig, provider: SearchProvi
  * own is left out of the set instead (usableSearchProviders), never pointed at another's URL.
  */
 export function resolveSearchBaseUrl(search: SearchBackendConfig, provider: SearchProviderName): string | undefined {
+  // When the provider is the currently selected one, prefer the current baseUrl first,
+  // then fall back to baseUrls[provider]. This ensures Settings edits take effect.
+  if (provider === search.provider) {
+    const current = search.baseUrl?.trim();
+    if (current) return current;
+    const own = search.baseUrls?.[provider]?.trim();
+    if (own) return own;
+    return searchBaseUrlApplies(search, provider) ? undefined : undefined;
+  }
+  // For non-selected providers, use their own baseUrls slot if set, otherwise apply legacy rules
   const own = search.baseUrls?.[provider]?.trim();
   if (own) return own;
   return searchBaseUrlApplies(search, provider) ? search.baseUrl?.trim() || undefined : undefined;
@@ -286,9 +297,6 @@ export function extractBackendConfigOverride(
     if (BASE_URL_SEARCH_PROVIDERS.includes(backends.search.provider as SearchProviderName) && typeof backends.search.baseUrl === 'string') {
       override.search.baseUrl = backends.search.baseUrl;
     }
-    if (backends.search.provider === 'google-serp' && typeof backends.search.keyHeader === 'string') {
-      override.search.keyHeader = backends.search.keyHeader;
-    }
     if (backends.search.fallback === 'duckduckgo') {
       override.search.fallback = 'duckduckgo';
     }
@@ -303,6 +311,11 @@ export function extractBackendConfigOverride(
   const baseUrls = extractSearchBaseUrls(backends?.search?.baseUrls);
   if (baseUrls) {
     override.search = { ...(override.search ?? {}), baseUrls };
+  }
+
+  const keyHeader = typeof backends?.search?.keyHeader === 'string' ? backends.search.keyHeader : undefined;
+  if (keyHeader) {
+    override.search = { ...(override.search ?? {}), keyHeader };
   }
 
   const fanout = extractFanoutConfig(backends?.search?.fanout);
@@ -454,7 +467,9 @@ function mergeSearchConfig(
   const baseUrls = { ...current.baseUrls, ...override.baseUrls };
   const withBaseUrls = Object.keys(baseUrls).length > 0 ? { baseUrls } : {};
   if (override.provider && override.provider !== current.provider) {
-    return { ...override, provider: override.provider, ...withBaseUrls };
+    const keyHeader = override.keyHeader ?? (current.keyHeader ? current.keyHeader : undefined);
+    const withKeyHeader = keyHeader ? { keyHeader } : {};
+    return { ...override, provider: override.provider, ...withBaseUrls, ...withKeyHeader };
   }
   return { ...current, ...override, ...withBaseUrls };
 }
