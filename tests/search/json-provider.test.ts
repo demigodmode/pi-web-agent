@@ -107,4 +107,47 @@ describe('createJsonSearchProvider', () => {
     expect(result).toMatchObject({ status: 'ok', results: [{ title: 'T', url: 'https://x.test/' }], metadata: { backend: 'exa', cacheHit: false } });
     expect(result.presentation).toBeDefined();
   });
+
+  it('consults the body failure before normalizing, so an error envelope with results still fails', async () => {
+    const bodyFailure = vi.fn((body: unknown) => {
+      const status = (body as { status?: unknown }).status;
+      return typeof status === 'number' && status !== 0
+        ? { failure: { kind: 'auth_failed' as const, httpStatus: 200, providerCode: String(status) }, message: 'Unauthorized' }
+        : undefined;
+    });
+
+    // Both bodies used to report success: the empty one as a valid empty search, the other one as a
+    // search that returned the row inside an error envelope.
+    for (const body of [
+      { status: 1001, results: [] },
+      { status: 1001, results: [{ title: 'T', url: 'https://x.test/' }] }
+    ]) {
+      const result = await provider(vi.fn(async () => json(body)) as any, { bodyFailure })({ query: 'q' });
+
+      expect(result).toMatchObject({
+        status: 'error',
+        results: [],
+        error: { code: 'FETCH_FAILED', failure: { kind: 'auth_failed', providerCode: '1001' } }
+      });
+    }
+  });
+});
+
+describe('json provider cancellation', () => {
+  it('hands the caller signal to fetch', async () => {
+    const fetchImpl = vi.fn(async () => json({ results: [] }));
+    const controller = new AbortController();
+    await provider(fetchImpl as unknown as typeof fetch)({ query: 'q', signal: controller.signal });
+    expect(fetchImpl).toHaveBeenCalledWith('https://api.test/search', expect.objectContaining({ method: 'POST', signal: controller.signal }));
+  });
+
+  it('adds init only for the signal on a plain GET', async () => {
+    const fetchImpl = vi.fn(async () => json({ results: [] }));
+    const controller = new AbortController();
+    const search = provider(fetchImpl as unknown as typeof fetch, { request: () => ({ url: 'https://api.test/get' }) });
+    await search({ query: 'q' });
+    await search({ query: 'q', signal: controller.signal });
+    expect(fetchImpl.mock.calls[0]).toEqual(['https://api.test/get']);
+    expect(fetchImpl.mock.calls[1]).toEqual(['https://api.test/get', { signal: controller.signal }]);
+  });
 });

@@ -1,6 +1,6 @@
-import { classifyHttpFailure, readResponseParts } from '../backends/provider-failure.js';
+import { classifyHttpFailure, readResponseParts, type EnvelopeFailure } from '../backends/provider-failure.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import type { FailureInfo, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
+import type { FailureInfo, SearchInput, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
 
 export type Normalized = { rawCount: number; results: SearchResult[] };
 
@@ -18,6 +18,8 @@ export type JsonSearchProviderOptions = {
   normalize: (json: unknown) => Normalized | undefined;
   /** A 200 that is empty only because the provider degraded (e.g. SearXNG engines suspended). */
   isDegradedEmpty?: (json: unknown) => boolean;
+  /** Providers that report the failure inside a 2xx body instead of a 4xx (see classifyEnvelopeFailure). */
+  bodyFailure?: (json: unknown) => EnvelopeFailure | undefined;
 };
 
 function respond(result: WebSearchResponse): WebSearchResponse {
@@ -35,7 +37,7 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
   const error = (code: string, message: string, failure: FailureInfo) =>
     respond({ status: 'error', results: [], metadata: { backend: name, cacheHit: false }, error: { code, message, failure } });
 
-  return async function search({ query }: { query: string }): Promise<WebSearchResponse> {
+  return async function search({ query, signal }: SearchInput): Promise<WebSearchResponse> {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
       return error('INVALID_QUERY', 'Query must not be empty.', { kind: 'bad_request' });
@@ -47,10 +49,11 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
     }
 
     const { url, init } = options.request(normalizedQuery);
+    const requestInit = signal ? { ...init, signal } : init;
     let response: Response;
     try {
       // No init for plain GETs, so callers and tests see fetch(url) exactly.
-      response = await (init ? fetchImpl(url, init) : fetchImpl(url));
+      response = await (requestInit ? fetchImpl(url, requestInit) : fetchImpl(url));
     } catch (thrown) {
       const message = thrown instanceof Error ? thrown.message : String(thrown);
       return error('FETCH_FAILED', `${label} search request failed: ${message}`, { kind: 'transient' });
@@ -67,8 +70,23 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
       return error('FETCH_FAILED', `${label} search request failed: HTTP ${response.status}`, classifyHttpFailure(name, parts, now()));
     }
 
+    // A 2xx whose body reports the failure: still a provider failure, and the kind
+    // matters to the fallback policy (#55), so it must not collapse into bad_response.
+    // Checked before normalizing: an error envelope with an empty (or partially filled)
+    // `organic` array would otherwise be reported as a successful, empty search.
+    const envelope = parts.json === undefined ? undefined : options.bodyFailure?.(parts.json);
+    if (envelope) {
+      return error('FETCH_FAILED', `${label} search request failed: ${envelope.message}.`, envelope.failure);
+    }
+
     const normalized = parts.json === undefined ? undefined : options.normalize(parts.json);
-    if (!normalized || (normalized.rawCount > 0 && normalized.results.length === 0)) {
+    if (!normalized) {
+      return error('BAD_RESPONSE', `${label} returned a response that did not match the expected format.`, {
+        kind: 'bad_response',
+        httpStatus: response.status
+      });
+    }
+    if (normalized.rawCount > 0 && normalized.results.length === 0) {
       return error('BAD_RESPONSE', `${label} returned a response that did not match the expected format.`, {
         kind: 'bad_response',
         httpStatus: response.status
@@ -85,8 +103,16 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
   };
 }
 
-/** Shared normalizer for `{ results: [{ title, url, <snippetField> }] }` bodies. */
-export function normalizeResultsArray(json: unknown, arrayPath: (body: any) => unknown, snippetField: string): Normalized | undefined {
+/**
+ * Shared normalizer for `{ results: [{ title, url, <snippetField> }] }` bodies.
+ * `urlField` covers vendors that call the link something else (`link`, `displayLink`).
+ */
+export function normalizeResultsArray(
+  json: unknown,
+  arrayPath: (body: any) => unknown,
+  snippetField: string,
+  urlField = 'url'
+): Normalized | undefined {
   if (!json || typeof json !== 'object') return undefined;
   const raw = arrayPath(json);
   if (raw === undefined) return undefined;
@@ -94,8 +120,8 @@ export function normalizeResultsArray(json: unknown, arrayPath: (body: any) => u
   return {
     rawCount: raw.length,
     results: raw.flatMap((item: any) =>
-      item && typeof item.title === 'string' && typeof item.url === 'string'
-        ? [{ title: item.title, url: item.url, snippet: typeof item[snippetField] === 'string' ? item[snippetField] : '' }]
+      item && typeof item.title === 'string' && typeof item[urlField] === 'string'
+        ? [{ title: item.title, url: item[urlField], snippet: typeof item[snippetField] === 'string' ? item[snippetField] : '' }]
         : []
     )
   };

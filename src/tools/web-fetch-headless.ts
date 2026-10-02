@@ -3,11 +3,11 @@ import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import type { ResearchFetchInput, WebFetchHeadlessResponse } from '../types.js';
 
 export function createWebFetchHeadlessTool({
-  fetchPage = ({ url, query }) => headlessFetch(url, { query })
+  fetchPage = ({ url, query, signal }) => headlessFetch(url, { query, signal })
 }: {
   fetchPage?: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
 } = {}) {
-  return async function webFetchHeadless({ url, query }: ResearchFetchInput): Promise<WebFetchHeadlessResponse> {
+  return async function webFetchHeadless({ url, query, signal }: ResearchFetchInput): Promise<WebFetchHeadlessResponse> {
     if (!/^https?:\/\//.test(url)) {
       const result: WebFetchHeadlessResponse = {
         status: 'unsupported',
@@ -22,7 +22,7 @@ export function createWebFetchHeadlessTool({
       };
     }
 
-    const result = await fetchPage({ url, ...(query ? { query } : {}) });
+    const result = await fetchPage({ url, ...(query ? { query } : {}), ...(signal ? { signal } : {}) });
     return {
       ...result,
       presentation: buildFetchPresentation(result)

@@ -2,6 +2,7 @@ import { getSubtitles, getVideoDetails } from 'youtube-caption-extractor';
 import type { WebFetchResponse } from '../types.js';
 import type { SpecialContentReader } from './types.js';
 import { READER_TEXT_CAP } from './limits.js';
+import { PAGE_FETCH_TIMEOUT_MS, fetchWithSignal, requestSignal } from '../abort.js';
 
 type Subtitle = { start: string; dur: string; text: string };
 type YoutubeReaderDeps = {
@@ -37,12 +38,12 @@ export function createYoutubeReader({
 }: YoutubeReaderDeps = {}): SpecialContentReader {
   // Route YouTube's caption/metadata requests through the configured fetch
   // client (e.g. the proxy) unless an explicit override is provided.
-  const doFetchSubtitles =
-    fetchSubtitles ?? ((input: { videoID: string; lang: string }) => getSubtitles({ ...input, fetch: fetchImpl }));
-  const doFetchDetails =
+  const subtitlesVia = (fetchFn: typeof fetch) =>
+    fetchSubtitles ?? ((input: { videoID: string; lang: string }) => getSubtitles({ ...input, fetch: fetchFn }));
+  const detailsVia = (fetchFn: typeof fetch) =>
     fetchDetails ??
     ((input: { videoID: string; lang: string }) =>
-      getVideoDetails({ ...input, fetch: fetchImpl }).then((details) => ({
+      getVideoDetails({ ...input, fetch: fetchFn }).then((details) => ({
         title: details.title,
         description: details.description
       })));
@@ -52,7 +53,7 @@ export function createYoutubeReader({
     canHandle(url: string): boolean {
       return extractVideoId(url) !== undefined;
     },
-    async read(url: string): Promise<WebFetchResponse> {
+    async read(url: string, signal?: AbortSignal): Promise<WebFetchResponse> {
       const videoID = extractVideoId(url);
       if (!videoID) {
         return {
@@ -63,9 +64,10 @@ export function createYoutubeReader({
         };
       }
       try {
+        const scoped = fetchWithSignal(fetchImpl, requestSignal(signal, PAGE_FETCH_TIMEOUT_MS));
         const [subtitles, details] = await Promise.all([
-          doFetchSubtitles({ videoID, lang: 'en' }),
-          doFetchDetails({ videoID, lang: 'en' }).catch(() => ({ title: undefined }))
+          subtitlesVia(scoped)({ videoID, lang: 'en' }),
+          detailsVia(scoped)({ videoID, lang: 'en' }).catch(() => ({ title: undefined }))
         ]);
 
         if (!subtitles || subtitles.length === 0) {

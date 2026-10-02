@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applySettingsValue,
+  buildBackendSettingsItems,
   collapseBackendConfigToOverride,
   collapsePresentationConfigToOverride,
   createBackendUrlEditor,
@@ -11,7 +12,9 @@ import {
   validateBackendUrl
 } from '../../src/commands/web-agent-config.js';
 import { DEFAULT_PRESENTATION_CONFIG, mergePresentationConfigLayers } from '../../src/presentation/config.js';
-import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
+import { DEFAULT_BACKEND_CONFIG, extractBackendConfigOverride, mergeBackendConfigLayers } from '../../src/backends/config.js';
+import { createBackendSet } from '../../src/backends/factory.js';
+import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import type { BrowserResolutionResult } from '../../src/fetch/browser-resolution.js';
 
 beforeEach(() => {
@@ -136,6 +139,55 @@ describe('web-agent config draft helpers', () => {
         },
         {
           search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        }
+      )
+    ).toEqual({});
+  });
+
+  it('carries a hand-written baseUrls entry through a collapse instead of dropping it', () => {
+    // A layer can add a per-provider endpoint (baseUrls) the parent does not have. The collapse
+    // used to omit baseUrls, so saving anything from /web-agent settings dropped the endpoint
+    // and fanout discarded the provider without saying anything.
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.example/search',
+            baseUrls: { searxng: 'http://localhost:8080' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        {
+          search: { provider: 'google-serp', baseUrl: 'https://google.example/search' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        }
+      )
+    ).toEqual({ search: { baseUrls: { searxng: 'http://localhost:8080' } } });
+  });
+
+  it('omits baseUrls when it matches the parent scope', () => {
+    expect(
+      collapseBackendConfigToOverride(
+        {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.example/search',
+            baseUrls: { searxng: 'http://localhost:8080' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.example/search',
+            baseUrls: { searxng: 'http://localhost:8080' }
+          },
           fetch: { provider: 'http' },
           headless: { provider: 'local-browser' }
         }
@@ -737,7 +789,8 @@ describe('web-agent config commands', () => {
       // Injected so this stays hermetic. The real checkJitiCompat reads this
       // machine's node_modules, which would make the test fail on exactly the
       // trees where #34 has recurred.
-      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] })
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -755,6 +808,27 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).not.toContain('fetch backend: http');
     expect(notify.mock.calls[0][0]).toContain('jsdom compat patch: ok');
     expect(notify.mock.calls[0][0]).toContain('network allow list: none');
+  });
+
+  it('adds the repo research line to doctor output', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+    registerWebAgentConfigCommands(pi as never, {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      load: vi.fn().mockResolvedValue({ effectiveConfig: DEFAULT_PRESENTATION_CONFIG, effectiveBackends: DEFAULT_BACKEND_CONFIG }),
+      checkBackends: vi.fn().mockResolvedValue([]),
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
+    });
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+    expect(notify.mock.calls[0][0]).toContain('repo research: git 2.55.0, no GitHub login (public repos only)');
   });
 
   it('reports a needed jsdom compat patch and the recovery command in doctor output', async () => {
@@ -778,7 +852,8 @@ describe('web-agent config commands', () => {
         effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
         effectiveBackends: DEFAULT_BACKEND_CONFIG
       }),
-      checkBackends: vi.fn().mockResolvedValue([])
+      checkBackends: vi.fn().mockResolvedValue([]),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -812,7 +887,8 @@ describe('web-agent config commands', () => {
       }),
       resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -840,7 +916,8 @@ describe('web-agent config commands', () => {
         }
       }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'darwin', arch: 'arm64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -848,6 +925,57 @@ describe('web-agent config commands', () => {
 
     expect(notify.mock.calls[0][0]).toContain('browser: missing');
     expect(notify.mock.calls[0][0]).toContain('Install Chrome, Chromium, Edge, or Brave');
+  });
+
+  it('hides credentials from unparseable proxy urls in doctor and show output', async () => {
+    let handler: any;
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue({
+        global: {
+          path: '/global/config.json',
+          exists: true,
+          rawConfig: { tools: {} }
+        },
+        project: {
+          path: '/project/config.json',
+          exists: false
+        },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: {
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' },
+          proxy: { url: 'http://u:secretpw@[broken' }
+        }
+      }),
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkBackends: vi.fn().mockResolvedValue([]),
+      checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: ok'),
+      reset: vi.fn()
+    });
+
+    const notify = vi.fn();
+    await handler('doctor', { ui: { notify } });
+
+    const doctorOutput = notify.mock.calls[0][0];
+    expect(doctorOutput).not.toContain('secretpw');
+    expect(doctorOutput).toContain('proxy: (invalid URL)');
+
+    notify.mockClear();
+    await handler('show', { ui: { notify } });
+
+    const showOutput = notify.mock.calls[0][0];
+    expect(showOutput).not.toContain('secretpw');
+    expect(showOutput).toContain('proxy: (invalid URL)');
   });
 
   it('renders effective config from the store for show', async () => {
@@ -1027,7 +1155,8 @@ describe('web-agent config commands', () => {
         browser: 'chromium'
       }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
-      checkTypebox: vi.fn().mockResolvedValue(true)
+      checkTypebox: vi.fn().mockResolvedValue(true),
+      checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
     });
 
     const notify = vi.fn();
@@ -1482,5 +1611,445 @@ describe('network allow list settings', () => {
 
     const rangesCleared = applySettingsValue(untrusted, 'backend:network:allowRanges', '');
     expect(rangesCleared.backends.network).toEqual({ trustProxyDns: false });
+  });
+
+
+  it('keeps keyHeader when switching the selected provider away from google-serp if keyHeader is set', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: {
+            provider: 'google-serp' as const,
+            baseUrl: 'https://google.example/search',
+            keyHeader: 'Authorization'
+          }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'google-serp' as const,
+          baseUrl: 'https://google.example/search',
+          keyHeader: 'Authorization'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'searxng');
+
+    expect(switched.backends.search.provider).toBe('searxng');
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+    expect(switched.backends.search.keyHeader).toBe('Authorization');
+  });
+});
+
+describe('search provider switching', () => {
+  it('never sends the google serp key to the old searxng url after switching providers in settings', async () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: { search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' } }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+    const switched = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:provider', 'google-serp');
+
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url, headers: new Headers(init?.headers) });
+      return new Response(JSON.stringify({ organic: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'google-secret');
+    try {
+      const backends = createBackendSet(switched.backends, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+      const result = await backends.search({ query: 'q' });
+      await backends.close();
+
+      // Google SERP has no endpoint of its own yet, so it must not borrow SearXNG's.
+      expect(requests.filter((request) => request.url.startsWith('https://searx.invalid/'))).toEqual([]);
+      expect(requests.some((request) => request.headers.get('x-api-key') === 'google-secret')).toBe(false);
+      expect(result.status).toBe('error');
+      expect(switched.backends.search.baseUrls).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('switching searxng -> google-serp drops the old endpoint', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'http://localhost:8080' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toBeUndefined();
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('switching google-serp -> searxng drops the old endpoint', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'google-serp' as const, baseUrl: 'https://google.example/search' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'google-serp' as const,
+          baseUrl: 'https://google.example/search'
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'searxng');
+
+    expect(switched.backends.search.provider).toBe('searxng');
+    expect(switched.backends.search.baseUrls).toBeUndefined();
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+  });
+
+  it('does not overwrite existing baseUrls entries when switching providers', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: {
+            provider: 'searxng' as const,
+            baseUrl: 'http://localhost:8080',
+            baseUrls: { 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' }
+          }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: 'http://localhost:8080',
+          baseUrls: { 'google-serp': 'https://google.example/search', 'searxng': 'http://preserved' }
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    // baseUrl is dropped but baseUrls is left untouched
+    expect(switched.backends.search.baseUrl).toBeUndefined();
+    expect(switched.backends.search.baseUrls).toEqual({ 'searxng': 'http://preserved', 'google-serp': 'https://google.example/search' });
+  });
+  it('settings edits affect endpoint resolver when switching between providers', async () => {
+    // Start with SearXNG at URL1
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: { provider: 'searxng' as const, baseUrl: 'https://searx.invalid/sub/' },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    let state = createSettingsDraftState(loaded, 'project');
+
+    // Switch to Google SERP
+    state = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+    expect(state.backends.search.baseUrl).toBeUndefined();
+
+    // Set Google SERP endpoint to URL2
+    state = applySettingsValue(state, 'backend:search:baseUrl', 'https://serp.invalid/search');
+    expect(state.backends.search.baseUrl).toBe('https://serp.invalid/search');
+
+    // Switch back to SearXNG
+    state = applySettingsValue(state, 'backend:search:provider', 'searxng');
+    expect(state.backends.search.provider).toBe('searxng');
+    // baseUrl is not restored; user must re-enter it
+    expect(state.backends.search.baseUrl).toBeUndefined();
+
+    // Set SearXNG endpoint to URL3
+    state = applySettingsValue(state, 'backend:search:baseUrl', 'https://searx-new.invalid/sub/');
+    expect(state.backends.search.baseUrl).toBe('https://searx-new.invalid/sub/');
+
+    // Verify request goes to the new URL (URL3)
+    const requests: Array<{ url: string }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url });
+      return new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+
+    try {
+      const backends = createBackendSet(state.backends, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '127.0.0.1', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+
+      const result = await backends.search({ query: 'test' });
+      await backends.close();
+
+      // Request should go to URL3, not the old URL1
+      expect(requests.some((r) => r.url.startsWith('https://searx-new.invalid/'))).toBe(true);
+      expect(requests.some((r) => r.url.startsWith('https://searx.invalid/sub/'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not move whitespace-only baseUrl when switching providers', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: {
+        path: '/project/config.json',
+        exists: true,
+        rawConfig: { tools: {} },
+        rawBackends: {
+          search: { provider: 'searxng' as const, baseUrl: '   ' }
+        }
+      },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: {
+        search: {
+          provider: 'searxng' as const,
+          baseUrl: '   '
+        },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      }
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const switched = applySettingsValue(state, 'backend:search:provider', 'google-serp');
+
+    expect(switched.backends.search.provider).toBe('google-serp');
+    expect(switched.backends.search.baseUrls).toBeUndefined();
+  });
+});
+
+describe('settings endpoints after switching providers', () => {
+  const theme = new Proxy({}, { get: () => (...args: unknown[]) => args[args.length - 1] });
+  type Search = { provider: 'searxng' | 'google-serp'; baseUrl?: string };
+
+  function draftFor(search: Search) {
+    const backends = { search, fetch: { provider: 'http' as const }, headless: { provider: 'local-browser' as const } };
+    return createSettingsDraftState(
+      {
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: { search } },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: backends
+      } as never,
+      'project'
+    );
+  }
+
+  function endpointRow(state: ReturnType<typeof draftFor>) {
+    return buildBackendSettingsItems('project', state.backends, theme).find((item) => item.id === 'backend:search:baseUrl')?.currentValue;
+  }
+
+  // Save the draft, then load it back the way the extension does.
+  function saveAndReload(state: ReturnType<typeof draftFor>) {
+    const saved = JSON.parse(JSON.stringify(collapseBackendConfigToOverride(state.backends, DEFAULT_BACKEND_CONFIG)));
+    return mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, extractBackendConfigOverride({ backends: saved }));
+  }
+
+  async function searchRequests(config: ReturnType<typeof saveAndReload>) {
+    const requests: Array<{ url: string; headers: Headers }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      requests.push({ url, headers: new Headers(init?.headers) });
+      const body = url.includes('serp') ? { organic: [] } : { results: [] };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'google-secret');
+    try {
+      const backends = createBackendSet(config, {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+        createGuardProxy: vi.fn(async () => {
+          throw new Error('tests must not start a real guard proxy');
+        }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      });
+      await backends.search({ query: 'q' });
+      await backends.close();
+      return requests;
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  }
+
+  const cases = [
+    { a: 'searxng' as const, b: 'google-serp' as const, url1: 'https://searx-one.invalid/sub/', url2: 'https://serp-two.invalid/search', url3: 'https://searx-three.invalid/sub/' },
+    { a: 'google-serp' as const, b: 'searxng' as const, url1: 'https://serp-one.invalid/search', url2: 'https://searx-two.invalid/sub/', url3: 'https://serp-three.invalid/search' }
+  ];
+
+  for (const { a, b, url1, url2, url3 } of cases) {
+    it(`uses the endpoint you just entered after switching ${a} -> ${b} -> ${a}`, async () => {
+      let state = draftFor({ provider: a, baseUrl: url1 });
+      state = applySettingsValue(state, 'backend:search:provider', b);
+      state = applySettingsValue(state, 'backend:search:baseUrl', url2);
+      state = applySettingsValue(state, 'backend:search:provider', a);
+      expect(endpointRow(state)).toBe('not set');
+
+      state = applySettingsValue(state, 'backend:search:baseUrl', url3);
+      expect(endpointRow(state)).toBe(url3);
+
+      const requests = await searchRequests(saveAndReload(state));
+      expect(requests.some((request) => request.url.startsWith(url3))).toBe(true);
+      expect(requests.filter((request) => request.url.startsWith(url1))).toEqual([]);
+      // The google key only ever goes to a google endpoint.
+      for (const request of requests.filter((r) => r.headers.get('x-api-key'))) {
+        expect(request.url.includes('serp')).toBe(true);
+      }
+    });
+
+    it(`clearing the endpoint after switching ${a} -> ${b} -> ${a} really clears it`, async () => {
+      let state = draftFor({ provider: a, baseUrl: url1 });
+      state = applySettingsValue(state, 'backend:search:provider', b);
+      state = applySettingsValue(state, 'backend:search:provider', a);
+      state = applySettingsValue(state, 'backend:search:baseUrl', '');
+      expect(endpointRow(state)).toBe('not set');
+
+      const requests = await searchRequests(saveAndReload(state));
+      expect(requests.filter((request) => request.url.startsWith(url1))).toEqual([]);
+    });
+  }
+
+  for (const provider of ['searxng' as const, 'google-serp' as const]) {
+    it(`the endpoint row and the actual request agree with a global endpoint (${provider})`, async () => {
+      const globalUrl = `https://global-${provider}.invalid/x`;
+      const globalBackends = {
+        search: { baseUrls: { [provider]: globalUrl } },
+        fetch: { provider: 'http' as const },
+        headless: { provider: 'local-browser' as const }
+      };
+      const projectBackends = { search: { provider } };
+      const loaded = {
+        global: {
+          path: '/global/config.json',
+          exists: true,
+          rawConfig: { tools: {} },
+          rawBackends: globalBackends
+        },
+        project: {
+          path: '/project/config.json',
+          exists: true,
+          rawConfig: { tools: {} },
+          rawBackends: projectBackends
+        },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: mergeBackendConfigLayers(
+          DEFAULT_BACKEND_CONFIG,
+          extractBackendConfigOverride({ backends: globalBackends }),
+          extractBackendConfigOverride({ backends: projectBackends })
+        )
+      } as never;
+
+      const state = createSettingsDraftState(loaded, 'project');
+      expect(endpointRow(state)).toBe(globalUrl);
+
+      const requests = await searchRequests(saveAndReload(state));
+      expect(requests.some((request) => request.url.startsWith(globalUrl))).toBe(true);
+    });
+  }
+
+  it('the proxy row never shows credentials from a url that cannot be parsed', () => {
+    for (const url of ['http://u:secretpw@[broken', 'http://u:secret/pw@[broken', 'http://u:secret?pw@[broken']) {
+      const state = draftFor({ provider: 'searxng', baseUrl: 'https://searx.invalid/' });
+      const row = buildBackendSettingsItems('project', { ...state.backends, proxy: { url } }, theme).find((item) => item.id === 'backend:proxy:url');
+      expect(row?.currentValue).toBe('(invalid URL)');
+      expect(String(row?.currentValue)).not.toContain('secret');
+    }
+  });
+
+  it('doctor and show never print credentials from a broken proxy url, even with / or ? in the password', async () => {
+    for (const url of ['http://u:secret/pw@[broken', 'http://u:secret?pw@[broken']) {
+      let handler: any;
+      registerWebAgentConfigCommands({ registerCommand: vi.fn((_name: string, command: any) => { handler = command.handler; }) } as never, {
+        load: vi.fn().mockResolvedValue({
+          global: { path: '/global/config.json', exists: true, rawConfig: { tools: {} } },
+          project: { path: '/project/config.json', exists: false },
+          effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+          effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' }, proxy: { url } }
+        }),
+        resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+        runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
+        checkTypebox: vi.fn().mockResolvedValue(true),
+        checkBackends: vi.fn().mockResolvedValue([]),
+        checkJitiCompat: vi.fn().mockReturnValue({ pending: [], patched: [] }),
+        checkRepoResearch: vi.fn().mockResolvedValue('repo research: ok'),
+        reset: vi.fn()
+      } as never);
+      const notify = vi.fn();
+      await handler('doctor', { ui: { notify } });
+      await handler('show', { ui: { notify } });
+      for (const [text] of notify.mock.calls) expect(String(text)).not.toContain('secret');
+    }
   });
 });

@@ -118,7 +118,7 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, or tavily');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, or google-serp');
   });
 
   it('accepts youcom search provider with duckduckgo fallback', () => {
@@ -129,6 +129,51 @@ describe('backend config', () => {
     });
 
     expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
+  });
+
+  it('extracts the google-serp key header regardless of selected provider', () => {
+    expect(extractBackendConfigOverride({
+      backends: {
+        search: {
+          provider: 'google-serp',
+          baseUrl: 'https://serp.example/search',
+          keyHeader: 'Authorization',
+          fallback: 'duckduckgo'
+        }
+      }
+    }).search).toEqual({
+      provider: 'google-serp',
+      baseUrl: 'https://serp.example/search',
+      fallback: 'duckduckgo',
+      keyHeader: 'Authorization'
+    });
+
+    expect(extractBackendConfigOverride({
+      backends: {
+        search: { provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' }
+      }
+    }).search).toEqual({ provider: 'searxng', baseUrl: 'http://localhost:8080', keyHeader: 'Authorization' });
+  });
+
+  it('accepts google-serp with an endpoint and duckduckgo fallback', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'google-serp', baseUrl: 'https://serp.example/search', fallback: 'duckduckgo' }
+    })).toEqual([]);
+  });
+
+  it('requires an endpoint for google-serp', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'google-serp' }
+    })).toEqual(['search provider google-serp requires backends.search.baseUrl']);
+  });
+
+  it('rejects a blank google-serp key header', () => {
+    expect(validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'google-serp', baseUrl: 'https://serp.example/search', keyHeader: '  ' }
+    })).toEqual(['search keyHeader must not be empty when provided']);
   });
 
   it('allows duckduckgo fallback for youcom', () => {
@@ -198,6 +243,48 @@ describe('backend config', () => {
       search: { provider: 'tavily', fallback: 'duckduckgo' }
     })).toEqual([]);
   });
+
+  it('keeps keyHeader in a layer without a provider', () => {
+    // When a layer sets baseUrls and keyHeader without changing the provider,
+    // the keyHeader should be preserved
+    const override = extractBackendConfigOverride({
+      backends: {
+        search: {
+          baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+          keyHeader: 'Authorization'
+        }
+      }
+    });
+
+    expect(override.search).toEqual({
+      baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+      keyHeader: 'Authorization'
+    });
+  });
+
+  it('merges keyHeader across layers when provider changes', () => {
+    // When switching providers and keyHeader is set, it should be carried forward
+    const merged = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      {
+        search: {
+          provider: 'searxng',
+          baseUrl: 'http://localhost:8080',
+          baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+          keyHeader: 'Authorization',
+          fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
+        }
+      },
+      {
+        search: {
+          provider: 'brave',
+          fanout: { mode: 'on', providers: ['brave', 'google-serp'] }
+        }
+      }
+    );
+
+    expect(merged.search.keyHeader).toBe('Authorization');
+  });
 });
 
 describe('fanout config', () => {
@@ -226,6 +313,49 @@ describe('fanout config', () => {
       search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'searxng'] } }
     });
     expect(issues.some((i) => i.includes('searxng'))).toBe(true);
+  });
+
+  it('flags google-serp in the fanout set without an endpoint of its own', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'google-serp'] } }
+    });
+    expect(issues).toContain('search fanout with google-serp requires backends.search.baseUrls.google-serp');
+  });
+
+  it('flags a google-serp fanout entry that only has the SearXNG baseUrl', () => {
+    // The endpoint the fanout set would otherwise hand to Google SERP belongs to SearXNG.
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://localhost:8080',
+        fanout: { mode: 'on', providers: ['duckduckgo', 'searxng', 'google-serp'] }
+      }
+    });
+    expect(issues).toContain('search fanout with google-serp requires backends.search.baseUrls.google-serp');
+    expect(issues.some((i) => i.includes('searxng'))).toBe(false);
+  });
+
+  it('accepts a fanout set where each endpoint-backed provider has its own url', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: {
+        provider: 'searxng',
+        baseUrl: 'http://localhost:8080',
+        baseUrls: { 'google-serp': 'https://serp.example/search' },
+        fanout: { mode: 'on', providers: ['duckduckgo', 'searxng', 'google-serp'] }
+      }
+    });
+    expect(issues.filter((i) => i.includes('requires backends.search.baseUrl'))).toEqual([]);
+  });
+
+  it('flags a blank baseUrls entry', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'duckduckgo', baseUrls: { searxng: '   ' } }
+    });
+    expect(issues).toContain('search baseUrls.searxng must not be empty when provided');
   });
 
   it('parses fanout even when no provider is set (provider inherited)', () => {
@@ -283,6 +413,36 @@ describe('usableSearchProviders', () => {
       { EXA_API_KEY: 'test-key' }
     );
     expect(providers).toEqual(['duckduckgo', 'exa']);
+  });
+
+  it('includes google-serp when it has an endpoint of its own and the API key is set', () => {
+    const search = {
+      provider: 'duckduckgo' as const,
+      baseUrl: 'https://searxng.example',
+      baseUrls: { 'google-serp': 'https://serp.example/search' }
+    };
+
+    expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
+      .toEqual(['duckduckgo', 'searxng', 'google-serp']);
+    expect(usableSearchProviders(search, {})).toEqual(['duckduckgo', 'searxng']);
+  });
+
+  it('does not offer google-serp a bare baseUrl that belongs to SearXNG', () => {
+    // Regression: both endpoint-backed providers used to read the one baseUrl, so the fanout set
+    // offered Google SERP a SearXNG URL and posted the Google key to it.
+    const search = { provider: 'duckduckgo' as const, baseUrl: 'https://searxng.example' };
+
+    expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
+      .toEqual(['duckduckgo', 'searxng']);
+  });
+
+  it('does not offer SearXNG the endpoint of a selected google-serp provider', () => {
+    // The reverse configuration: Google SERP selected, default fanout enabled. SearXNG has no
+    // endpoint of its own here, so it stays out of the set instead of querying the Google endpoint.
+    const search = { provider: 'google-serp' as const, baseUrl: 'https://serp.example/search' };
+
+    expect(usableSearchProviders(search, { PI_WEB_AGENT_GOOGLE_SERP_API_KEY: 'test-key' }))
+      .toEqual(['duckduckgo', 'google-serp']);
   });
 
   it('includes tavily when TAVILY_API_KEY is set', () => {
@@ -450,7 +610,18 @@ describe('proxy config', () => {
     expect(stripProxyCredentials('http://user:secret@127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
     expect(stripProxyCredentials('https://user@proxy.example:8443')).toBe('https://proxy.example:8443');
     expect(stripProxyCredentials('http://127.0.0.1:7890')).toBe('http://127.0.0.1:7890');
-    expect(stripProxyCredentials('not a url')).toBe('not a url');
+  });
+
+  it('returns (invalid URL) for unparseable proxy urls without special chars in password', () => {
+    expect(stripProxyCredentials('http://u:secretpw@[broken')).toBe('(invalid URL)');
+  });
+
+  it('returns (invalid URL) for malformed urls with credentials containing /', () => {
+    expect(stripProxyCredentials('http://u:secret/pw@[broken')).toBe('(invalid URL)');
+  });
+
+  it('returns (invalid URL) for malformed urls with credentials containing ?', () => {
+    expect(stripProxyCredentials('http://u:secret?pw@[broken')).toBe('(invalid URL)');
   });
 });
 

@@ -5,6 +5,7 @@ import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { SearchProviderName } from '../../src/types.js';
+import { startSilentUpstream } from '../fetch/guard-proxy-fixtures.js';
 
 /**
  * Keeps factory tests offline now that model-chosen fetches go through the
@@ -37,6 +38,168 @@ describe('backend factory', () => {
     expect(backends.search).toEqual(expect.any(Function));
     expect(backends.fetchPage).toEqual(expect.any(Function));
     expect(backends.headlessFetch).toEqual(expect.any(Function));
+  });
+
+  it('rejects search with invalid proxy URL without leaking credentials', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'htttp://u:secretpw@proxy' } },
+      offlineNetworkDeps()
+    );
+
+    const result = await backends.search({ query: 'test' });
+    expect(result.status).toBe('error');
+    expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(result.error?.message).not.toContain('secretpw');
+    expect(result.error?.message).not.toContain('htttp://');
+    expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+    expect(result.error?.message).toContain('set backends.proxy.url to ""');
+  });
+
+  it('rejects fetchPage with invalid proxy URL without leaking credentials', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: 'http://u:secretpw@[broken' } },
+      offlineNetworkDeps()
+    );
+
+    const result = await backends.fetchPage({ url: 'https://example.com' });
+    expect(result.status).toBe('error');
+    expect(result.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(result.error?.message).not.toContain('secretpw');
+    expect(result.error?.message).not.toContain('http://u:');
+    expect(result.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
+    expect(result.error?.message).toContain('set backends.proxy.url to ""');
+  });
+
+  it('extracts and sends the google-serp key header in fanout via config file', async () => {
+    const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
+
+      if (urlStr.includes('serp.invalid')) {
+        return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
+      } else if (urlStr.includes('searx.invalid')) {
+        return new Response(JSON.stringify({ results: [{ title: 'SearXNG', url: 'https://example.com' }] }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer test-key');
+
+    try {
+      // Simulate file config: primary searxng, keyHeader set, google-serp in fanout with baseUrl
+      const fileConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'searxng',
+            baseUrl: 'https://searx.invalid/',
+            keyHeader: 'Authorization',
+            baseUrls: { 'google-serp': 'https://serp.invalid/search' },
+            fanout: { mode: 'on', providers: ['searxng', 'google-serp'] }
+          }
+        }
+      });
+
+      const mergedConfig = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, fileConfig);
+      const backends = createBackendSet(mergedConfig, offlineNetworkDeps());
+
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('ok');
+
+      // Verify keyHeader was extracted and google-serp got it
+      const googleReq = capturedRequests.find(r => r.url.includes('serp.invalid'));
+      expect(googleReq).toBeDefined();
+      expect(googleReq!.headers['authorization']).toBe('Bearer test-key');
+      expect(googleReq!.headers['x-api-key']).toBeUndefined();
+
+      // Verify searxng did not get the google key
+      const searxngReq = capturedRequests.find(r => r.url.includes('searx.invalid'));
+      expect(searxngReq).toBeDefined();
+      expect(searxngReq!.headers['authorization']).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('sends the google serp key header to google only when it is in fanout', async () => {
+    const { extractBackendConfigOverride, mergeBackendConfigLayers } = await import('../../src/backends/config.js');
+    const capturedRequests: Array<{ url: string; headers: Record<string, string> }> = [];
+
+    const fakeGlobalFetch = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+      const headers = new Headers(init?.headers);
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      capturedRequests.push({ url: urlStr, headers: headersObj });
+
+      if (urlStr.includes('google')) {
+        return new Response(JSON.stringify({ organic: [{ title: 'Google', link: 'https://example.com' }] }), { status: 200 });
+      } else if (urlStr.includes('brave')) {
+        return new Response(JSON.stringify({ results: [{ title: 'Brave', url: 'https://example.com' }] }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    vi.stubGlobal('fetch', fakeGlobalFetch);
+    vi.stubEnv('PI_WEB_AGENT_GOOGLE_SERP_API_KEY', 'Bearer google-key');
+    vi.stubEnv('PI_WEB_AGENT_BRAVE_API_KEY', 'Bearer brave-key');
+
+    try {
+      // Global config: google-serp as primary with keyHeader and baseUrl set, fanout with brave
+      const globalConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://google.invalid/search',
+            keyHeader: 'Authorization',
+            fanout: { mode: 'on', providers: ['google-serp', 'brave'] }
+          }
+        }
+      });
+
+      // Project config: switch to brave as primary, keep fanout with google-serp
+      // The google endpoint should be preserved in baseUrls
+      const projectConfig = extractBackendConfigOverride({
+        backends: {
+          search: {
+            provider: 'brave',
+            baseUrls: { 'google-serp': 'https://google.invalid/search' },
+            fanout: { mode: 'on', providers: ['brave', 'google-serp'] }
+          }
+        }
+      });
+
+      const mergedConfig = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, globalConfig, projectConfig);
+      expect(mergedConfig.search.keyHeader).toBe('Authorization');
+      expect(mergedConfig.search.baseUrls?.['google-serp']).toBe('https://google.invalid/search');
+
+      const backends = createBackendSet(mergedConfig, offlineNetworkDeps());
+      const result = await backends.search({ query: 'test' });
+      expect(result.status).toBe('ok');
+
+      // Google SERP should get the Authorization header
+      const googleReq = capturedRequests.find(r => r.url.includes('google'));
+      expect(googleReq).toBeDefined();
+      expect(googleReq!.headers['authorization']).toBe('Bearer google-key');
+
+      // Brave should get its own API key
+      const braveReq = capturedRequests.find(r => r.url.includes('brave'));
+      expect(braveReq).toBeDefined();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it('creates self-hosted search and fetch backends', () => {
@@ -190,6 +353,49 @@ describe('backend factory', () => {
     }
   });
 
+  it('creates google-serp search from the endpoint, header, and environment API key', () => {
+    const original = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = 'serp-key';
+    const createGoogleSerpSearch = vi.fn().mockReturnValue(vi.fn());
+
+    try {
+      createBackendSet(
+        {
+          ...DEFAULT_BACKEND_CONFIG,
+          search: {
+            provider: 'google-serp',
+            baseUrl: 'https://serp.example/search',
+            keyHeader: 'Authorization'
+          }
+        },
+        { ...offlineNetworkDeps(), createGoogleSerpSearch }
+      );
+
+      expect(createGoogleSerpSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://serp.example/search',
+          apiKey: 'serp-key',
+          keyHeader: 'Authorization'
+        })
+      );
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+      else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
+    }
+  });
+
+  it('keeps the Google SERP base URL hint on a later, skipped call', async () => {
+    const backends = createBackendSet({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'google-serp' } }, offlineNetworkDeps());
+    const first = await backends.search({ query: 'a' });
+    const second = await backends.search({ query: 'b' });
+    expect(first.error?.message).toContain('requires backends.search.baseUrl');
+    expect(second.metadata.attempts?.[0]).toMatchObject({
+      outcome: 'skipped',
+      detail: 'Google SERP search requires backends.search.baseUrl.'
+    });
+    expect(second.error?.message).toContain('requires backends.search.baseUrl');
+  });
+
   it('records youcom as the search fallback source', async () => {
     const primary = vi.fn().mockResolvedValue({
       status: 'error',
@@ -250,7 +456,7 @@ describe('backend factory', () => {
       status: 'ok',
       metadata: { method: 'http', fallbackFrom: 'firecrawl', fallbackReason: 'weak' }
     });
-    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section');
+    expect(firecrawl).toHaveBeenCalledWith('https://example.com', 'relevant section', undefined);
     expect(httpFetch).toHaveBeenCalledWith({ url: 'https://example.com', query: 'relevant section' });
   });
 
@@ -616,6 +822,125 @@ describe('backend factory', () => {
   });
 });
 
+/**
+ * The two endpoint-backed providers both read their URL from config, so a fanout set has to keep
+ * them apart. These tests capture the real requests (stub global fetch, real provider code) rather
+ * than the constructor calls, because the bug was about what went over the wire.
+ */
+describe('backend factory endpoint-backed fanout providers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const responseJson = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  function captureRequests() {
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, headers: { ...((init?.headers as Record<string, string>) ?? {}) } });
+        return url.startsWith('http://localhost:8080')
+          ? responseJson({ results: [{ title: 'searxng result', url: 'https://s.test/1', content: 's' }] })
+          : responseJson({ status: 0, organic: [{ title: 'google result', link: 'https://g.test/1', snippet: 's' }] });
+      })
+    );
+    return requests;
+  }
+
+  const duck = async () => ({
+    status: 'ok' as const,
+    results: [{ title: 'duck', url: 'https://d.test/1', snippet: 's' }],
+    metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+  });
+
+  async function withGoogleKey(run: () => Promise<void>) {
+    const original = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+    process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = 'serp-key';
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
+      else process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY = original;
+    }
+  }
+
+  it('never posts the Google key to SearXNG when only one baseUrl is configured', async () => {
+    await withGoogleKey(async () => {
+      const requests = captureRequests();
+      const backends = createBackendSet(
+        {
+          search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fanout: { mode: 'on' } },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const result = await backends.search({ query: 'q' });
+
+      expect(result.status).toBe('ok');
+      // SearXNG queried the endpoint the user gave it, and nothing else was called: google-serp has
+      // no endpoint of its own here, so the fanout set leaves it out instead of handing it this URL.
+      expect(requests.map((r) => r.url)).toEqual(['http://localhost:8080/search?q=q&format=json']);
+      expect(JSON.stringify(requests.map((r) => r.headers))).not.toContain('serp-key');
+    });
+  });
+
+  it('sends each endpoint-backed fanout provider to its own url, key included on the Google one only', async () => {
+    await withGoogleKey(async () => {
+      const requests = captureRequests();
+      const backends = createBackendSet(
+        {
+          search: {
+            provider: 'searxng',
+            baseUrl: 'http://localhost:8080',
+            baseUrls: { 'google-serp': 'https://serp.example/search' },
+            fanout: { mode: 'on' }
+          },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const result = await backends.search({ query: 'q' });
+
+      expect(result.status).toBe('ok');
+      expect(requests.map((r) => r.url).sort()).toEqual([
+        'http://localhost:8080/search?q=q&format=json',
+        'https://serp.example/search'
+      ]);
+      expect(requests.find((r) => r.url === 'https://serp.example/search')?.headers['X-API-Key']).toBe('serp-key');
+      expect(JSON.stringify(requests.find((r) => r.url.startsWith('http://localhost:8080'))?.headers ?? {})).not.toContain('serp-key');
+    });
+  });
+
+  it('does not send a SearXNG request to the Google endpoint when google-serp is selected', async () => {
+    await withGoogleKey(async () => {
+      const requests = captureRequests();
+      const backends = createBackendSet(
+        {
+          search: { provider: 'google-serp', baseUrl: 'https://serp.example/search', fanout: { mode: 'on' } },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const result = await backends.search({ query: 'q' });
+
+      expect(result.status).toBe('ok');
+      // The reverse configuration: no SearXNG query at all, and the one request that went out is
+      // the Google SERP profile carrying the key.
+      expect(requests.map((r) => r.url)).toEqual(['https://serp.example/search']);
+      expect(requests[0].headers['X-API-Key']).toBe('serp-key');
+    });
+  });
+});
+
 describe('backend factory proxy support', () => {
   it('routes search through the configured proxy fetch and model-chosen pages through the model fetch', async () => {
     const proxiedUrls: string[] = [];
@@ -754,15 +1079,18 @@ describe('backend factory proxy support', () => {
     const search = await backends.search({ query: 'docs' });
     expect(search.status).toBe('error');
     expect(search.error?.code).toBe('BACKEND_CONFIG_INVALID');
-    expect(search.error?.message).toContain('htttp://proxy:8080');
+    expect(search.error?.message).not.toContain('htttp://');
+    expect(search.error?.message).toContain('backends.proxy.url is not a valid http or https URL');
 
     const page = await backends.fetchPage({ url: 'https://example.com/page' });
     expect(page.status).toBe('error');
     expect(page.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(page.error?.message).not.toContain('htttp://');
 
     const headless = await backends.headlessFetch({ url: 'https://example.com/page' });
     expect(headless.status).toBe('error');
     expect(headless.error?.code).toBe('BACKEND_CONFIG_INVALID');
+    expect(headless.error?.message).not.toContain('htttp://');
 
     // Neither a proxy agent nor a direct fetch was ever built or used.
     expect(createProxyFetch).not.toHaveBeenCalled();
@@ -984,7 +1312,10 @@ describe('backend factory guard proxy wiring', () => {
       createGuardProxy
     });
 
-    await expect(backends.fetchPage({ url: 'https://example.com/a' })).rejects.toThrow('listen EADDRINUSE');
+    // The page isn't fetched; since #76 that's a failed page, not a thrown run.
+    const first = await backends.fetchPage({ url: 'https://example.com/a' });
+    expect(first).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED' } });
+    expect(first.error?.message).toContain('listen EADDRINUSE');
     expect(createGuardProxy).toHaveBeenCalledTimes(1);
 
     await backends.fetchPage({ url: 'https://example.com/b' }).catch(() => undefined);
@@ -1239,5 +1570,183 @@ describe('backend factory failure-aware fallback (#55)', () => {
     expect(first.error?.message).toContain('requires backends.search.baseUrl');
     expect(second.metadata.attempts?.[0]).toMatchObject({ outcome: 'skipped', detail: 'SearXNG search requires backends.search.baseUrl.' });
     expect(second.error?.message).toContain('requires backends.search.baseUrl');
+  });
+
+  // #59: Pi's AbortSignal has to make it all the way down to the fetch that
+  // actually hits the network, through every wiring path in this file.
+  describe('signal wiring (#59)', () => {
+    it('hands the caller signal to DuckDuckGo html fetch', async () => {
+      const controller = new AbortController();
+      let capturedSignal: AbortSignal | undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          capturedSignal = init?.signal ?? undefined;
+          return new Promise<Response>(() => undefined);
+        })
+      );
+
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      void backends.search({ query: 'docs', signal: controller.signal });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal?.aborted).toBe(false);
+      controller.abort();
+      expect(capturedSignal?.aborted).toBe(true);
+    });
+
+    it('hands the caller signal to each provider under fanout', async () => {
+      let sawSignal: AbortSignal | undefined;
+      const duck = vi.fn(async ({ signal }: { signal?: AbortSignal }) => {
+        sawSignal = signal;
+        expect(signal?.aborted).toBe(false);
+        return {
+          status: 'ok' as const,
+          results: [{ title: 't', url: 'https://a.com/x', snippet: 's' }],
+          metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+        };
+      });
+      const backends = createBackendSet(
+        { search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo'] } }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
+        { ...offlineNetworkDeps(), createDuckDuckGoSearch: () => duck }
+      );
+
+      const controller = new AbortController();
+      const res = await backends.search({ query: 'q', signal: controller.signal });
+
+      expect(res.status).toBe('ok');
+      expect(duck).toHaveBeenCalledWith(expect.objectContaining({ query: 'q' }));
+      // Fanout wraps the caller signal with its own per-provider timeout (AbortSignal.any),
+      // so the provider doesn't get the exact same object, but it must still see the abort.
+      expect(sawSignal?.aborted).toBe(false);
+      controller.abort();
+      expect(sawSignal?.aborted).toBe(true);
+    });
+
+    it('rejects search with an already-aborted signal', async () => {
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(backends.search({ query: 'docs', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    });
+
+    it('hands the caller signal to the http fetch', async () => {
+      const controller = new AbortController();
+      let capturedSignal: AbortSignal | undefined;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          capturedSignal = init?.signal ?? undefined;
+          return new Promise<Response>(() => undefined);
+        })
+      );
+
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      void backends.fetchPage({ url: 'https://example.com', signal: controller.signal });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(capturedSignal).toBeDefined();
+      expect(capturedSignal?.aborted).toBe(false);
+      controller.abort();
+      expect(capturedSignal?.aborted).toBe(true);
+    });
+
+    it('hands the caller signal to firecrawl, and to the http fallback on weak extraction', async () => {
+      const controller = new AbortController();
+      const firecrawl = vi.fn(async (_url: string, _query?: string, signal?: AbortSignal) => {
+        expect(signal).toBe(controller.signal);
+        return {
+          status: 'needs_headless' as const,
+          url: 'https://example.com',
+          metadata: { method: 'firecrawl' as const, cacheHit: false },
+          error: { code: 'WEAK_EXTRACTION', message: 'weak' }
+        };
+      });
+      const httpFallback = vi.fn(async ({ signal }: { url: string; query?: string; signal?: AbortSignal }) => {
+        expect(signal).toBe(controller.signal);
+        return {
+          status: 'ok' as const,
+          url: 'https://example.com',
+          content: { text: 'HTTP content' },
+          metadata: { method: 'http' as const, cacheHit: false }
+        };
+      });
+      let createdFetchTools = 0;
+      const createHttpFetch = (options?: { fetchPage?: (input: { url: string; query?: string; signal?: AbortSignal }) => Promise<any> }) => {
+        const isHttpFallback = createdFetchTools++ === 0;
+        return async ({ url, query, signal }: { url: string; query?: string; signal?: AbortSignal }) => {
+          if (isHttpFallback) return httpFallback({ url, query, signal });
+          return options!.fetchPage!({ url, query, signal });
+        };
+      };
+
+      const backends = createBackendSet(
+        { search: { provider: 'duckduckgo' }, fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }, headless: { provider: 'local-browser' } },
+        { ...offlineNetworkDeps(), createFirecrawlFetch: () => firecrawl, createHttpFetch: createHttpFetch as never }
+      );
+
+      const result = await backends.fetchPage({ url: 'https://example.com', signal: controller.signal });
+      expect(result.status).toBe('ok');
+      expect(firecrawl).toHaveBeenCalledWith('https://example.com', undefined, controller.signal);
+      expect(httpFallback).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+    });
+
+    it('hands the caller signal to the headless fetcher', async () => {
+      const controller = new AbortController();
+      const headlessTool = vi.fn(async ({ url, signal }: { url: string; query?: string; signal?: AbortSignal }) => {
+        expect(signal).toBe(controller.signal);
+        return {
+          status: 'ok' as const,
+          url,
+          content: { text: '' },
+          metadata: { method: 'headless' as const, cacheHit: false }
+        };
+      });
+      const createHeadlessFetch = vi.fn(() => headlessTool);
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, { ...offlineNetworkDeps(), createHeadlessFetch: createHeadlessFetch as never });
+
+      await backends.headlessFetch({ url: 'https://example.com', signal: controller.signal });
+
+      expect(headlessTool).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com', signal: controller.signal }));
+    });
+
+    it('rejects fetchPage with an already-aborted signal (withTargetGuard)', async () => {
+      const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(backends.fetchPage({ url: 'https://example.com', signal: controller.signal })).rejects.toThrow('Operation aborted');
+    });
+  });
+});
+
+describe('cancelling through the real guard proxy (#59)', () => {
+  it('closes the upstream tunnel when a page fetch is cancelled mid-CONNECT', async () => {
+    // Real guard proxy and real undici, chained to an upstream proxy that takes
+    // the CONNECT and never answers. The fake lookup keeps DNS offline.
+    const upstream = await startSilentUpstream();
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, proxy: { url: `http://127.0.0.1:${upstream.port}` } },
+      { networkGuard: offlineNetworkDeps().networkGuard, policy: { sleep: async () => undefined, random: () => 0 } }
+    );
+    try {
+      const controller = new AbortController();
+      const pending = backends.fetchPage({ url: 'https://ok.test:9443/', signal: controller.signal });
+      pending.catch(() => undefined);
+
+      await upstream.sawConnect;
+      controller.abort();
+
+      await expect(pending).rejects.toThrow('Operation aborted');
+      await Promise.race([
+        upstream.closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close within 1s')), 1000))
+      ]);
+    } finally {
+      await backends.close();
+      await upstream.close();
+    }
   });
 });

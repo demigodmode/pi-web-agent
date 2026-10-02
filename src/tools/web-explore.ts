@@ -4,13 +4,14 @@ import type { ResearchEvidence } from '../orchestration/research-types.js';
 import { buildExplorePresentation } from '../presentation/explore-presentation.js';
 import type { EvidenceCaveatReason } from '../orchestration/evidence-quality.js';
 import type { WebExploreResponse } from '../types.js';
+import { raceAbort, throwIfAborted } from '../abort.js';
 
 export function createWebExploreTool({
   explore = createResearchWorkflow()
 }: {
   explore?:
     | {
-        run: (input: { query: string }) => Promise<{
+        run: (input: { query: string; signal?: AbortSignal }) => Promise<{
           decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
           evidence: ResearchEvidence[];
           workerPass: unknown;
@@ -18,7 +19,7 @@ export function createWebExploreTool({
           terminalFailure?: { code: string; message: string };
         }>;
       }
-    | ((input: { query: string }) => Promise<{
+    | ((input: { query: string; signal?: AbortSignal }) => Promise<{
         decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
         evidence: ResearchEvidence[];
         workerPass: unknown;
@@ -28,7 +29,8 @@ export function createWebExploreTool({
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
 
-  return async function webExplore({ query }: { query: string }) {
+  return async function webExplore({ query, signal }: { query: string; signal?: AbortSignal }) {
+    throwIfAborted(signal);
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
@@ -45,7 +47,11 @@ export function createWebExploreTool({
       };
     }
 
-    const result = await runExplore({ query: normalizedQuery });
+    const run = runExplore({ query: normalizedQuery, ...(signal ? { signal } : {}) });
+    // Backstop: Pi waits for this promise, so answer the cancel right away even if
+    // some layer underneath is slow to stop. The run itself keeps its lease in
+    // extension.ts until it really settles.
+    const result = signal ? await raceAbort(run, signal) : await run;
     if (result.terminalFailure) {
       const failed: WebExploreResponse = {
         status: 'error',

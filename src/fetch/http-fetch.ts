@@ -1,6 +1,8 @@
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import { RedirectError } from './guarded-fetch.js';
 import { findGuardError } from './network-guard.js';
+import { PAGE_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
 import type { WebFetchResponse } from '../types.js';
 
 function looksLikeScriptShell(html: string): boolean {
@@ -22,28 +24,72 @@ function isWeakHttpContent(options: { html: string; title?: string; text: string
   return veryShortBody && (lowDensity || hasGenericShellMarker);
 }
 
+function timedOut(url: string, timeoutMs: number): WebFetchResponse {
+  return {
+    status: 'error',
+    url,
+    metadata: { method: 'http', cacheHit: false },
+    error: { code: 'FETCH_TIMEOUT', message: `${url} did not respond within ${timeoutMs / 1000}s.`, failure: { kind: 'transient' } }
+  };
+}
+
+// undici's own messages ("fetch failed", "terminated") say little; the cause says what happened.
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause instanceof Error ? error.cause.message : undefined;
+  return cause && cause !== error.message ? `${error.message} (${cause})` : error.message;
+}
+
+/**
+ * A dropped connection, refused port, DNS or TLS failure, or a bad redirect is
+ * a problem with this one page, not the whole run: report it like any other
+ * failed read so the worker moves on to the next source (#76). A redirect loop
+ * won't fix itself, so it isn't called transient.
+ */
+function fetchFailed(url: string, error: unknown): WebFetchResponse {
+  return {
+    status: 'error',
+    url,
+    metadata: { method: 'http', cacheHit: false },
+    error: {
+      code: 'FETCH_FAILED',
+      message: `${url} could not be fetched: ${describeError(error)}.`,
+      failure: { kind: error instanceof RedirectError ? 'bad_response' : 'transient' }
+    }
+  };
+}
+
 export function createHttpFetcher({
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  timeoutMs = PAGE_FETCH_TIMEOUT_MS
 }: {
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 } = {}) {
-  return async function httpFetch(url: string, query?: string): Promise<WebFetchResponse> {
+  return async function httpFetch(url: string, query?: string, signal?: AbortSignal): Promise<WebFetchResponse> {
+    throwIfAborted(signal);
+    const requestAbort = requestSignal(signal, timeoutMs);
     let response: Response;
     try {
-      response = await fetchImpl(url);
+      response = await fetchImpl(url, { signal: requestAbort });
     } catch (error) {
+      if (signal?.aborted) throw abortError();
       const blocked = findGuardError(error);
-      if (!blocked) throw error;
-      return {
-        status: 'error',
-        url,
-        metadata: { method: 'http', cacheHit: false },
-        error: { code: blocked.code, message: blocked.message, failure: { kind: 'guard_refused' } }
-      };
+      if (blocked) {
+        return {
+          status: 'error',
+          url,
+          metadata: { method: 'http', cacheHit: false },
+          error: { code: blocked.code, message: blocked.message, failure: { kind: 'guard_refused' } }
+        };
+      }
+      if (requestAbort.aborted) return timedOut(url, timeoutMs);
+      return fetchFailed(url, error);
     }
     const contentType = response.headers.get('content-type') ?? '';
 
     if (!contentType.includes('text/html')) {
+      await response.body?.cancel().catch(() => undefined);
       return {
         status: 'unsupported',
         url: response.url,
@@ -51,7 +97,14 @@ export function createHttpFetcher({
       };
     }
 
-    const html = await response.text();
+    let html: string;
+    try {
+      html = await response.text();
+    } catch (error) {
+      if (signal?.aborted) throw abortError();
+      if (requestAbort.aborted) return timedOut(url, timeoutMs);
+      return fetchFailed(url, error);
+    }
     const baselineExtraction = extractReadableContentSafely(html);
     const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
     const extraction = queryExtraction ?? baselineExtraction;

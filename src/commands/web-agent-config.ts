@@ -1,7 +1,10 @@
 import {
+  BASE_URL_SEARCH_PROVIDERS,
   DEFAULT_BACKEND_CONFIG,
+  DUCKDUCKGO_FALLBACK_PROVIDERS,
   isValidProxyUrl,
   mergeBackendConfigLayers,
+  resolveSearchBaseUrl,
   stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders,
@@ -9,6 +12,7 @@ import {
   type BackendConfigOverride
 } from '../backends/config.js';
 import { checkBackendHealth } from '../backends/doctor.js';
+import { repoResearchDoctorLine } from '../repo/doctor.js';
 import { parseCidr } from '../fetch/network-guard.js';
 import type { SearchProviderName } from '../types.js';
 import {
@@ -59,6 +63,7 @@ type CommandDeps = {
   checkTypebox?: () => Promise<boolean>;
   checkJitiCompat?: () => { pending: string[] };
   checkBackends?: (config: BackendConfig) => Promise<string[]>;
+  checkRepoResearch?: () => Promise<string>;
   getChangelog?: () => Promise<string | undefined>;
 };
 
@@ -302,7 +307,7 @@ export function createBackendUrlEditor(
   };
 }
 
-function buildBackendSettingsItems(
+export function buildBackendSettingsItems(
   scope: PresentationScope,
   backends: BackendConfig,
   theme: any,
@@ -323,19 +328,20 @@ function buildBackendSettingsItems(
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp']
     },
     {
       id: 'backend:search:baseUrl',
-      label: 'SearXNG URL',
-      currentValue: backends.search.baseUrl ?? 'not set',
-      submenu: createBackendUrlEditor(theme, 'SearXNG base URL', 'http://localhost:8080', onUrlEditorOpenChange)
+      label: 'Search endpoint URL',
+      // Show the URL the selected provider will actually use, not just the raw baseUrl field.
+      currentValue: resolveSearchBaseUrl(backends.search, backends.search.provider) ?? 'not set',
+      submenu: createBackendUrlEditor(theme, 'Search endpoint URL', 'http://localhost:8080', onUrlEditorOpenChange)
     },
     {
       id: 'backend:search:fallback',
       label: 'Search fallback',
-      currentValue: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' || backends.search.provider === 'exa' || backends.search.provider === 'tavily' ? backends.search.fallback ?? 'off' : 'off',
-      values: backends.search.provider === 'searxng' || backends.search.provider === 'brave' || backends.search.provider === 'youcom' || backends.search.provider === 'exa' || backends.search.provider === 'tavily' ? ['off', 'duckduckgo'] : ['off']
+      currentValue: DUCKDUCKGO_FALLBACK_PROVIDERS.includes(backends.search.provider) ? backends.search.fallback ?? 'off' : 'off',
+      values: DUCKDUCKGO_FALLBACK_PROVIDERS.includes(backends.search.provider) ? ['off', 'duckduckgo'] : ['off']
     },
     {
       id: 'backend:search:fanout:mode',
@@ -370,6 +376,12 @@ function buildBackendSettingsItems(
     {
       id: 'backend:secret:tavily',
       label: 'Tavily API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:google-serp',
+      label: 'Google SERP API key',
       currentValue: 'env var',
       values: ['env var']
     },
@@ -558,10 +570,20 @@ export function applySettingsValue(
     currentDraft.tools = nextTools;
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily')) {
-    currentBackends.search.provider = newValue;
-    if (newValue !== 'searxng') {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
+    const oldProvider = currentBackends.search.provider as SearchProviderName;
+    currentBackends.search.provider = newValue as SearchProviderName;
+
+    // Switching between endpoint providers drops the old URL: one provider's endpoint must never be used by the other.
+    if (oldProvider !== newValue && BASE_URL_SEARCH_PROVIDERS.includes(oldProvider) && BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
       delete currentBackends.search.baseUrl;
+    }
+
+    // baseUrl belongs to the endpoint-backed providers; the others drop it.
+    if (!BASE_URL_SEARCH_PROVIDERS.includes(newValue as SearchProviderName)) {
+      delete currentBackends.search.baseUrl;
+    }
+    if (newValue !== 'searxng') {
       delete currentBackends.search.options;
     }
     if (newValue === 'duckduckgo') {
@@ -570,7 +592,7 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:fallback') {
-    if (newValue === 'duckduckgo' && (currentBackends.search.provider === 'searxng' || currentBackends.search.provider === 'brave' || currentBackends.search.provider === 'youcom' || currentBackends.search.provider === 'exa' || currentBackends.search.provider === 'tavily')) {
+    if (newValue === 'duckduckgo' && DUCKDUCKGO_FALLBACK_PROVIDERS.includes(currentBackends.search.provider)) {
       currentBackends.search.fallback = 'duckduckgo';
     } else {
       delete currentBackends.search.fallback;
@@ -615,11 +637,27 @@ export function applySettingsValue(
   }
 
   if (id === 'backend:search:baseUrl') {
+    const selectedProvider = currentBackends.search.provider as SearchProviderName;
     if (newValue.trim()) {
-      currentBackends.search.provider = 'searxng';
+      // Keep an endpoint-backed provider (searxng, google-serp); anything else is promoted to searxng.
+      if (!BASE_URL_SEARCH_PROVIDERS.includes(selectedProvider)) {
+        currentBackends.search.provider = 'searxng';
+      }
       currentBackends.search.baseUrl = newValue.trim();
+      // Remove the selected provider's entry from baseUrls so baseUrl takes effect
+      if (currentBackends.search.baseUrls?.[selectedProvider]) {
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[selectedProvider];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
     } else {
       delete currentBackends.search.baseUrl;
+      // When clearing, also remove from baseUrls
+      if (currentBackends.search.baseUrls?.[selectedProvider]) {
+        const newBaseUrls = { ...currentBackends.search.baseUrls };
+        delete newBaseUrls[selectedProvider];
+        currentBackends.search.baseUrls = Object.keys(newBaseUrls).length > 0 ? newBaseUrls : undefined;
+      }
     }
   }
 
@@ -724,6 +762,8 @@ export function collapseBackendConfigToOverride(
       ? { ...config.search }
       : {
           ...(config.search.baseUrl !== inheritedConfig.search.baseUrl ? { baseUrl: config.search.baseUrl } : {}),
+          ...(!sameJson(config.search.baseUrls, inheritedConfig.search.baseUrls) ? { baseUrls: config.search.baseUrls } : {}),
+          ...(config.search.keyHeader !== inheritedConfig.search.keyHeader ? { keyHeader: config.search.keyHeader } : {}),
           ...(config.search.fallback !== inheritedConfig.search.fallback ? { fallback: config.search.fallback } : {}),
           ...(!sameJson(config.search.options, inheritedConfig.search.options) ? { options: config.search.options } : {}),
           ...(!sameJson(config.search.fanout, inheritedConfig.search.fanout) ? { fanout: config.search.fanout } : {})
@@ -1050,6 +1090,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         config.proxy && isValidProxyUrl(config.proxy.url) ? createProxyFetch(config.proxy) : fetch
     })
   );
+  const checkRepoResearch = deps.checkRepoResearch ?? (() => repoResearchDoctorLine());
   const getChangelog = deps.getChangelog ?? (() => getLatestChangelogEntry());
 
   pi.registerCommand('web-agent', {
@@ -1077,6 +1118,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         const backendConfig = loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG;
         const backendIssues = validateBackendConfig(backendConfig);
         const backendHealth = await checkBackends(backendConfig);
+        const repoResearchLine = await checkRepoResearch();
         const lines = [
           'pi-web-agent: loaded',
           `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
@@ -1086,7 +1128,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           `network allow list: ${backendConfig.network?.allowRanges?.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
           `trust upstream proxy for private addresses: ${backendConfig.network?.trustProxyDns ? 'on' : 'off'}`,
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
-          ...backendHealth
+          ...backendHealth,
+          repoResearchLine
         ];
 
         if (browser.ok) {

@@ -156,3 +156,12 @@ describe('DuckDuckGo search parsing', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('fetchDuckDuckGoHtml cancellation', () => {
+  it('hands the caller signal to fetch', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html></html>'));
+    const controller = new AbortController();
+    await fetchDuckDuckGoHtml('q', { fetchImpl: fetchImpl as unknown as typeof fetch, signal: controller.signal });
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('html.duckduckgo.com'), expect.objectContaining({ signal: controller.signal }));
+  });
+});

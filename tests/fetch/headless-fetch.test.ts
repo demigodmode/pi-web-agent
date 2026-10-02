@@ -296,6 +296,53 @@ describe('headless fetch', () => {
       proxy: { server: 'http://127.0.0.1:7890', username: 'user', password: 'secret' }
     });
   });
+
+  it('does not launch a browser for a run that is already cancelled', async () => {
+    const launchBrowser = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      headlessFetch('https://example.com/', {
+        signal: controller.signal,
+        resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+        launchBrowser
+      })
+    ).rejects.toThrow('Operation aborted');
+    expect(launchBrowser).not.toHaveBeenCalled();
+  });
+
+  it('closes the browser when the run is cancelled during navigation', async () => {
+    let gotoStarted = false;
+    let failGoto: (error: Error) => void = () => undefined;
+    const browserClose = vi.fn(async () => failGoto(new Error('Target page, context or browser has been closed')));
+    const controller = new AbortController();
+
+    const pending = headlessFetch('https://example.com/slow', {
+      signal: controller.signal,
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: () =>
+              new Promise((_, reject) => {
+                gotoStarted = true;
+                failGoto = reject;
+              }),
+            waitForLoadState: async () => undefined,
+            content: async () => '',
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: browserClose
+      }))
+    });
+
+    await vi.waitFor(() => expect(gotoStarted).toBe(true));
+    controller.abort();
+    await expect(pending).rejects.toThrow('Operation aborted');
+    expect(browserClose).toHaveBeenCalled();
+  });
 });
 
 

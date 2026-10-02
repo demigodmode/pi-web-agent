@@ -78,7 +78,8 @@ describe('Pi extension entrypoint', () => {
         search: { provider: 'searxng', baseUrl: 'http://localhost:8080' },
         fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002' },
         headless: { provider: 'local-browser' }
-      }
+      },
+      repoCache: expect.objectContaining({ root: expect.any(String) })
     });
   });
 
@@ -345,6 +346,53 @@ describe('Pi extension entrypoint', () => {
     expect(second.close).not.toHaveBeenCalled();
   });
 
+  it('hands Pi the abort right away but keeps a cancelled run leased until it settles', async () => {
+    vi.resetModules();
+    let releaseRun!: () => void;
+    let seenSignal: AbortSignal | undefined;
+    const first = {
+      run: vi.fn(({ signal }: { signal?: AbortSignal }) => {
+        seenSignal = signal;
+        return new Promise((resolve) => (releaseRun = () => resolve(answer)));
+      }),
+      close: vi.fn(async () => undefined)
+    };
+    const second = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    const createResearchWorkflow = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+
+    const configs = [
+      { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
+      { search: { provider: 'brave' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+    ];
+    let current = 0;
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __presentationConfigStore: configStore(() => configs[current])
+    };
+
+    dynamicExtension(pi as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+
+    const controller = new AbortController();
+    const cancelled = webExplore.execute('call-1', { query: 'first' }, controller.signal);
+    await vi.waitFor(() => expect(first.run).toHaveBeenCalled());
+    expect(seenSignal).toBe(controller.signal);
+    controller.abort();
+    await expect(cancelled).rejects.toThrow('Operation aborted');
+
+    current = 1;
+    await webExplore.execute('call-2', { query: 'second' });
+    expect(first.close).not.toHaveBeenCalled();
+
+    releaseRun();
+    await vi.waitFor(() => expect(first.close).toHaveBeenCalledTimes(1));
+  });
+
   it('closes the current workflow on session shutdown', async () => {
     vi.resetModules();
     const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
@@ -371,5 +419,63 @@ describe('Pi extension entrypoint', () => {
     await handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
 
     await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+  });
+
+  it('owns the repo cache: shutdown awaits its close, and the next session gets a fresh one', async () => {
+    vi.resetModules();
+    const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { createRepoCache } = await import('../src/repo/repo-cache.js');
+    const base = mkdtempSync(join(tmpdir(), 'pwa-ext-cache-'));
+    try {
+      const seen: any[] = [];
+      const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+      vi.doMock('../src/orchestration/index.js', () => ({
+        createResearchWorkflow: vi.fn((options: any) => {
+          seen.push(options.repoCache);
+          return workflow;
+        })
+      }));
+      const { default: dynamicExtension } = await import('../src/extension.js');
+      const handlers: Record<string, (event: unknown) => unknown> = {};
+      const tools: any[] = [];
+      const pi = {
+        registerTool: (tool: any) => tools.push(tool),
+        registerCommand: vi.fn(),
+        on: vi.fn((event: string, handler: (event: unknown) => unknown) => {
+          handlers[event] = handler;
+        }),
+        __repoCacheFactory: () => createRepoCache({ baseDir: base, bootId: 'testboot' }),
+        __presentationConfigStore: configStore(() => ({
+          search: { provider: 'duckduckgo' },
+          fetch: { provider: 'http' },
+          headless: { provider: 'local-browser' }
+        }))
+      };
+
+      dynamicExtension(pi as never);
+      const webExplore = tools.find((tool) => tool.name === 'web_explore');
+      await webExplore.execute('call-1', { query: 'x' });
+      const firstCache = seen[0];
+      const acquired = await firstCache.acquire('acme/widget@a', async (dest: string) => {
+        await mkdir(dest, { recursive: true });
+        await writeFile(join(dest, 'f'), 'x');
+        return { ok: true, sha: 'a'.repeat(40) };
+      });
+      acquired.lease.release();
+      expect(existsSync(firstCache.root)).toBe(true);
+
+      await handlers.session_shutdown({ type: 'session_shutdown', reason: 'new' });
+      expect(existsSync(firstCache.root)).toBe(false);
+      expect(workflow.close).toHaveBeenCalledTimes(1);
+
+      await webExplore.execute('call-2', { query: 'y' });
+      expect(seen[1]).toBeDefined();
+      expect(seen[1]).not.toBe(firstCache);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });

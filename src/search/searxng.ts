@@ -2,7 +2,7 @@ import type { SearxngOptions } from '../backends/config.js';
 import { createJsonSearchProvider, normalizeResultsArray } from './json-provider.js';
 
 function buildSearchUrl(baseUrl: string, query: string, options: SearxngOptions = {}) {
-  const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
+  const url = new URL('search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'json');
   if (options.categories?.length) url.searchParams.set('categories', options.categories.join(','));

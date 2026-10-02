@@ -1,6 +1,7 @@
+import { abortableSleep, throwIfAborted } from '../abort.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import type { Attempt, FailureInfo, ResearchFetchInput, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { Attempt, FailureInfo, ResearchFetchInput, SearchInput, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { failureOf, shouldFallBack } from './failure.js';
 import type { ProviderHealth, ProviderHealthState } from './provider-health.js';
 
@@ -10,11 +11,12 @@ export const RETRY_JITTER_MS = 250;
 export type PolicyDeps = {
   health: ProviderHealth;
   now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
+  /** Gets the run's signal so the backoff can end early on a cancel. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   random?: () => number;
 };
 
-type Search = (input: { query: string }) => Promise<WebSearchResponse>;
+type Search = (input: SearchInput) => Promise<WebSearchResponse>;
 type FetchPage = (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 
 const USER_FIXABLE_KINDS: ReadonlySet<string> = new Set(['not_configured', 'auth_failed', 'quota_exhausted']);
@@ -23,8 +25,6 @@ const USER_FIXABLE_KINDS: ReadonlySet<string> = new Set(['not_configured', 'auth
 function detailFor(failure: FailureInfo, message: string | undefined): string | undefined {
   return message && USER_FIXABLE_KINDS.has(failure.kind) ? message : undefined;
 }
-
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function retryDelay(deps: PolicyDeps): number {
   return RETRY_BASE_MS + Math.floor((deps.random ?? Math.random)() * RETRY_JITTER_MS);
@@ -64,6 +64,7 @@ function failedAttempt(backend: string, failure: FailureInfo, state: ProviderHea
  */
 export function withSearchPolicy(name: SearchProviderName, search: Search, deps: PolicyDeps, healthKey: string = name): Search {
   return async (input) => {
+    throwIfAborted(input.signal);
     const state = deps.health.get(healthKey);
     if (state.state !== 'available') {
       return {
@@ -76,11 +77,15 @@ export function withSearchPolicy(name: SearchProviderName, search: Search, deps:
 
     const attempts: Attempt[] = [];
     let result = await search(input);
+    // A cancel is not a provider failure: no retry, no cooldown, no attempt entry (#59).
+    throwIfAborted(input.signal);
     let failure = failureOf(result);
     if (failure?.kind === 'transient') {
       attempts.push({ backend: name, outcome: 'retried', failure });
-      await (deps.sleep ?? defaultSleep)(retryDelay(deps));
+      await (deps.sleep ?? abortableSleep)(retryDelay(deps), input.signal);
+      throwIfAborted(input.signal);
       result = await search(input);
+      throwIfAborted(input.signal);
       failure = failureOf(result);
     }
 
@@ -160,7 +165,9 @@ export function chainSearch(providers: Search[], deps: PolicyDeps): Search {
     let fanout: WebSearchResponse['metadata']['fanout'];
 
     for (const provider of providers) {
+      throwIfAborted(input.signal);
       const result = await provider(input);
+      throwIfAborted(input.signal);
       firstBackend ??= result.metadata.backend;
       attempts.push(...(result.metadata.attempts ?? []));
       fanout ??= result.metadata.fanout;
@@ -221,6 +228,7 @@ export function withFetchPolicy(primary: FetchPage, fallback: FetchPage | undefi
   const finish = (result: WebFetchResponse): WebFetchResponse => ({ ...result, presentation: buildFetchPresentation(result) });
 
   return async (input) => {
+    throwIfAborted(input.signal);
     const attempts: Attempt[] = [];
     const state = deps.health.get(healthKey);
     let first: WebFetchResponse | undefined;
@@ -235,11 +243,14 @@ export function withFetchPolicy(primary: FetchPage, fallback: FetchPage | undefi
       };
     } else {
       first = await primary(input);
+      throwIfAborted(input.signal);
       let failure = failureOf(first);
       if (failure?.kind === 'transient') {
         attempts.push({ backend: 'firecrawl', outcome: 'retried', failure });
-        await (deps.sleep ?? defaultSleep)(retryDelay(deps));
+        await (deps.sleep ?? abortableSleep)(retryDelay(deps), input.signal);
+        throwIfAborted(input.signal);
         first = await primary(input);
+        throwIfAborted(input.signal);
         failure = failureOf(first);
       }
       if (failure) {
@@ -256,6 +267,7 @@ export function withFetchPolicy(primary: FetchPage, fallback: FetchPage | undefi
     }
 
     const second = await fallback(input);
+    throwIfAborted(input.signal);
     attempts.push({ backend: 'http', outcome: second.status === 'ok' ? 'results' : 'failed', ...(second.error?.failure ? { failure: second.error.failure } : {}) });
     return finish({
       ...second,

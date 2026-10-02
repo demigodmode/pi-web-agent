@@ -42,6 +42,10 @@ If Pi is already running, use `/reload` after code changes.
 
 If something looks stale, double-check whether Pi is loading the local repo copy or the installed package copy.
 
+## Branches
+
+Day-to-day work happens on `develop`. Branch off it for features and fixes, and open PRs against `develop`. CI runs on pull requests and on pushes to `develop` and `main`. `main` only moves when a release is merged in. See [Releases](/releases).
+
 ## Optional browser smoke test
 
 Set `PI_HEADLESS_SMOKE=1` before running Vitest if you want the real-browser smoke coverage.

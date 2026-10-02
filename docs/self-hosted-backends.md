@@ -13,8 +13,9 @@ Hosted options:
 - You.com Search for API-backed source discovery
 - Exa for API-backed source discovery
 - Tavily for API-backed source discovery
+- Google SERP for any hosted vendor that returns Google results (Serper, SerpBase, and similar)
 
-These are all hosted, so they use an API key instead of a `baseUrl`.
+These are all hosted, so they use an API key. Only `google-serp` also needs a `baseUrl`, since you choose the vendor.
 
 This keeps the public Pi tool the same: the model still calls `web_explore`. The backend config only changes what `web_explore` uses internally.
 
@@ -65,15 +66,15 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, and Tavily
-- edit the SearXNG base URL
+- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, and Google SERP
+- edit the search endpoint URL (SearXNG or Google SERP)
 - enable a hosted/SearXNG → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
 - edit the Firecrawl base URL
 - enable Firecrawl → HTTP fallback
 - set the outbound proxy URL
 
-Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
+Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
 
 ## Config file locations
 
@@ -139,6 +140,68 @@ Supported SearXNG options can stay in config:
 ```
 
 These map to SearXNG search query params. Unsupported or malformed values show up as config warnings in `/web-agent doctor`.
+
+## Google SERP endpoint
+
+`google-serp` is a vendor-neutral wrapper around any hosted service that front-ends Google results (Serper, SerpBase, and similar). Nothing in it is tied to one vendor: you set the endpoint and the key, and switching vendors is a base-URL change rather than a config migration.
+
+Set the key:
+
+```text
+PI_WEB_AGENT_GOOGLE_SERP_API_KEY=...
+```
+
+Then pick **Settings → Backends → Search backend → google-serp** and enter the endpoint under **Search endpoint URL**, or write it directly:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "google-serp",
+      "baseUrl": "https://google.serper.dev/search"
+    }
+  }
+}
+```
+
+`pi-web-agent` POSTs this body to that URL:
+
+```json
+{ "q": "example", "num": 10 }
+```
+
+with the key in a header (`X-API-Key` by default) and expects the common `organic[]` shape back:
+
+```json
+{
+  "organic": [
+    { "title": "Example", "link": "https://example.com", "snippet": "..." }
+  ]
+}
+```
+
+If your vendor spells the header differently, set `keyHeader`:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "google-serp",
+      "baseUrl": "https://api.example.com/search",
+      "keyHeader": "Authorization"
+    }
+  }
+}
+```
+
+The key is sent as-is in the header, so if the header needs a scheme (like `Authorization: Bearer <key>`), include the scheme in the key itself.
+
+Two things worth knowing:
+
+- Vendors in this space often answer HTTP 200 with a status envelope in the body. A 2xx status in the body is treated as success even if it carries a message field. Higher status codes (e.g., 1001 for unauthorized, 1504 for transient) are checked against documented error codes and wording to classify the failure, so a bad key or empty balance shows up as an auth or quota failure instead of "no results".
+- SerpApi needs the key as a query parameter and returns `organic_results`, so it is a separate profile rather than part of this one.
+
+Run `/web-agent doctor` after editing config: it sends the same one-result probe and reports `search backend: google-serp ok`, a warning with the reason, or the missing base URL/key.
 
 ## Brave Search
 
@@ -320,6 +383,23 @@ To select which providers fan out, set the fanout mode from **Settings → Backe
 
 Each provider gets a short timeout during fanout, so one slow or unreachable backend (for example a self-hosted SearXNG that is down) is skipped instead of stalling the whole research pass.
 
+`searxng` and `google-serp` are the two providers that need an endpoint, and each reads its own: `backends.search.baseUrl` belongs to the provider you selected, and `backends.search.baseUrls.<provider>` gives one to another provider. So a fanout set that mixes both looks like this:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "searxng",
+      "baseUrl": "http://localhost:8080",
+      "baseUrls": { "google-serp": "https://google.serper.dev/search" },
+      "fanout": { "mode": "on", "providers": ["duckduckgo", "searxng", "google-serp"] }
+    }
+  }
+}
+```
+
+A provider with no endpoint of its own stays out of the set instead of being pointed at the other one's URL, so your Google key never travels to SearXNG (or the other way round). `/web-agent doctor` names the key each provider is missing.
+
 The equivalent config is:
 
 ```json
@@ -362,7 +442,7 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 }
 ```
 
-When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, and Firecrawl failures stay visible instead of silently switching to external/default backends.
+When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, Google SERP, and Firecrawl failures stay visible instead of silently switching to external/default backends.
 
 Fallback also looks at why a backend failed before moving on:
 
@@ -516,7 +596,7 @@ Then try a normal research prompt:
 Find current docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, Exa, Tavily, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
+The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, Exa, Tavily, Google SERP, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
 
 ## Troubleshooting
 
@@ -547,4 +627,4 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, or Tavily to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
+`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, Tavily, or Google SERP to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.

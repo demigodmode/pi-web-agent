@@ -55,3 +55,15 @@ describe('createYoutubeReader', () => {
     expect(res.error?.code).toBe('YOUTUBE_READ_FAILED');
   });
 });
+
+describe('youtube reader cancellation', () => {
+  it('routes the caption requests through a fetch that carries the caller signal', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('nope', { status: 404 }));
+    const controller = new AbortController();
+    await createYoutubeReader({ fetchImpl: fetchImpl as unknown as typeof fetch }).read('https://www.youtube.com/watch?v=XYZ987', controller.signal);
+    expect(fetchImpl).toHaveBeenCalled();
+    const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal!;
+    controller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+});

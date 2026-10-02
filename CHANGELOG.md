@@ -18,6 +18,27 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [1.14.0] - 2026-10-02
+### Added
+- Paste a GitHub repo link into your question and `web_explore` now downloads that repo (one commit, shallow) and reads it locally (#72). Clones stay around for the session so follow-ups are quick, and get cleaned up when the session ends. Private repos work with `gh auth login` or `GITHUB_TOKEN`. Repos over 300MB, a clone that takes over 60 seconds or a missing `git` stop the answer with a clear reason instead of falling back to the README.
+- Questions about a pasted repo are now answered from the code itself (#70). Very large repos can be searched partially; a tree or folder link narrows the search to that directory. Results favor nearby matching terms, skip vendored files and build output at the search root, rank generated and minified files lower, and return excerpts from up to four files with links pinned to the commit read. The README adds context when the search finds little.
+- A `google-serp` search backend: point `backends.search.baseUrl` at any hosted Google SERP vendor (Serper, SerpBase, and similar), set its key in `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and set `backends.search.keyHeader` if it doesn't use `X-API-Key`. It POSTs `{ q, num }` and reads the common `organic[]` shape, so switching vendors is a base-URL change. Without the key the provider stays absent and nothing else changes, and a failure reported inside a 2xx body (bad key, empty balance) is classified as auth/quota instead of "no results". SerpApi's query-param profile is not part of this. (#46)
+
+### Changed
+- `typebox` is now a peer dependency instead of a bundled one, so Pi 0.99 stops warning about it at startup (#82, #83). Pi already provides `typebox` to extensions. If you installed an earlier version, update or reinstall the package so the old bundled copy goes away.
+- Development and CI now run against Pi 1.0. The extension already worked with it; nothing changes for users. (#86)
+
+### Fixed
+- SearXNG behind a reverse proxy under a sub-path, like `https://host/searx/`, works now. The path in the base URL used to be dropped, so requests went to `/search` on the host. (#89)
+- Pressing Esc on a running `web_explore` now actually stops it (#59). Searches, page fetches and the headless browser all stop, the browser gets closed, and nothing retries or falls back after you cancel. A cancel also never puts a search provider on cooldown. Before this, Pi sat there until the whole research run had finished on its own.
+- Page fetches and the GitHub and YouTube readers give up after 15 seconds instead of hanging on a server that never answers. PDFs get 60 seconds since they can be big, and Firecrawl scrapes get 45. A page that times out is treated as a failed read and the run moves on to other sources; Firecrawl still gets its usual one retry. (#59)
+- The guard proxy no longer opens an outbound connection for a request whose client hung up while the address was still being looked up. (#59)
+- One flaky site can't take down a whole `web_explore` run anymore (#76). A connection that drops, a refused port, a DNS or TLS failure or a redirect loop on one page used to throw all the way up and fail the run. Now that page is just a failed read with the reason attached, and the answer comes from the other sources.
+- A proxy URL that isn't valid no longer shows its password in error messages or in `/web-agent doctor`, `show` and settings. (#93)
+
+### Breaking
+- None.
+
 ## [1.13.0] - 2026-09-24
 ### Added
 - `web_explore` now uses the research question to pick relevant sections from long HTML pages instead of stopping at the first 4,000 characters. It can reach an answer buried later in a page, whether the page came through HTTP, headless browsing, or Firecrawl. Direct `web_fetch` output is unchanged. (#36)

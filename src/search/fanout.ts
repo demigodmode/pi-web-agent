@@ -1,12 +1,13 @@
+import { abortError, throwIfAborted } from '../abort.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
 import { canonicalizeUrl } from '../orchestration/url.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { RETRY_BASE_MS, RETRY_JITTER_MS } from '../backends/fallback-policy.js';
-import type { Attempt, FailureInfo, FanoutMetadata, FanoutMode, FanoutOutcome, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
+import type { Attempt, FailureInfo, FanoutMetadata, FanoutMode, FanoutOutcome, SearchInput, SearchProviderName, SearchResult, WebSearchResponse } from '../types.js';
 
 export type FanoutProvider = {
   name: SearchProviderName;
-  search: (input: { query: string }) => Promise<WebSearchResponse>;
+  search: (input: SearchInput) => Promise<WebSearchResponse>;
 };
 
 const FANOUT_MIN_RESULTS = 3;
@@ -73,10 +74,44 @@ type SearchFn = FanoutProvider['search'];
 
 /**
  * Per-call timeout. Wrap it INSIDE the retry policy so a stalled call is a transient
- * failure the policy can retry once (#55).
+ * failure the policy can retry once (#55). The timeout aborts the request itself (#59).
+ *
+ * If the CALLER's signal (not the combined one used for the timeout) is aborted by the
+ * time the call settles, whichever way it settles, reject with abortError() instead of
+ * handing back a synthetic transient result: that's a cancel, not a provider failure.
  */
 export function withCallTimeout(search: SearchFn, timeoutMs: number, name: SearchProviderName): SearchFn {
-  return (input) => withTimeout(search(input), timeoutMs, name);
+  return (input) => {
+    const callerSignal = input.signal;
+    const timeout = new AbortController();
+    const signal = callerSignal ? AbortSignal.any([callerSignal, timeout.signal]) : timeout.signal;
+    const timedOut = (): WebSearchResponse => ({
+      status: 'error',
+      results: [],
+      metadata: { backend: name, cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: `${name} did not answer in time.`, failure: { kind: 'transient' } }
+    });
+    return new Promise<WebSearchResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        timeout.abort();
+        if (callerSignal?.aborted) reject(abortError());
+        else resolve(timedOut());
+      }, timeoutMs);
+      timer.unref?.();
+      search({ ...input, signal }).then(
+        (value) => {
+          clearTimeout(timer);
+          if (callerSignal?.aborted) reject(abortError());
+          else resolve(value);
+        },
+        () => {
+          clearTimeout(timer);
+          if (callerSignal?.aborted) reject(abortError());
+          else resolve(timedOut());
+        }
+      );
+    });
+  };
 }
 
 /** A provider that doesn't answer in time (or throws) counts as a transient failure, so one
@@ -89,7 +124,9 @@ function withTimeout(promise: Promise<WebSearchResponse>, ms: number, name: Sear
     error: { code: 'FETCH_FAILED', message: `${name} did not answer in time.`, failure: { kind: 'transient' } }
   });
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(timedOut()), ms);
+    const timer = setTimeout(() => {
+      resolve(timedOut());
+    }, ms);
     timer.unref?.();
     promise.then(
       (value) => {
@@ -127,11 +164,13 @@ export function createFanoutSearch({
   timeoutMs?: number;
 }) {
   const backstopMs = fanoutBackstopMs(timeoutMs);
-  return async function fanoutSearch({ query }: { query: string }): Promise<WebSearchResponse> {
+  return async function fanoutSearch({ query, signal }: SearchInput): Promise<WebSearchResponse> {
     const [primary, ...rest] = providers;
 
     async function runSet(set: FanoutProvider[]) {
-      const responses = await Promise.all(set.map((p) => withTimeout(p.search({ query }), backstopMs, p.name)));
+      const responses = await Promise.all(set.map((p) => withTimeout(p.search({ query, signal }), backstopMs, p.name)));
+      // Providers turn a cancelled request into a failure result; don't aggregate those.
+      throwIfAborted(signal);
       return set.map((provider, i) => ({ provider, response: responses[i] }));
     }
 
@@ -186,7 +225,8 @@ export function createFanoutSearch({
     }
 
     if (mode === 'auto') {
-      const primaryResponse = await withTimeout(primary.search({ query }), backstopMs, primary.name);
+      const primaryResponse = await withTimeout(primary.search({ query, signal }), backstopMs, primary.name);
+      throwIfAborted(signal);
       if (isTerminalFailure(failureOf(primaryResponse))) {
         return finalize([{ provider: primary, response: primaryResponse }], 'auto');
       }

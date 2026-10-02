@@ -2,6 +2,7 @@ import { extractText, getDocumentProxy, getMeta } from 'unpdf';
 import type { WebFetchResponse } from '../types.js';
 import type { SpecialContentReader } from './types.js';
 import { READER_TEXT_CAP } from './limits.js';
+import { PDF_FETCH_TIMEOUT_MS, requestSignal } from '../abort.js';
 
 type PdfReaderDeps = {
   fetchImpl?: typeof fetch;
@@ -44,9 +45,9 @@ export function createPdfReader({ fetchImpl = fetch, extractPdfText = defaultExt
     canHandleContentType(contentType: string): boolean {
       return contentType.toLowerCase().includes('application/pdf');
     },
-    async read(url: string): Promise<WebFetchResponse> {
+    async read(url: string, signal?: AbortSignal): Promise<WebFetchResponse> {
       try {
-        const response = await fetchImpl(url);
+        const response = await fetchImpl(url, { signal: requestSignal(signal, PDF_FETCH_TIMEOUT_MS) });
         if (!('ok' in response) || !response.ok) {
           return {
             status: 'error',

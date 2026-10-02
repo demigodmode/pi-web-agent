@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { abortError, throwIfAborted } from '../abort.js';
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
@@ -61,7 +62,8 @@ export async function headlessFetch(
       chromium.launch(
         executablePath ? { executablePath, headless, ...(proxy ? { proxy } : {}) } : { headless, ...(proxy ? { proxy } : {}) }
       ),
-    now = () => Date.now()
+    now = () => Date.now(),
+    signal
   }: {
     configuredPath?: string;
     query?: string;
@@ -78,8 +80,11 @@ export async function headlessFetch(
       close: () => Promise<void>;
     }>;
     now?: () => number;
+    /** Cancels the fetch (#59): no launch if already aborted, otherwise the browser is closed. */
+    signal?: AbortSignal;
   } = {}
 ): Promise<WebFetchHeadlessResponse> {
+  throwIfAborted(signal);
   if (guard) {
     const hostname = hostnameOf(url);
     if (!guardProxy) {
@@ -102,6 +107,7 @@ export async function headlessFetch(
   }
 
   const resolved = await resolveBrowser({ configuredPath });
+  throwIfAborted(signal);
   if (!resolved.ok && resolved.error.code === 'CONFIGURED_BROWSER_NOT_FOUND') {
     return {
       status: 'error',
@@ -136,6 +142,7 @@ export async function headlessFetch(
     };
   }
 
+  throwIfAborted(signal);
   const effectiveProxy = enforcement ? enforcement.launchProxy : proxy;
   const browserName = resolved.ok ? resolved.browser : 'chromium';
   const launchOptions = resolved.ok
@@ -159,8 +166,16 @@ export async function headlessFetch(
   let context: Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newContext']>> | undefined;
   let page: any;
 
+  // Closing the browser is what stops goto and the load waits on a cancel.
+  const onAbort = () => {
+    void browser?.close?.().catch(() => undefined);
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
   try {
     browser = await launchBrowser(launchOptions);
+    // A cancel during launch finds no browser to close yet; the finally block closes it.
+    throwIfAborted(signal);
     // Service workers can fetch on a page's behalf; blocking them keeps the page's traffic simple to account for.
     context = await browser.newContext(enforcement ? { serviceWorkers: 'block' } : undefined);
     if (enforcement) {
@@ -247,6 +262,7 @@ export async function headlessFetch(
     }
     await page.waitForLoadState('load', { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
+    throwIfAborted(signal);
     const html = await page.content();
     const finishedAt = now();
 
@@ -293,6 +309,7 @@ export async function headlessFetch(
       }
     };
   } catch (error) {
+    if (signal?.aborted) throw abortError();
     const cause = navigationRefusal();
     if (cause) return errorResult(url, cause.error.code, cause.error.message);
     const blockedSubresources = subresourceRefusals();
@@ -311,6 +328,7 @@ export async function headlessFetch(
       }
     };
   } finally {
+    signal?.removeEventListener('abort', onAbort);
     await page?.close?.().catch(() => undefined);
     await context?.close?.().catch(() => undefined);
     await browser?.close?.().catch(() => undefined);

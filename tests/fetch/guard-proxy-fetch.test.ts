@@ -10,7 +10,7 @@ import {
   findGuardError
 } from '../../src/fetch/network-guard.js';
 import { fakeLookup } from './fake-lookup.js';
-import { FIXTURE_CERT, startRecordingUpstream, startServerPair } from './guard-proxy-fixtures.js';
+import { FIXTURE_CERT, startRecordingUpstream, startServerPair, startSilentUpstream } from './guard-proxy-fixtures.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -274,6 +274,51 @@ describe.skipIf(process.platform !== 'linux')('guard proxy fetch', () => {
 
       expect(findGuardError(error)).toBeInstanceOf(UpstreamProxyRefusedError);
       expect(upstream.targets).toEqual(['127.0.0.1:8443']);
+    });
+  });
+
+  describe('cancellation (#59)', () => {
+    it('aborting a fetch closes the upstream tunnel instead of leaving it open until the handshake timeout', async () => {
+      const upstream = await startSilentUpstream();
+      cleanups.push(() => upstream.close());
+      // A long handshake timeout so the old "wait for the timer" behavior would obviously fail this test.
+      const { proxyFetch } = await setup({ upstream: { url: `http://127.0.0.1:${upstream.port}` }, handshakeTimeoutMs: 10_000 });
+
+      const controller = new AbortController();
+      const fetchPromise = proxyFetch(`https://ok.test:9443/`, { signal: controller.signal });
+      // Swallow the eventual rejection so it isn't reported as unhandled while we wait below.
+      fetchPromise.catch(() => undefined);
+
+      await upstream.sawConnect;
+      controller.abort();
+
+      const error = await fetchPromise.catch((e) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).name).toBe('AbortError');
+
+      await Promise.race([
+        upstream.closed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket did not close within 1s')), 1000))
+      ]);
+    });
+
+    it('does not let an aborted fetch interfere with a concurrent one', async () => {
+      const pair = await startServerPair();
+      const upstream = await startSilentUpstream();
+      cleanups.push(() => pair.close(), () => upstream.close());
+      const { proxyFetch } = await setup({ upstream: { url: `http://127.0.0.1:${upstream.port}` }, handshakeTimeoutMs: 10_000 });
+
+      const controller = new AbortController();
+      const hangingFetch = proxyFetch(`https://ok.test:9443/`, { signal: controller.signal });
+      hangingFetch.catch(() => undefined);
+
+      const okResponse = await proxyFetch(`http://ok.test:${pair.port}/`);
+      expect(okResponse.status).toBe(200);
+
+      await upstream.sawConnect;
+      controller.abort();
+      const error = await hangingFetch.catch((e) => e);
+      expect((error as Error).name).toBe('AbortError');
     });
   });
 });

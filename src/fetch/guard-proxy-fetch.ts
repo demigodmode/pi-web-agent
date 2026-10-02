@@ -1,6 +1,7 @@
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import type { GuardProxy, GuardProxyClient } from './guard-proxy.js';
 import { BLOCKED_HEADER } from './guard-proxy.js';
+import { abortError, throwIfAborted } from '../abort.js';
 
 function hostOf(input: Parameters<typeof fetch>[0]): string | undefined {
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -17,9 +18,16 @@ function hostOf(input: Parameters<typeof fetch>[0]): string | undefined {
  * or the forwarded request; the proxy's refusal log turns that into the typed
  * guard error. Only refusals recorded during this call count, so an earlier
  * block can't be blamed for a later unrelated failure.
+ *
+ * Each call gets its own ProxyAgent (undici builds the CONNECT tunnel inside
+ * the agent's connector, and aborting a dispatched request doesn't reach in
+ * and destroy that tunnel socket — see #59). Tying the agent's lifetime to the
+ * call means an aborted call can destroy just its own agent, which is what
+ * actually makes the guard proxy notice the client left and tear down its side
+ * of the chain to the upstream proxy.
  */
 export type GuardProxyFetch = typeof fetch & {
-  /** Closes the ProxyAgent (awaiting it if still being created) and rejects later calls. Idempotent. */
+  /** Closes any in-flight agents and rejects later calls. Idempotent. */
   close(): Promise<void>;
 };
 
@@ -27,19 +35,15 @@ export function createGuardProxyFetch(
   getProxy: () => Promise<GuardProxy>,
   { tls }: { tls?: { ca?: string | Buffer } } = {}
 ): GuardProxyFetch {
-  let ready: Promise<{ proxy: GuardProxy; client: GuardProxyClient; agent: ProxyAgent }> | undefined;
+  let ready: Promise<{ proxy: GuardProxy; client: GuardProxyClient }> | undefined;
   let closed = false;
+  const inFlight = new Set<ProxyAgent>();
 
   const ensure = () => {
     if (ready) return ready;
     const started = getProxy().then((proxy) => {
       const client = proxy.client('node');
-      const agent = new ProxyAgent({
-        uri: client.server,
-        token: `Basic ${Buffer.from(`${client.username}:${client.password}`).toString('base64')}`,
-        ...(tls ? { requestTls: tls } : {})
-      });
-      return { proxy, client, agent };
+      return { proxy, client };
     });
     ready = started;
     // Don't let one failed attempt poison every later fetch: clear it so the
@@ -52,7 +56,11 @@ export function createGuardProxyFetch(
 
   const guardedFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     if (closed) throw new Error('Guard proxy fetch is closed.');
-    const { proxy, client, agent } = await ensure();
+    const signal = init?.signal ?? undefined;
+    throwIfAborted(signal);
+    const { proxy, client } = await ensure();
+    if (closed) throw new Error('Guard proxy fetch is closed.');
+    throwIfAborted(signal);
     const host = hostOf(input);
     const since = proxy.sequence();
 
@@ -62,6 +70,21 @@ export function createGuardProxyFetch(
         .reverse()
         .find((entry) => host === undefined || entry.host === host);
 
+    const agent = new ProxyAgent({
+      uri: client.server,
+      token: `Basic ${Buffer.from(`${client.username}:${client.password}`).toString('base64')}`,
+      ...(tls ? { requestTls: tls } : {})
+    });
+    inFlight.add(agent);
+
+    let onAbort: (() => void) | undefined;
+    if (signal) {
+      onAbort = () => {
+        agent.destroy().catch(() => undefined);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     let response: Response;
     try {
       response = (await undiciFetch(
@@ -69,10 +92,26 @@ export function createGuardProxyFetch(
         { ...(init as Record<string, unknown> | undefined), dispatcher: agent } as unknown as Parameters<typeof undiciFetch>[1]
       )) as unknown as Response;
     } catch (error) {
+      inFlight.delete(agent);
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+      agent.destroy().catch(() => undefined);
+      if (signal?.aborted) throw abortError();
       const refusal = refusalFor();
       if (refusal) throw refusal.error;
       throw error;
     }
+
+    // The response resolved; the tunnel/request succeeded, so close the agent
+    // gracefully (undici's close() waits for in-flight requests, meaning the
+    // body can still be read) rather than destroying it out from under the
+    // caller. Don't await: the caller is still reading the body.
+    // Keep it tracked until that close settles, so close() below can still
+    // destroy an agent whose body nobody ever read.
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+    agent
+      .close()
+      .catch(() => undefined)
+      .finally(() => inFlight.delete(agent));
 
     const blockedHeader = response.headers.get(BLOCKED_HEADER);
     if (blockedHeader) {
@@ -95,9 +134,9 @@ export function createGuardProxyFetch(
   return Object.assign(guardedFetch, {
     async close() {
       closed = true;
-      if (!ready) return; // never used: nothing to close, and don't start the proxy now
-      const created = await ready.catch(() => undefined);
-      await created?.agent.close().catch(() => undefined);
+      const agents = [...inFlight];
+      inFlight.clear();
+      await Promise.all(agents.map((agent) => agent.destroy().catch(() => undefined)));
     }
   });
 }

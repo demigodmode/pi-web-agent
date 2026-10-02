@@ -92,3 +92,15 @@ describe('createGithubReader', () => {
     expect(res.error?.code).toBe('GITHUB_FETCH_FAILED');
   });
 });
+
+describe('github reader cancellation', () => {
+  it('gives every request a signal tied to the caller', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response('file body'));
+    const controller = new AbortController();
+    await createGithubReader({ fetchImpl: fetchImpl as unknown as typeof fetch, token: undefined }).read('https://github.com/o/r/blob/main/src/x.ts', controller.signal);
+    const signal = (fetchImpl.mock.calls[0][1] as RequestInit).signal!;
+    expect(signal.aborted).toBe(false);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+});

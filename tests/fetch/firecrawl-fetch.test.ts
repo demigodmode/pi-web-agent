@@ -167,3 +167,26 @@ describe('firecrawl classification (#55)', () => {
     expect(result.error?.failure?.kind).toBe('transient');
   });
 });
+
+describe('firecrawl fetch cancellation', () => {
+  it('passes a signal to the scrape request and throws the abort error on cancel', async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      controller.abort();
+      throw init?.signal?.reason ?? new Error('aborted');
+    });
+    const fetcher = createFirecrawlFetcher({ baseUrl: 'http://localhost:3002', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(fetcher('https://example.com/docs', undefined, controller.signal)).rejects.toThrow('Operation aborted');
+    expect((fetchImpl.mock.calls[0][1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('reports its own timeout as transient', async () => {
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal!.reason)))
+    );
+    const fetcher = createFirecrawlFetcher({ baseUrl: 'http://localhost:3002', fetchImpl: fetchImpl as unknown as typeof fetch, timeoutMs: 20 });
+    const result = await fetcher('https://example.com/docs');
+    expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind: 'transient' } } });
+    expect(result.error?.message).toContain('did not answer within');
+  });
+});

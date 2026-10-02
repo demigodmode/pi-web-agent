@@ -12,6 +12,7 @@ import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
+import { createGoogleSerpSearchTool } from '../search/google-serp.js';
 import { createFanoutSearch, FANOUT_PROVIDER_TIMEOUT_MS, withCallTimeout } from '../search/fanout.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from './fallback-policy.js';
 import { createProviderHealth, type ProviderHealth } from './provider-health.js';
@@ -20,17 +21,24 @@ import { buildSearchPresentation } from '../presentation/search-presentation.js'
 import { createWebFetchHeadlessTool } from '../tools/web-fetch-headless.js';
 import { createWebFetchTool } from '../tools/web-fetch.js';
 import { createWebSearchTool } from '../tools/web-search.js';
-import type { ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
-import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
+import type { ResearchFetchInput, SearchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse, WebSearchResponse } from '../types.js';
+import { DEFAULT_BACKEND_CONFIG, isValidProxyUrl, resolveSearchBaseUrl, stripProxyCredentials, type BackendConfig, type ProxyConfig, usableSearchProviders } from './config.js';
 import { createSpecialContentResolver } from '../readers/resolver.js';
+import { throwIfAborted } from '../abort.js';
 import { createGithubReader } from '../readers/github-reader.js';
 import { createPdfReader } from '../readers/pdf-reader.js';
 import { createYoutubeReader } from '../readers/youtube-reader.js';
+import { productionGitEnv, proxyUrlForGit, type GitEnv } from '../repo/git-runner.js';
+import { resolveGithubToken, type GithubToken } from '../repo/repo-auth.js';
+import type { RepoCache } from '../repo/repo-cache.js';
+import { researchRepo, type RepoResearchInput, type RepoResearchResult } from '../repo/repo-research.js';
 
 export type BackendSet = {
-  search: (input: { query: string }) => Promise<WebSearchResponse>;
+  search: (input: SearchInput) => Promise<WebSearchResponse>;
   fetchPage: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
   headlessFetch: (input: ResearchFetchInput) => Promise<WebFetchHeadlessResponse>;
+  /** Typed GitHub repo URLs (#72). Only there when the extension handed over its repo cache. */
+  researchRepo?: (input: RepoResearchInput) => Promise<RepoResearchResult>;
   /** Releases the guard proxy and its agents. Idempotent; never starts the proxy. */
   close: () => Promise<void>;
 };
@@ -42,6 +50,7 @@ export type BackendFactoryDeps = {
   createYouComSearch?: typeof createYouComSearchTool;
   createExaSearch?: typeof createExaSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
+  createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
@@ -55,23 +64,39 @@ export type BackendFactoryDeps = {
   policy?: Omit<PolicyDeps, 'health'>;
   /** Test seam for the per-call fanout provider timeout. */
   fanoutTimeoutMs?: number;
+  /** The extension's repo cache (#72). Without it, repo URLs keep going to the README reader. */
+  repoCache?: RepoCache;
+  resolveGithubToken?: () => Promise<GithubToken>;
+  /** Test seam: git settings for repo research (fixture transport). */
+  repoGitEnv?: GitEnv;
+  /** Test seam: the fetch used for GitHub API metadata. */
+  repoApiFetch?: typeof fetch;
 };
 
-function invalidSearxngSearch() {
+/** A selected endpoint-backed provider with no endpoint: instead of throwing, it reports the gap once. */
+function invalidConfiguredSearch(backend: SearchProviderName, message: string) {
   return async function search() {
     const result: WebSearchResponse = {
       status: 'error',
       results: [],
-      metadata: { backend: 'searxng', cacheHit: false },
+      metadata: { backend, cacheHit: false },
       error: {
         code: 'BACKEND_CONFIG_INVALID',
-        message: 'SearXNG search requires backends.search.baseUrl.',
+        message,
         failure: { kind: 'not_configured' }
       }
     };
 
     return { ...result, presentation: buildSearchPresentation(result) };
   };
+}
+
+function invalidSearxngSearch() {
+  return invalidConfiguredSearch('searxng', 'SearXNG search requires backends.search.baseUrl.');
+}
+
+function invalidGoogleSerpSearch() {
+  return invalidConfiguredSearch('google-serp', 'Google SERP search requires backends.search.baseUrl.');
 }
 
 function invalidFirecrawlFetch() {
@@ -115,6 +140,8 @@ function withTargetGuard(
       };
       return { ...result, presentation: buildFetchPresentation(result) };
     }
+    // The address lookup can take a while; don't start the fetch if the run was cancelled meanwhile.
+    throwIfAborted(input.signal);
     return fetchPage(input);
   };
 }
@@ -129,6 +156,7 @@ export function createBackendSet(
   const createYouComSearch = deps.createYouComSearch ?? createYouComSearchTool;
   const createExaSearch = deps.createExaSearch ?? createExaSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
+  const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
@@ -142,7 +170,7 @@ export function createBackendSet(
   // instead. No connectivity check is needed: the url itself is the problem.
   if (proxy && !isValidProxyUrl(proxy.url)) {
     const message =
-      `backends.proxy.url (${proxy.url}) is not a valid http or https URL. ` +
+      'backends.proxy.url is not a valid http or https URL. ' +
       'Web requests are blocked until it is fixed; set backends.proxy.url to "" to disable the proxy.';
     return {
       search: async () => {
@@ -172,6 +200,14 @@ export function createBackendSet(
         };
         return { ...result, presentation: buildFetchPresentation(result) };
       },
+      ...(deps.repoCache
+        ? {
+            researchRepo: async (): Promise<RepoResearchResult> => ({
+              ok: false,
+              error: { code: 'BACKEND_CONFIG_INVALID', message, failure: { kind: 'config_global' } }
+            })
+          }
+        : {}),
       close: async () => undefined
     };
   }
@@ -239,14 +275,16 @@ export function createBackendSet(
     withSearchPolicy(name, search, policyDeps, healthKey);
 
   const createDuckDuckGo = () =>
-    createDuckDuckGoSearch({ searchHtml: (query) => fetchDuckDuckGoHtml(query, { fetchImpl }) });
+    createDuckDuckGoSearch({ searchHtml: (query, signal) => fetchDuckDuckGoHtml(query, { fetchImpl, signal }) });
 
   function buildProviderSearch(name: SearchProviderName): BackendSet['search'] {
     switch (name) {
-      case 'searxng':
-        return config.search.baseUrl
-          ? createSearxngSearch({ baseUrl: config.search.baseUrl, options: config.search.options, fetchImpl })
+      case 'searxng': {
+        const baseUrl = resolveSearchBaseUrl(config.search, 'searxng');
+        return baseUrl
+          ? createSearxngSearch({ baseUrl, options: config.search.options, fetchImpl })
           : invalidSearxngSearch();
+      }
       case 'brave':
         return createBraveSearch({ apiKey: process.env.PI_WEB_AGENT_BRAVE_API_KEY, fetchImpl });
       case 'youcom':
@@ -255,6 +293,19 @@ export function createBackendSet(
         return createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl });
       case 'tavily':
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
+      case 'google-serp': {
+        // Each endpoint-backed provider resolves its own URL, so a fanout set can never
+        // point one provider at another's endpoint (or send it the other's key).
+        const baseUrl = resolveSearchBaseUrl(config.search, 'google-serp');
+        return baseUrl
+          ? createGoogleSerpSearch({
+              baseUrl,
+              apiKey: process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY,
+              ...(config.search.keyHeader !== undefined ? { keyHeader: config.search.keyHeader } : {}),
+              fetchImpl
+            })
+          : invalidGoogleSerpSearch();
+      }
       case 'duckduckgo':
       default:
         return createDuckDuckGo();
@@ -303,7 +354,7 @@ export function createBackendSet(
   }
 
   const httpFetcher = createHttpFetcher({ fetchImpl: targetFetch });
-  const httpFetch = createHttpFetch({ fetchPage: ({ url, query }) => httpFetcher(url, query) });
+  const httpFetch = createHttpFetch({ fetchPage: ({ url, query, signal }) => httpFetcher(url, query, signal) });
   const firecrawlFetcher = config.fetch.baseUrl
     ? createFirecrawlFetch({
         baseUrl: config.fetch.baseUrl,
@@ -315,7 +366,7 @@ export function createBackendSet(
   const fetchPage: BackendSet['fetchPage'] =
     config.fetch.provider === 'firecrawl'
       ? withFetchPolicy(
-          createHttpFetch({ fetchPage: ({ url, query }) => firecrawlFetcher(url, query) }),
+          createHttpFetch({ fetchPage: ({ url, query, signal }) => firecrawlFetcher(url, query, signal) }),
           config.fetch.fallback === 'http' ? httpFetch : undefined,
           policyDeps
         )
@@ -330,13 +381,25 @@ export function createBackendSet(
     fallback: fetchPage
   });
 
-  const headlessPage = ({ url, query }: ResearchFetchInput) =>
-    headlessFetch(url, { query, guard: networkGuard, guardProxy: getGuardProxy });
+  const headlessPage = ({ url, query, signal }: ResearchFetchInput) =>
+    headlessFetch(url, { query, signal, guard: networkGuard, guardProxy: getGuardProxy });
+
+  const repoCache = deps.repoCache;
+  const repoResearch = repoCache
+    ? ({ url, query, signal }: RepoResearchInput) =>
+        researchRepo(url, { query, signal }, {
+          fetchImpl: deps.repoApiFetch ?? targetFetch,
+          cache: repoCache,
+          git: deps.repoGitEnv ?? productionGitEnv({ proxyUrl: proxy ? proxyUrlForGit(proxy) : undefined }),
+          resolveToken: deps.resolveGithubToken ?? (() => resolveGithubToken())
+        })
+    : undefined;
 
   return {
     search,
     fetchPage: withTargetGuard(fetchPageWithReaders, networkGuard, config.fetch.provider === 'firecrawl' ? 'firecrawl' : 'http'),
     headlessFetch: createHeadlessFetch({ fetchPage: headlessPage }),
+    ...(repoResearch ? { researchRepo: repoResearch } : {}),
     close
   };
 }
