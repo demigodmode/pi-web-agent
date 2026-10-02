@@ -27,4 +27,4 @@ If the publish job fails with a transient Sigstore/Rekor provenance error, rerun
 
 The docs site publishes through GitHub Pages.
 
-With Pages enabled for the repo, pushes to `main` (so, release merges) should rebuild and redeploy the docs automatically through the docs workflow.
+With Pages enabled for the repo, pushes to `main` (release merges) should rebuild and redeploy the docs automatically through the docs workflow.

@@ -65,9 +65,9 @@ When you put a repo link in your question yourself (`https://github.com/owner/re
 
 ## Cancelling and timeouts
 
-Esc on a running `web_explore` stops it: searches, page fetches, repo clones, and the headless browser all stop, and nothing retries or falls back after a cancel.
+Esc on a running `web_explore` stops searches, page fetches, repo clones, and the headless browser. Nothing retries or falls back after a cancel.
 
-Reads that could otherwise hang have timeouts. Page fetches and the GitHub and YouTube readers give up after 15 seconds, PDFs after 60, and Firecrawl scrapes after 45. A page that times out, drops the connection, refuses the port, fails DNS or TLS, or loops on redirects counts as a failed read of that one page. The run moves on to the other sources instead of failing.
+Reads that could otherwise hang have timeouts. Page fetches and the GitHub and YouTube readers give up after 15 seconds, PDFs after 60, and Firecrawl scrapes after 45. A page that times out, drops the connection, refuses the port, fails DNS or TLS, or loops on redirects counts as a failed read of that one page. The run moves on to the other sources.
 
 ## What preview and verbose show
 

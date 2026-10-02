@@ -116,7 +116,7 @@ This package integrates with existing self-hosted services. SearXNG/Firecrawl in
 
 ## Repo research needs git
 
-Pasting a GitHub repo link makes `web_explore` clone that repo, so `git` 2.32 or newer has to be on your PATH. This applies on Windows, macOS, and Linux. Nothing else in the package needs git. `/web-agent doctor` has a `repo research:` line that shows your git version and where the GitHub token comes from.
+Pasting a GitHub repo link makes `web_explore` clone that repo, so `git` 2.32 or newer has to be on your PATH. That's true on Windows, macOS, and Linux. Nothing else in the package needs git. `/web-agent doctor` has a `repo research:` line that shows your git version and where the GitHub token comes from.
 
 ## Pi versions
 

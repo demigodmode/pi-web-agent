@@ -67,12 +67,12 @@ Repo questions stop with a reason instead of falling back to the README. The com
 - `git isn't installed, so repo code can't be searched.` Install `git` and make sure it is on the PATH of the process running Pi.
 - `git 2.32 or newer is needed to search repo code.` Update git. `/web-agent doctor` shows the version it found on its `repo research:` line.
 - `... is NNN MB, over the 300MB limit; ask about a specific file URL instead.` Ask about a file URL, or a smaller repo.
-- `Cloning owner/repo timed out after 60s.` Usually a slow connection or a big repo. Try again, or paste a `/tree/` folder link. The clone is still capped at 60 seconds.
+- `Cloning owner/repo timed out after 60s.` Usually a slow connection or a big repo. Try again, or ask about a specific file URL instead.
 - `owner/repo wasn't found, or the token doesn't have access to it.` Check the spelling. For a private repo, run `gh auth login` or set `GITHUB_TOKEN` in the environment where Pi runs.
 - `GitHub rate limit hit; set GITHUB_TOKEN or sign in with gh for a higher limit.` Unauthenticated GitHub calls have a low hourly limit. A token raises it.
-- `GitHub rejected the token` means `GITHUB_TOKEN` is wrong or expired.
+- `GitHub rejected the token; check GITHUB_TOKEN or run gh auth login again.` The token is wrong or expired.
 
-You can only put two repo links in one question. A third is ignored.
+- `Too many repo links in one question; ask about one or two at a time.` Two repo links per question is the limit. Split the question up.
 
 ## The repo cache folder is refused
 
@@ -82,9 +82,9 @@ You may see `the repo cache folder ... is a symlink`, `is not a directory`, `is 
 
 Big repos hit the search limits (20,000 files, 64MB, or 10 seconds) and the answer says it searched only the first N files. Paste a `/tree/` folder link to the part you care about, for example `https://github.com/owner/repo/tree/main/src/auth`.
 
-## Esc stopped `web_explore` but I wanted it to finish
+## Esc stopped `web_explore` before it finished
 
-A cancel stops everything underneath and nothing continues in the background. Ask again. Reads that hang on their own give up by themselves: 15 seconds for a page, 60 for a PDF, 45 for Firecrawl. A page that times out or drops the connection is reported as a failed read and the run uses the other sources.
+A cancel stops everything underneath, and nothing keeps running in the background. Ask again to start over. Reads that hang on their own give up by themselves: 15 seconds for a page, 60 for a PDF, 45 for Firecrawl. A page that times out or drops the connection is reported as a failed read and the run uses the other sources.
 
 ## `/web-agent doctor` mentions managed Chromium fallback
 
