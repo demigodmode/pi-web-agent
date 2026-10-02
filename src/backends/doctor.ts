@@ -36,7 +36,7 @@ function googleSerpDoctorBody() {
 }
 
 function searxngDoctorUrl(baseUrl: string, options: SearxngOptions = {}) {
-  const url = new URL('/search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
+  const url = new URL('search', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
   url.searchParams.set('q', 'pi-web-agent-doctor');
   url.searchParams.set('format', 'json');
   if (options.categories?.length) url.searchParams.set('categories', options.categories.join(','));
