@@ -1,5 +1,6 @@
 import {
   BASE_URL_SEARCH_PROVIDERS,
+  CLEARABLE_BACKEND_PATHS,
   DEFAULT_BACKEND_CONFIG,
   DUCKDUCKGO_FALLBACK_PROVIDERS,
   isValidProxyUrl,
@@ -751,11 +752,30 @@ export function collapsePresentationConfigToOverride(
   };
 }
 
+function backendValueAtPath(config: BackendConfig, path: string): unknown {
+  return path.split('.').reduce<unknown>((value, key) =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined, config);
+}
+
 export function collapseBackendConfigToOverride(
   config: BackendConfig,
-  inheritedConfig: BackendConfig
+  inheritedConfig: BackendConfig,
+  existingOverride?: BackendConfigOverride
 ): BackendConfigOverride {
   const override: BackendConfigOverride = {};
+  const removed = CLEARABLE_BACKEND_PATHS.filter((path) =>
+    path !== 'search.baseUrls' && backendValueAtPath(inheritedConfig, path) !== undefined &&
+    backendValueAtPath(config, path) === undefined
+  );
+  // A parent deletion already removes its children.
+  const paths = removed.filter((path) => !removed.some((parent) => path.startsWith(`${parent}.`)));
+  // New proxy and network deletions use the existing disable forms.
+  const markers = paths.filter((path) => path !== 'proxy' && path !== 'network' && path !== 'network.allowRanges');
+  const preserved = existingOverride?.cleared?.filter((path) =>
+    (CLEARABLE_BACKEND_PATHS as readonly string[]).includes(path) && backendValueAtPath(config, path) === undefined
+  ) ?? [];
+  const cleared = [...new Set([...markers, ...preserved])];
+  if (cleared.length) override.cleared = cleared;
 
   if (!sameJson(config.search, inheritedConfig.search)) {
     override.search = config.search.provider !== inheritedConfig.search.provider
@@ -1244,7 +1264,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           result.scope,
           collapseBackendConfigToOverride(
             result.backends,
-            getInheritedBackendsForScope(loaded, result.scope)
+            getInheritedBackendsForScope(loaded, result.scope),
+            loaded[result.scope].rawBackends
           )
         );
         ctx.ui.notify(`Saved ${result.scope} backend config`, 'info');

@@ -103,6 +103,8 @@ function serializePresentationConfigOverride(config: PresentationConfigOverride)
 function serializeBackendConfigOverride(config: BackendConfigOverride): BackendConfigFile {
   const backends: NonNullable<BackendConfigFile['backends']> = {};
 
+  if (config.cleared?.length) backends.cleared = [...config.cleared];
+
   if (config.search && Object.keys(config.search).length > 0) {
     backends.search = { ...config.search };
   }

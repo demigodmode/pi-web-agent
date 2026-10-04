@@ -87,6 +87,9 @@
     "typebox": "*"
   },
   "overrides": {
-    "vite": "6.4.3"
+    "vite": "6.4.3",
+    "@earendil-works/pi-coding-agent": {
+      "brace-expansion": "5.0.12"
+    }
   }
 }
