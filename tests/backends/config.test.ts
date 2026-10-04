@@ -106,7 +106,7 @@ describe('backend config', () => {
       }
     });
 
-    expect(override.search).toEqual({ provider: 'brave', fallback: 'duckduckgo' });
+    expect(override.search).toEqual({ provider: 'brave', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' });
   });
 
   it('allows duckduckgo fallback for brave but not duckduckgo itself', () => {
@@ -128,7 +128,7 @@ describe('backend config', () => {
       }
     });
 
-    expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo' });
+    expect(override.search).toEqual({ provider: 'youcom', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' });
   });
 
   it('extracts the google-serp key header regardless of selected provider', () => {
@@ -217,7 +217,7 @@ describe('backend config', () => {
       }
     });
 
-    expect(override.search).toEqual({ provider: 'exa', fallback: 'duckduckgo' });
+    expect(override.search).toEqual({ provider: 'exa', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' });
   });
 
   it('allows duckduckgo fallback for exa', () => {
@@ -234,7 +234,7 @@ describe('backend config', () => {
       }
     });
 
-    expect(override.search).toEqual({ provider: 'tavily', fallback: 'duckduckgo' });
+    expect(override.search).toEqual({ provider: 'tavily', fallback: 'duckduckgo', baseUrl: 'https://ignored.example' });
   });
 
   it('allows duckduckgo fallback for tavily', () => {

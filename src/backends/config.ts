@@ -60,7 +60,46 @@ export type BackendConfig = {
   network?: NetworkConfig;
 };
 
+export const CLEARABLE_BACKEND_PATHS = [
+  'search.endpoints.searxng',
+  'search.endpoints.google-serp',
+  'search.baseUrl',
+  'search.baseUrls',
+  'search.baseUrls.searxng',
+  'search.baseUrls.google-serp',
+  'search.keyHeader',
+  'search.fallback',
+  'search.options',
+  'search.options.categories',
+  'search.options.language',
+  'search.options.safesearch',
+  'search.fanout',
+  'search.fanout.providers',
+  'fetch.baseUrl',
+  'fetch.apiKey',
+  'fetch.fallback',
+  'fetch.options',
+  'fetch.options.formats',
+  'fetch.options.onlyMainContent',
+  'proxy',
+  'proxy.username',
+  'proxy.password',
+  'network',
+  'network.allowRanges',
+  'network.trustProxyDns',
+] as const;
+
+export type BackendClearPath = typeof CLEARABLE_BACKEND_PATHS[number];
+
+export function endpointProviderForClearPath(path: string): 'searxng' | 'google-serp' | undefined {
+  if (path === 'search.endpoints.searxng') return 'searxng';
+  if (path === 'search.endpoints.google-serp') return 'google-serp';
+  return undefined;
+}
+
 export type BackendConfigOverride = {
+  /** Optional values removed from lower-priority layers before applying this layer. */
+  cleared?: BackendClearPath[];
   search?: Partial<SearchBackendConfig>;
   fetch?: Partial<FetchBackendConfig>;
   headless?: Partial<HeadlessBackendConfig>;
@@ -70,6 +109,7 @@ export type BackendConfigOverride = {
 
 export type BackendConfigFile = {
   backends?: {
+    cleared?: unknown;
     search?: { provider?: unknown; baseUrl?: unknown; baseUrls?: unknown; keyHeader?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
     headless?: { provider?: unknown };
@@ -294,18 +334,25 @@ export function extractBackendConfigOverride(
 
   if (typeof backends?.search?.provider === 'string' && (PROVIDER_NAMES as string[]).includes(backends.search.provider)) {
     override.search = { provider: backends.search.provider as SearchProviderName };
-    if (BASE_URL_SEARCH_PROVIDERS.includes(backends.search.provider as SearchProviderName) && typeof backends.search.baseUrl === 'string') {
-      override.search.baseUrl = backends.search.baseUrl;
-    }
-    if (backends.search.fallback === 'duckduckgo') {
-      override.search.fallback = 'duckduckgo';
-    }
-    if (backends.search.provider === 'searxng') {
-      const options = extractSearxngOptions(backends.search.options);
-      if (options) {
-        override.search.options = options;
-      }
-    }
+  }
+
+  if (backends?.search?.fallback === 'duckduckgo') {
+    override.search = { ...(override.search ?? {}), fallback: 'duckduckgo' };
+  }
+  if (backends?.search?.provider === undefined || backends.search.provider === 'searxng') {
+    const options = extractSearxngOptions(backends?.search?.options);
+    if (options) override.search = { ...(override.search ?? {}), options };
+  }
+
+  if (typeof backends?.search?.baseUrl === 'string') {
+    override.search = { ...(override.search ?? {}), baseUrl: backends.search.baseUrl };
+  }
+
+  if (Array.isArray(backends?.cleared)) {
+    const cleared = backends.cleared.filter(
+      (value): value is BackendClearPath => typeof value === 'string' && (CLEARABLE_BACKEND_PATHS as readonly string[]).includes(value)
+    );
+    if (cleared.length > 0) override.cleared = [...new Set(cleared)];
   }
 
   const baseUrls = extractSearchBaseUrls(backends?.search?.baseUrls);
@@ -325,20 +372,18 @@ export function extractBackendConfigOverride(
 
   if (backends?.fetch?.provider === 'http' || backends?.fetch?.provider === 'firecrawl') {
     override.fetch = { provider: backends.fetch.provider };
-    if (typeof backends.fetch.baseUrl === 'string') {
-      override.fetch.baseUrl = backends.fetch.baseUrl;
-    }
-    if (typeof backends.fetch.apiKey === 'string') {
-      override.fetch.apiKey = backends.fetch.apiKey;
-    }
-    if (backends.fetch.fallback === 'http') {
-      override.fetch.fallback = 'http';
-    }
-    const options = extractFirecrawlOptions(backends.fetch.options);
-    if (options) {
-      override.fetch.options = options;
-    }
   }
+  if (typeof backends?.fetch?.baseUrl === 'string') {
+    override.fetch = { ...(override.fetch ?? {}), baseUrl: backends.fetch.baseUrl };
+  }
+  if (typeof backends?.fetch?.apiKey === 'string') {
+    override.fetch = { ...(override.fetch ?? {}), apiKey: backends.fetch.apiKey };
+  }
+  if (backends?.fetch?.fallback === 'http') {
+    override.fetch = { ...(override.fetch ?? {}), fallback: 'http' };
+  }
+  const fetchOptions = extractFirecrawlOptions(backends?.fetch?.options);
+  if (fetchOptions) override.fetch = { ...(override.fetch ?? {}), options: fetchOptions };
 
   if (backends?.headless?.provider === 'local-browser') {
     override.headless = { provider: 'local-browser' };
@@ -494,22 +539,48 @@ function mergeNetworkConfig(base: NetworkConfig | undefined, layer: NetworkConfi
   return next;
 }
 
+function clearBackendPaths(config: BackendConfig, paths: BackendClearPath[] | undefined): BackendConfig {
+  if (!paths?.length) return config;
+  const next = structuredClone(config);
+  for (const path of paths) {
+    if (!(CLEARABLE_BACKEND_PATHS as readonly string[]).includes(path)) continue;
+    const provider = endpointProviderForClearPath(path);
+    if (provider) {
+      delete next.search.baseUrls?.[provider];
+      if (searchBaseUrlApplies(next.search, provider)) delete next.search.baseUrl;
+      continue;
+    }
+    const parts = path.split('.');
+    const key = parts.pop()!;
+    let parent: Record<string, unknown> | undefined = next as unknown as Record<string, unknown>;
+    for (const part of parts) {
+      const value: unknown = parent?.[part];
+      parent = value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+    }
+    if (parent) delete parent[key];
+  }
+  return next;
+}
+
 export function mergeBackendConfigLayers(
   ...layers: Array<BackendConfig | BackendConfigOverride | undefined>
 ): BackendConfig {
   return layers.reduce<BackendConfig>(
-    (merged, layer) => ({
-      search: mergeSearchConfig(merged.search, layer?.search),
-      fetch: mergeFetchConfig(merged.fetch, layer?.fetch),
-      headless: { ...merged.headless, ...layer?.headless },
-      proxy: layer?.proxy
-        ? layer.proxy.url === ''
-          ? undefined // explicit disable overrides any proxy from lower layers
-          : { ...merged.proxy, ...layer.proxy }
-        : merged.proxy,
-      // Replace, don't union: a project list is the whole list for that project.
-      network: mergeNetworkConfig(merged.network, layer?.network)
-    }),
+    (current, layer) => {
+      const merged = clearBackendPaths(current, layer && 'cleared' in layer ? layer.cleared : undefined);
+      return {
+        search: mergeSearchConfig(merged.search, layer?.search),
+        fetch: mergeFetchConfig(merged.fetch, layer?.fetch),
+        headless: { ...merged.headless, ...layer?.headless },
+        proxy: layer?.proxy
+          ? layer.proxy.url === ''
+            ? undefined // explicit disable overrides any proxy from lower layers
+            : { ...merged.proxy, ...layer.proxy }
+          : merged.proxy,
+        // Replace, don't union: a project list is the whole list for that project.
+        network: mergeNetworkConfig(merged.network, layer?.network)
+      };
+    },
     DEFAULT_BACKEND_CONFIG
   );
 }

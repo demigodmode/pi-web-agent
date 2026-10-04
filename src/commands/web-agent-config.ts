@@ -1,7 +1,9 @@
 import {
   BASE_URL_SEARCH_PROVIDERS,
+  CLEARABLE_BACKEND_PATHS,
   DEFAULT_BACKEND_CONFIG,
   DUCKDUCKGO_FALLBACK_PROVIDERS,
+  endpointProviderForClearPath,
   isValidProxyUrl,
   mergeBackendConfigLayers,
   resolveSearchBaseUrl,
@@ -23,6 +25,8 @@ import {
 import {
   Container,
   Input,
+  Key,
+  matchesKey,
   SelectList,
   SettingsList,
   Text,
@@ -46,9 +50,11 @@ import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch
 import { createProxyFetch } from '../fetch/proxy-fetch.js';
 import { checkJitiCompat } from '../jiti-compat.js';
 import { getLatestChangelogEntry } from '../changelog-notice.js';
+import { CLEARABLE_PRESENTATION_PATHS } from '../presentation/types.js';
 import type {
   PresentationConfig,
   PresentationConfigOverride,
+  PresentationEditPath,
   PresentationScope,
   PresentationToolName
 } from '../presentation/types.js';
@@ -70,7 +76,7 @@ type CommandDeps = {
 type SettingsUiResult =
   | { action: 'cancel' }
   | { action: 'reset'; scope: PresentationScope }
-  | { action: 'save'; scope: PresentationScope; config: PresentationConfig; backends: BackendConfig };
+  | { action: 'save'; scope: PresentationScope; config: PresentationConfig; backends: BackendConfig; presentationEdits?: PresentationEditPath[] };
 
 type WebAgentAction = 'settings' | 'show' | 'doctor' | 'changelog' | 'reset-project' | 'reset-global';
 type SettingsSection = 'presentation' | 'backends';
@@ -79,6 +85,7 @@ export type SettingsDraftState = {
   scope: PresentationScope;
   drafts: Record<PresentationScope, PresentationConfig>;
   backendDrafts: Record<PresentationScope, BackendConfig>;
+  presentationEdits: Record<PresentationScope, PresentationEditPath[]>;
   config: PresentationConfig;
   backends: BackendConfig;
 };
@@ -514,6 +521,7 @@ export function createSettingsDraftState(
     scope: initialScope,
     drafts,
     backendDrafts,
+    presentationEdits: { global: [], project: [] },
     config: clonePresentationConfig(drafts[initialScope]),
     backends: cloneBackendConfig(backendDrafts[initialScope])
   };
@@ -532,6 +540,10 @@ export function applySettingsValue(
     global: cloneBackendConfig(state.backendDrafts.global),
     project: cloneBackendConfig(state.backendDrafts.project)
   };
+  const presentationEdits = {
+    global: [...state.presentationEdits.global],
+    project: [...state.presentationEdits.project]
+  };
 
   let nextScope = state.scope;
 
@@ -541,6 +553,7 @@ export function applySettingsValue(
       scope: nextScope,
       drafts: nextDrafts,
       backendDrafts: nextBackendDrafts,
+      presentationEdits,
       config: clonePresentationConfig(nextDrafts[nextScope]),
       backends: cloneBackendConfig(nextBackendDrafts[nextScope])
     };
@@ -551,6 +564,7 @@ export function applySettingsValue(
 
   if (id === 'defaultMode' && (newValue === 'compact' || newValue === 'preview' || newValue === 'verbose')) {
     currentDraft.defaultMode = newValue;
+    if (!presentationEdits[nextScope].includes('defaultMode')) presentationEdits[nextScope].push('defaultMode');
   }
 
   if (id.startsWith('tool:')) {
@@ -568,6 +582,10 @@ export function applySettingsValue(
     }
 
     currentDraft.tools = nextTools;
+    const path = `tools.${toolName}` as PresentationEditPath;
+    if ((CLEARABLE_PRESENTATION_PATHS as readonly string[]).includes(path) && isModeOrInherit(newValue) && !presentationEdits[nextScope].includes(path)) {
+      presentationEdits[nextScope].push(path);
+    }
   }
 
   if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
@@ -719,6 +737,7 @@ export function applySettingsValue(
     scope: nextScope,
     drafts: nextDrafts,
     backendDrafts: nextBackendDrafts,
+    presentationEdits,
     config: clonePresentationConfig(nextDrafts[nextScope]),
     backends: cloneBackendConfig(nextBackendDrafts[nextScope])
   };
@@ -726,17 +745,26 @@ export function applySettingsValue(
 
 export function collapsePresentationConfigToOverride(
   config: PresentationConfig,
-  inheritedConfig: PresentationConfig
+  inheritedConfig: PresentationConfig,
+  existingOverride?: PresentationConfigOverride,
+  editedFields: readonly PresentationEditPath[] = []
 ): PresentationConfigOverride {
+  const edited = new Set(editedFields);
+  const cleared = CLEARABLE_PRESENTATION_PATHS.filter((path) => {
+    const toolName = path.slice('tools.'.length) as PresentationToolName;
+    return !config.tools[toolName] && (inheritedConfig.tools[toolName] !== undefined ||
+      existingOverride?.tools[toolName] !== undefined || existingOverride?.cleared?.includes(path) || edited.has(path));
+  });
   const tools = Object.fromEntries(
-    PRESENTATION_TOOL_NAMES.flatMap((toolName) => {
+    CLEARABLE_PRESENTATION_PATHS.flatMap((path) => {
+      const toolName = path.slice('tools.'.length) as PresentationToolName;
       const configuredMode = config.tools[toolName]?.mode;
       if (!configuredMode) {
         return [];
       }
 
       const inheritedMode = resolvePresentationMode(toolName, inheritedConfig);
-      if (configuredMode === inheritedMode) {
+      if (!existingOverride?.tools[toolName] && !edited.has(path) && configuredMode === inheritedMode) {
         return [];
       }
 
@@ -745,24 +773,59 @@ export function collapsePresentationConfigToOverride(
   ) as PresentationConfigOverride['tools'];
 
   return {
+    ...(cleared.length ? { cleared } : {}),
     defaultMode:
-      config.defaultMode === inheritedConfig.defaultMode ? undefined : config.defaultMode,
+      existingOverride?.defaultMode !== undefined || edited.has('defaultMode') || config.defaultMode !== inheritedConfig.defaultMode
+        ? config.defaultMode : undefined,
     tools
   };
 }
 
+function backendValueAtPath(config: BackendConfig, path: string): unknown {
+  const provider = endpointProviderForClearPath(path);
+  if (provider) return resolveSearchBaseUrl(config.search, provider);
+  return path.split('.').reduce<unknown>((value, key) =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined, config);
+}
+
 export function collapseBackendConfigToOverride(
   config: BackendConfig,
-  inheritedConfig: BackendConfig
+  inheritedConfig: BackendConfig,
+  existingOverride?: BackendConfigOverride
 ): BackendConfigOverride {
   const override: BackendConfigOverride = {};
+  const removedEndpoints = BASE_URL_SEARCH_PROVIDERS.filter((provider) =>
+    resolveSearchBaseUrl(inheritedConfig.search, provider) !== undefined && resolveSearchBaseUrl(config.search, provider) === undefined
+  );
+  const legacyProvider = inheritedConfig.search.provider === 'google-serp' ? 'google-serp' : 'searxng';
+  const removed = CLEARABLE_BACKEND_PATHS.filter((path) =>
+    path !== 'search.baseUrls' &&
+    !(path === 'search.baseUrl' && removedEndpoints.includes(legacyProvider)) &&
+    !removedEndpoints.some((provider) => path === `search.baseUrls.${provider}`) &&
+    backendValueAtPath(inheritedConfig, path) !== undefined &&
+    backendValueAtPath(config, path) === undefined
+  );
+  // A parent deletion already removes its children.
+  const paths = removed.filter((path) => !removed.some((parent) => path.startsWith(`${parent}.`)));
+  // New proxy and network deletions use the existing disable forms.
+  const markers = paths.filter((path) => path !== 'proxy' && path !== 'network' && path !== 'network.allowRanges');
+  const preserved = existingOverride?.cleared?.filter((path) =>
+    (CLEARABLE_BACKEND_PATHS as readonly string[]).includes(path) && backendValueAtPath(config, path) === undefined
+  ) ?? [];
+  const cleared = [...new Set([...markers, ...preserved])];
+  if (cleared.length) override.cleared = cleared;
 
   if (!sameJson(config.search, inheritedConfig.search)) {
+    const baseUrls = Object.fromEntries(Object.entries(config.search.baseUrls ?? {}).filter(([provider, url]) =>
+      url !== undefined && url !== inheritedConfig.search.baseUrls?.[provider as SearchProviderName]
+    ));
+    const changedBaseUrls = Object.keys(baseUrls).length ? { baseUrls } : {};
+    const { baseUrls: _baseUrls, ...search } = config.search;
     override.search = config.search.provider !== inheritedConfig.search.provider
-      ? { ...config.search }
+      ? { ...search, ...changedBaseUrls }
       : {
           ...(config.search.baseUrl !== inheritedConfig.search.baseUrl ? { baseUrl: config.search.baseUrl } : {}),
-          ...(!sameJson(config.search.baseUrls, inheritedConfig.search.baseUrls) ? { baseUrls: config.search.baseUrls } : {}),
+          ...changedBaseUrls,
           ...(config.search.keyHeader !== inheritedConfig.search.keyHeader ? { keyHeader: config.search.keyHeader } : {}),
           ...(config.search.fallback !== inheritedConfig.search.fallback ? { fallback: config.search.fallback } : {}),
           ...(!sameJson(config.search.options, inheritedConfig.search.options) ? { options: config.search.options } : {}),
@@ -808,6 +871,7 @@ export function collapseBackendConfigToOverride(
       override.proxy = { url: '' };
     }
   }
+  if (!config.proxy && existingOverride?.proxy?.url === '') override.proxy = { url: '' };
 
   if (!sameJson(config.network, inheritedConfig.network)) {
     if (config.network) {
@@ -829,15 +893,15 @@ export function collapseBackendConfigToOverride(
 }
 
 export function handleSettingsShortcut(data: string): { action: 'cancel' | 'reset' | 'save' } | undefined {
-  if (data === '\u001b') {
+  if (matchesKey(data, Key.escape)) {
     return { action: 'cancel' };
   }
 
-  if (data === '\u0012') {
+  if (matchesKey(data, Key.ctrl('r'))) {
     return { action: 'reset' };
   }
 
-  if (data === '\u0013') {
+  if (matchesKey(data, Key.ctrl('s'))) {
     return { action: 'save' };
   }
 
@@ -953,7 +1017,7 @@ async function openPresentationSettingsUi(
           rebuildSettingsList();
           container.invalidate();
         },
-        () => done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends }),
+        () => done({ action: 'cancel' }),
         { enableSearch: true }
       );
 
@@ -966,7 +1030,7 @@ async function openPresentationSettingsUi(
       render: (width: number) => container.render(width),
       invalidate: () => container.invalidate(),
       handleInput: (data: string) => {
-        const shortcut = handleSettingsShortcut(JSON.stringify(data).slice(1, -1));
+        const shortcut = handleSettingsShortcut(data);
 
         if (shortcut?.action === 'cancel') {
           done({ action: 'cancel' });
@@ -979,7 +1043,7 @@ async function openPresentationSettingsUi(
         }
 
         if (shortcut?.action === 'save') {
-          done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends });
+          done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends, presentationEdits: state.presentationEdits[state.scope] });
           return;
         }
 
@@ -1025,7 +1089,7 @@ async function openBackendSettingsUi(
           rebuildSettingsList();
           container.invalidate();
         },
-        () => done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends }),
+        () => done({ action: 'cancel' }),
         { enableSearch: true }
       );
 
@@ -1046,7 +1110,7 @@ async function openBackendSettingsUi(
           return;
         }
 
-        const shortcut = handleSettingsShortcut(JSON.stringify(data).slice(1, -1));
+        const shortcut = handleSettingsShortcut(data);
 
         if (shortcut?.action === 'cancel') {
           done({ action: 'cancel' });
@@ -1179,7 +1243,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         const inheritedConfig = getInheritedConfigForScope(loaded, scope);
 
         if (first && isModeOrInherit(first) && first !== 'inherit') {
-          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig));
+          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig, loaded[scope].rawConfig, ['defaultMode']));
           ctx.ui.notify(`Saved project default mode = ${first}`, 'info');
           return;
         }
@@ -1195,7 +1259,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
           await save(
             scope,
-            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig)
+            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig, loaded[scope].rawConfig, [`tools.${first}`])
           );
           ctx.ui.notify(`Saved project ${first} = ${second}`, 'info');
           return;
@@ -1233,7 +1297,9 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
             result.scope,
             collapsePresentationConfigToOverride(
               result.config,
-              getInheritedConfigForScope(loaded, result.scope)
+              getInheritedConfigForScope(loaded, result.scope),
+              loaded[result.scope].rawConfig,
+              result.presentationEdits
             )
           );
           ctx.ui.notify(`Saved ${result.scope} presentation config`, 'info');
@@ -1244,7 +1310,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           result.scope,
           collapseBackendConfigToOverride(
             result.backends,
-            getInheritedBackendsForScope(loaded, result.scope)
+            getInheritedBackendsForScope(loaded, result.scope),
+            loaded[result.scope].rawBackends
           )
         );
         ctx.ui.notify(`Saved ${result.scope} backend config`, 'info');

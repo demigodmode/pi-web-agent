@@ -13,7 +13,12 @@ The format is intentionally simple and release-oriented.
 - None.
 
 ### Fixed
-- None.
+- Manual publishing now builds the validated requested tag, even when dispatched from another branch (#91).
+- Legacy SearXNG endpoints survive config loading when a hosted search provider is selected (#92).
+- Clearing inherited backend settings persists across project save/reload, including search endpoints (#94).
+- Presentation settings preserve `inherit` choices and explicit modes across save/reload. Inherited tool modes follow the current default, and explicit modes stay pinned even when they match the global default (#94).
+- Ctrl+S saves, Ctrl+R resets, and Esc cancels in the presentation and backend settings screens.
+- Update the locked development dependency brace-expansion to 5.0.12 for CVE-2026-102277.
 
 ### Breaking
 - None.
