@@ -18,6 +18,24 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [1.14.1] - 2026-10-04
+### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- Manual publishing now builds the validated requested tag, even when dispatched from another branch (#91).
+- Legacy SearXNG endpoints survive config loading when a hosted search provider is selected (#92).
+- Clearing inherited backend settings persists across project save/reload, including search endpoints (#94).
+- Presentation settings preserve `inherit` choices and explicit modes across save/reload. Inherited tool modes follow the current default, and explicit modes stay pinned even when they match the global default (#94).
+- The shortcuts shown on the presentation and backend settings screens work now: Ctrl+S saves, Esc cancels and Ctrl+R resets. If you got used to the old behavior, note that Esc used to save your edits and now discards them. Ctrl+R deletes the selected scope's config file, presentation and backend settings both, without asking first. A confirmation is planned (#98).
+- Update the locked development dependency brace-expansion to 5.0.12 for CVE-2026-102277.
+
+### Breaking
+- None.
+
 ## [1.14.0] - 2026-10-02
 ### Added
 - Paste a GitHub repo link into your question and `web_explore` now downloads that repo (one commit, shallow) and reads it locally (#72). Clones stay around for the session so follow-ups are quick, and get cleaned up when the session ends. Private repos work with `gh auth login` or `GITHUB_TOKEN`. Repos over 300MB, a clone that takes over 60 seconds or a missing `git` stop the answer with a clear reason instead of falling back to the README.

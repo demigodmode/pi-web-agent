@@ -8,6 +8,9 @@
 4. push `develop` and open a PR from `develop` into `main`, then merge it with a merge commit (not squash or rebase) so the tagged commit ends up on `main`
 5. push the tag by name, for example `git push origin v1.8.0`
 6. let GitHub Actions publish the tagged release to npm and rebuild the docs site
+7. fast-forward `develop` to `main` (`git checkout develop && git merge --ff-only origin/main && git push origin develop`), so both branches point at the same commit again
+
+The release merge leaves `main` one merge commit ahead of `develop`, with no file changes. Step 7 just moves `develop` up to it, so GitHub stops showing `main` as ahead and the next release starts from the same commit.
 
 The publish workflow refuses a tag that isn't on `main`, so merge first and push the tag after. Feature PRs target `develop`; only release merges go to `main`.
 

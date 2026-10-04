@@ -11,24 +11,37 @@ on:
         required: true
         type: string
 
+env:
+  TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    outputs:
+      commit: ${{ steps.validate-tag.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: refs/tags/${{ env.TAG_NAME }}
           fetch-depth: 0
       # releases are cut on develop and merged into main before the tag is pushed
       - name: Tag must be on main
+        id: validate-tag
         run: |
-          if ! git merge-base --is-ancestor "refs/tags/$TAG_NAME" origin/main; then
+          set -euo pipefail
+          git check-ref-format "refs/tags/$TAG_NAME"
+          TAG_COMMIT=$(git rev-parse --verify "refs/tags/$TAG_NAME^{commit}")
+          if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
+            echo "::error::Checkout does not match the requested tag."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
             echo "::error::$TAG_NAME is not on main. Merge the release PR first, then push the tag."
             exit 1
           fi
+          echo "commit=$TAG_COMMIT" >> "$GITHUB_OUTPUT"
       - run: node scripts/release-notes.mjs "$TAG_NAME" release-notes.md
       - run: gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --title "$TAG_NAME" --notes-file release-notes.md
         env:
@@ -41,6 +54,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.commit }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22

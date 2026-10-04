@@ -89,6 +89,8 @@ async function readPresentationConfigFile(filePath: string): Promise<Presentatio
 function serializePresentationConfigOverride(config: PresentationConfigOverride): PresentationConfigFile {
   const presentation: NonNullable<PresentationConfigFile['presentation']> = {};
 
+  if (config.cleared?.length) presentation.cleared = [...config.cleared];
+
   if (config.defaultMode) {
     presentation.defaultMode = config.defaultMode;
   }
@@ -102,6 +104,8 @@ function serializePresentationConfigOverride(config: PresentationConfigOverride)
 
 function serializeBackendConfigOverride(config: BackendConfigOverride): BackendConfigFile {
   const backends: NonNullable<BackendConfigFile['backends']> = {};
+
+  if (config.cleared?.length) backends.cleared = [...config.cleared];
 
   if (config.search && Object.keys(config.search).length > 0) {
     backends.search = { ...config.search };
