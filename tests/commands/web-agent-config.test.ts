@@ -1426,7 +1426,7 @@ describe('web-agent config commands', () => {
     expect(reset).toHaveBeenCalledWith('project');
   });
 
-  it('sets the default mode in project scope without pinning the inherited global default', async () => {
+  it('pins an explicitly requested project default even when it matches global', async () => {
     let handler: any;
     const save = vi.fn();
     const pi = {
@@ -1455,6 +1455,7 @@ describe('web-agent config commands', () => {
     await handler('mode preview', { ui: { notify: vi.fn() } });
 
     expect(save).toHaveBeenCalledWith('project', {
+      defaultMode: 'preview',
       tools: {}
     });
   });
@@ -1485,6 +1486,7 @@ describe('web-agent config commands', () => {
     await handler('mode web_explore verbose', { ui: { notify: vi.fn() } });
 
     expect(save).toHaveBeenCalledWith('project', {
+      defaultMode: 'compact',
       tools: { web_explore: { mode: 'verbose' } }
     });
   });
@@ -1544,6 +1546,7 @@ describe('web-agent config commands', () => {
     await handler('mode web_explore inherit', { ui: { notify: vi.fn() } });
 
     expect(save).toHaveBeenCalledWith('project', {
+      defaultMode: 'compact',
       cleared: ['tools.web_explore'],
       tools: {}
     });

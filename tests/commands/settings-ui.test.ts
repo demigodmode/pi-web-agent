@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 import type { Component } from '@earendil-works/pi-tui';
+import { PRESENTATION_MODES, type PresentationMode } from '../../src/presentation/types.js';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applySettingsValue, createSettingsDraftState, registerWebAgentConfigCommands
@@ -17,6 +18,12 @@ import {
 
 const theme = { fg: (_role: string, text: string) => text, bold: (text: string) => text };
 type UiFactory = (tui: { requestRender(): void }, colors: typeof theme, keys: object, done: (value: unknown) => void) => Component;
+
+function selectToolMode(current: 'inherit' | PresentationMode, target: 'inherit' | PresentationMode): string[] {
+  const modes = ['inherit', ...PRESENTATION_MODES];
+  const cycles = (modes.indexOf(target) - modes.indexOf(current) + modes.length) % modes.length || modes.length;
+  return Array.from({ length: cycles }, () => ['\x1b[B', '\x1b[B', '\r']).flat();
+}
 
 function commandHarness(options: { homeDir: string; projectDir: string }) {
   let handler: (args: string, ctx: unknown) => Promise<void> = async () => { throw new Error('command missing'); };
@@ -148,6 +155,150 @@ describe('settings input and persisted presentation inheritance', () => {
     expect(result).toMatchObject({ action: 'save', backends: { search: { baseUrl: 'https://old.invalid' } } });
     expect(command.saveBackends).toHaveBeenCalledOnce();
     expect((await loadPresentationConfigLayers(options)).effectiveBackends.search.baseUrl).toBe('https://old.invalid');
+  });
+
+  const defaultPairs = PRESENTATION_MODES.flatMap((globalDefault) =>
+    PRESENTATION_MODES.map((projectDefault) => ({ globalDefault, projectDefault }))
+  );
+  const selections = defaultPairs.flatMap((defaults) => PRESENTATION_MODES.map((mode) => ({ ...defaults, mode })));
+  it.each(selections)('keeps edited $mode with global $globalDefault and project $projectDefault defaults', async ({ globalDefault, projectDefault, mode }) => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: globalDefault, tools: {} });
+    await savePresentationConfigScope(options, 'project', { defaultMode: projectDefault, tools: {} });
+    const saveKey = mode === 'preview' ? '\x1b[115;5u' : '\x13';
+    const command = commandHarness(options);
+    await command.runUi('presentation', [...selectToolMode('inherit', mode), saveKey]);
+    let loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.tools.web_explore).toEqual({ mode });
+    expect(resolvePresentationMode('web_explore', loaded.effectiveConfig)).toBe(mode);
+    await command.runUi('presentation', ['\x13']);
+    loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.tools.web_explore).toEqual({ mode });
+    expect(loaded.project.rawConfig?.defaultMode).toBe(projectDefault);
+  });
+
+  it.each(defaultPairs)('preserves saved pins while defaults change from $globalDefault/$projectDefault', async ({ globalDefault, projectDefault }) => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: globalDefault, tools: {} });
+    await savePresentationConfigScope(options, 'project', {
+      defaultMode: projectDefault, tools: { web_explore: { mode: globalDefault }, web_fetch: { mode: globalDefault } }
+    });
+    const command = commandHarness(options);
+    await command.runUi('presentation', ['\x13']);
+    const futureMode = PRESENTATION_MODES[(PRESENTATION_MODES.indexOf(globalDefault) + 1) % 3];
+    await savePresentationConfigScope(options, 'global', {
+      defaultMode: projectDefault, tools: { web_explore: { mode: futureMode }, web_fetch: { mode: futureMode } }
+    });
+    await command.runUi('presentation', ['\x1b[115;5u']);
+    const loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.defaultMode).toBe(projectDefault);
+    expect(loaded.project.rawConfig?.tools).toEqual({ web_explore: { mode: globalDefault }, web_fetch: { mode: globalDefault } });
+    expect(resolvePresentationMode('web_explore', loaded.effectiveConfig)).toBe(globalDefault);
+  });
+
+  it.each(PRESENTATION_MODES.flatMap((defaultMode) => PRESENTATION_MODES.map((mode) => ({ defaultMode, mode }))))(
+    'keeps global edited $mode under default $defaultMode across saves', async ({ defaultMode, mode }) => {
+      await savePresentationConfigScope(options, 'global', { defaultMode, tools: {} });
+      const command = commandHarness(options);
+      await command.runUi('presentation', ['\r', ...selectToolMode('inherit', mode), '\x13']);
+      await command.runUi('presentation', ['\r', '\x1b[115;5u']);
+      const loaded = await loadPresentationConfigLayers(options);
+      expect(loaded.global.rawConfig?.tools.web_explore).toEqual({ mode });
+      expect(loaded.global.rawConfig?.defaultMode).toBe(defaultMode);
+      expect(loaded.project.exists).toBe(false);
+    }
+  );
+
+  it.each([undefined, 'verbose'] as const)('keeps untouched inherited entries omitted with project default %s', async (projectDefault) => {
+    await savePresentationConfigScope(options, 'global', {
+      defaultMode: 'preview', tools: { web_explore: { mode: 'preview' }, web_fetch: { mode: 'compact' } }
+    });
+    if (projectDefault) await savePresentationConfigScope(options, 'project', { defaultMode: projectDefault, tools: {} });
+    const command = commandHarness(options);
+    await command.runUi('presentation', ['\x13']);
+    expect((await loadPresentationConfigLayers(options)).project.rawConfig).toMatchObject({ tools: {} });
+    expect((await loadPresentationConfigLayers(options)).project.rawConfig?.defaultMode).toBe(projectDefault);
+    await savePresentationConfigScope(options, 'global', {
+      defaultMode: 'verbose', tools: { web_explore: { mode: 'compact' }, web_fetch: { mode: 'verbose' } }
+    });
+    await command.runUi('presentation', ['\x13']);
+    const loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.tools).toEqual({});
+    expect(loaded.project.rawConfig?.defaultMode).toBe(projectDefault);
+    expect(resolvePresentationMode('web_explore', loaded.effectiveConfig)).toBe('compact');
+    expect(loaded.effectiveConfig.tools.web_fetch).toEqual({ mode: 'verbose' });
+  });
+
+  it.each(['global', 'project'] as const)('keeps clear, explicit-equal-parent and inherit intent in %s scope', async (scope) => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: 'compact', tools: { web_explore: { mode: 'compact' } } });
+    if (scope === 'project') await savePresentationConfigScope(options, 'project', { defaultMode: 'verbose', tools: {} });
+    const prefix = scope === 'global' ? ['\r'] : [];
+    const command = commandHarness(options);
+    await command.runUi('presentation', [...prefix, ...selectToolMode('compact', 'inherit'), '\x13']);
+    expect((await loadPresentationConfigLayers(options))[scope].rawConfig?.cleared).toEqual(['tools.web_explore']);
+    await command.runUi('presentation', [...prefix, ...selectToolMode('inherit', 'compact'), '\x1b[115;5u']);
+    let loaded = await loadPresentationConfigLayers(options);
+    expect(loaded[scope].rawConfig?.cleared).toBeUndefined();
+    expect(loaded[scope].rawConfig?.tools.web_explore).toEqual({ mode: 'compact' });
+    await command.runUi('presentation', [...prefix, ...selectToolMode('compact', 'inherit'), '\x13']);
+    loaded = await loadPresentationConfigLayers(options);
+    expect(loaded[scope].rawConfig?.cleared).toEqual(['tools.web_explore']);
+    expect(resolvePresentationMode('web_explore', loaded.effectiveConfig)).toBe(scope === 'project' ? 'verbose' : 'compact');
+  });
+
+  it('pins a CLI choice equal to the parent and preserves it during unrelated default changes', async () => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: 'preview', tools: {} });
+    await savePresentationConfigScope(options, 'project', { defaultMode: 'verbose', tools: {} });
+    const command = commandHarness(options);
+    await command.handler('mode web_explore preview', { ui: { notify: vi.fn() } });
+    await command.handler('mode preview', { ui: { notify: vi.fn() } });
+    await savePresentationConfigScope(options, 'global', { defaultMode: 'compact', tools: {} });
+    await command.runUi('presentation', ['\x13']);
+    const loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.defaultMode).toBe('preview');
+    expect(loaded.project.rawConfig?.tools.web_explore).toEqual({ mode: 'preview' });
+  });
+
+  it.each(['\x13', '\x1b[115;5u'])('keeps the exact preview/verbose counterexample with save bytes %j', async (saveKey) => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: 'preview', tools: {} });
+    await savePresentationConfigScope(options, 'project', { defaultMode: 'verbose', tools: {} });
+    const command = commandHarness(options);
+    await command.runUi('presentation', [...selectToolMode('inherit', 'preview'), saveKey]);
+    const loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.tools.web_explore).toEqual({ mode: 'preview' });
+    expect(resolvePresentationMode('web_explore', loaded.effectiveConfig)).toBe('preview');
+  });
+
+  it.each(['global', 'project'] as const)('pins a default row edited back to its inherited value in %s scope', async (scope) => {
+    await savePresentationConfigScope(options, 'global', { tools: {} });
+    const command = commandHarness(options);
+    const prefix = scope === 'global' ? ['\r'] : [];
+    const editBackToCompact = Array.from({ length: 3 }, () => ['\x1b[B', '\r']).flat();
+    await command.runUi('presentation', [...prefix, ...editBackToCompact, '\x13']);
+    expect((await loadPresentationConfigLayers(options))[scope].rawConfig?.defaultMode).toBe('compact');
+    if (scope === 'project') await savePresentationConfigScope(options, 'global', { defaultMode: 'verbose', tools: {} });
+    await command.runUi('presentation', [...prefix, '\x1b[115;5u']);
+    expect((await loadPresentationConfigLayers(options))[scope].rawConfig?.defaultMode).toBe('compact');
+  });
+
+  it('keeps per-scope edits separate and saves only the selected scope', async () => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: 'preview', tools: {} });
+    await savePresentationConfigScope(options, 'project', { defaultMode: 'verbose', tools: {} });
+    const command = commandHarness(options);
+    await command.runUi('presentation', [
+      ...selectToolMode('inherit', 'preview'), '\r', ...selectToolMode('inherit', 'compact'), '\r', '\x13'
+    ]);
+    const loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.tools.web_explore).toEqual({ mode: 'preview' });
+    expect(loaded.global.rawConfig?.tools).toEqual({});
+  });
+
+  it('does not copy global draft edits into an untouched project draft', async () => {
+    await savePresentationConfigScope(options, 'global', { defaultMode: 'preview', tools: {} });
+    const command = commandHarness(options);
+    await command.runUi('presentation', ['\r', ...selectToolMode('inherit', 'compact'), '\r', '\x13']);
+    const loaded = await loadPresentationConfigLayers(options);
+    expect(loaded.project.rawConfig?.tools).toEqual({});
+    expect(loaded.project.rawConfig?.defaultMode).toBeUndefined();
+    expect(loaded.global.rawConfig?.tools).toEqual({});
   });
 
   it('applies validated presentation clears before explicit values without mutating lower layers', () => {

@@ -68,3 +68,4 @@ export const CLEARABLE_PRESENTATION_PATHS = [
   'tools.web_search', 'tools.web_fetch', 'tools.web_fetch_headless', 'tools.web_explore'
 ] as const;
 export type PresentationClearPath = typeof CLEARABLE_PRESENTATION_PATHS[number];
+export type PresentationEditPath = 'defaultMode' | PresentationClearPath;

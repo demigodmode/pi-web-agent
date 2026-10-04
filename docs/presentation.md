@@ -152,6 +152,8 @@ When you switch `web_explore` back to `inherit`, it uses the current default mod
 
 Omitting a project setting inherits the global setting. A clear marker removes the lower layer's tool override before this layer's values are applied. Changing the default mode then changes the inherited tool mode too. Selecting an explicit tool mode replaces the clear; removing the marker or resetting project config restores the global tool setting.
 
+An explicit mode stays pinned even when it matches the global mode or current default. Saving other settings preserves existing tool and default-mode pins. Untouched inherited settings remain omitted from the saved layer.
+
 ## Example config
 
 ```json

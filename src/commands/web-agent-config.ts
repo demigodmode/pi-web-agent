@@ -54,6 +54,7 @@ import { CLEARABLE_PRESENTATION_PATHS } from '../presentation/types.js';
 import type {
   PresentationConfig,
   PresentationConfigOverride,
+  PresentationEditPath,
   PresentationScope,
   PresentationToolName
 } from '../presentation/types.js';
@@ -75,7 +76,7 @@ type CommandDeps = {
 type SettingsUiResult =
   | { action: 'cancel' }
   | { action: 'reset'; scope: PresentationScope }
-  | { action: 'save'; scope: PresentationScope; config: PresentationConfig; backends: BackendConfig };
+  | { action: 'save'; scope: PresentationScope; config: PresentationConfig; backends: BackendConfig; presentationEdits?: PresentationEditPath[] };
 
 type WebAgentAction = 'settings' | 'show' | 'doctor' | 'changelog' | 'reset-project' | 'reset-global';
 type SettingsSection = 'presentation' | 'backends';
@@ -84,6 +85,7 @@ export type SettingsDraftState = {
   scope: PresentationScope;
   drafts: Record<PresentationScope, PresentationConfig>;
   backendDrafts: Record<PresentationScope, BackendConfig>;
+  presentationEdits: Record<PresentationScope, PresentationEditPath[]>;
   config: PresentationConfig;
   backends: BackendConfig;
 };
@@ -519,6 +521,7 @@ export function createSettingsDraftState(
     scope: initialScope,
     drafts,
     backendDrafts,
+    presentationEdits: { global: [], project: [] },
     config: clonePresentationConfig(drafts[initialScope]),
     backends: cloneBackendConfig(backendDrafts[initialScope])
   };
@@ -537,6 +540,10 @@ export function applySettingsValue(
     global: cloneBackendConfig(state.backendDrafts.global),
     project: cloneBackendConfig(state.backendDrafts.project)
   };
+  const presentationEdits = {
+    global: [...state.presentationEdits.global],
+    project: [...state.presentationEdits.project]
+  };
 
   let nextScope = state.scope;
 
@@ -546,6 +553,7 @@ export function applySettingsValue(
       scope: nextScope,
       drafts: nextDrafts,
       backendDrafts: nextBackendDrafts,
+      presentationEdits,
       config: clonePresentationConfig(nextDrafts[nextScope]),
       backends: cloneBackendConfig(nextBackendDrafts[nextScope])
     };
@@ -556,6 +564,7 @@ export function applySettingsValue(
 
   if (id === 'defaultMode' && (newValue === 'compact' || newValue === 'preview' || newValue === 'verbose')) {
     currentDraft.defaultMode = newValue;
+    if (!presentationEdits[nextScope].includes('defaultMode')) presentationEdits[nextScope].push('defaultMode');
   }
 
   if (id.startsWith('tool:')) {
@@ -573,6 +582,10 @@ export function applySettingsValue(
     }
 
     currentDraft.tools = nextTools;
+    const path = `tools.${toolName}` as PresentationEditPath;
+    if ((CLEARABLE_PRESENTATION_PATHS as readonly string[]).includes(path) && isModeOrInherit(newValue) && !presentationEdits[nextScope].includes(path)) {
+      presentationEdits[nextScope].push(path);
+    }
   }
 
   if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
@@ -724,6 +737,7 @@ export function applySettingsValue(
     scope: nextScope,
     drafts: nextDrafts,
     backendDrafts: nextBackendDrafts,
+    presentationEdits,
     config: clonePresentationConfig(nextDrafts[nextScope]),
     backends: cloneBackendConfig(nextBackendDrafts[nextScope])
   };
@@ -732,22 +746,25 @@ export function applySettingsValue(
 export function collapsePresentationConfigToOverride(
   config: PresentationConfig,
   inheritedConfig: PresentationConfig,
-  existingOverride?: PresentationConfigOverride
+  existingOverride?: PresentationConfigOverride,
+  editedFields: readonly PresentationEditPath[] = []
 ): PresentationConfigOverride {
+  const edited = new Set(editedFields);
   const cleared = CLEARABLE_PRESENTATION_PATHS.filter((path) => {
     const toolName = path.slice('tools.'.length) as PresentationToolName;
     return !config.tools[toolName] && (inheritedConfig.tools[toolName] !== undefined ||
-      existingOverride?.tools[toolName] !== undefined || existingOverride?.cleared?.includes(path));
+      existingOverride?.tools[toolName] !== undefined || existingOverride?.cleared?.includes(path) || edited.has(path));
   });
   const tools = Object.fromEntries(
-    PRESENTATION_TOOL_NAMES.flatMap((toolName) => {
+    CLEARABLE_PRESENTATION_PATHS.flatMap((path) => {
+      const toolName = path.slice('tools.'.length) as PresentationToolName;
       const configuredMode = config.tools[toolName]?.mode;
       if (!configuredMode) {
         return [];
       }
 
       const inheritedMode = resolvePresentationMode(toolName, inheritedConfig);
-      if (configuredMode === inheritedMode) {
+      if (!existingOverride?.tools[toolName] && !edited.has(path) && configuredMode === inheritedMode) {
         return [];
       }
 
@@ -758,7 +775,8 @@ export function collapsePresentationConfigToOverride(
   return {
     ...(cleared.length ? { cleared } : {}),
     defaultMode:
-      config.defaultMode === inheritedConfig.defaultMode ? undefined : config.defaultMode,
+      existingOverride?.defaultMode !== undefined || edited.has('defaultMode') || config.defaultMode !== inheritedConfig.defaultMode
+        ? config.defaultMode : undefined,
     tools
   };
 }
@@ -1025,7 +1043,7 @@ async function openPresentationSettingsUi(
         }
 
         if (shortcut?.action === 'save') {
-          done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends });
+          done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends, presentationEdits: state.presentationEdits[state.scope] });
           return;
         }
 
@@ -1225,7 +1243,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         const inheritedConfig = getInheritedConfigForScope(loaded, scope);
 
         if (first && isModeOrInherit(first) && first !== 'inherit') {
-          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig, loaded[scope].rawConfig));
+          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig, loaded[scope].rawConfig, ['defaultMode']));
           ctx.ui.notify(`Saved project default mode = ${first}`, 'info');
           return;
         }
@@ -1241,7 +1259,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
           await save(
             scope,
-            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig, loaded[scope].rawConfig)
+            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig, loaded[scope].rawConfig, [`tools.${first}`])
           );
           ctx.ui.notify(`Saved project ${first} = ${second}`, 'info');
           return;
@@ -1280,7 +1298,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
             collapsePresentationConfigToOverride(
               result.config,
               getInheritedConfigForScope(loaded, result.scope),
-              loaded[result.scope].rawConfig
+              loaded[result.scope].rawConfig,
+              result.presentationEdits
             )
           );
           ctx.ui.notify(`Saved ${result.scope} presentation config`, 'info');
