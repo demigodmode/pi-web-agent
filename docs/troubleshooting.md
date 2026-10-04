@@ -95,7 +95,9 @@ Headless rendering first tries a detectable Chromium-family browser:
 - Edge
 - Brave
 
-If none is found, `web_explore` can fall back to Playwright-managed Chromium. It still launches with `headless: true`, so it should not pop open browser windows.
+If none is found, `web_explore` tries Playwright-managed Chromium with `headless: true`. Installing pi-web-agent does not download that browser. Follow [Browser rendering](/install#browser-rendering) to install the build matching the package's Playwright dependency.
+
+Doctor's `managed Chromium fallback configured` line reports configuration, not whether a managed browser is installed or can launch. A missing local browser can therefore appear alongside that line.
 
 If you configured an explicit browser path and it is missing, doctor/fetch will still report that as a configuration problem instead of silently ignoring it.
 
@@ -128,6 +130,8 @@ The settings UI currently has two sections:
 - **Backends**: search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
+
+In either settings screen, Ctrl+S saves and Esc discards unsaved edits. Ctrl+R immediately deletes the selected scope's whole config file, including both presentation and backend settings, without confirmation. Reset menu entries do the same. Confirmation is deferred in [issue #98](https://github.com/demigodmode/pi-web-agent/issues/98).
 
 ## Pi seems to be loading the wrong copy
 

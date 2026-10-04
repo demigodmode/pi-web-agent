@@ -2,8 +2,12 @@
 
 ## Install dependencies
 
+CI uses Node 22. The locked runtime dependency `undici@8.10.2` declares Node `>=22.19.0`; see [Requirements](/install#requirements).
+
+Use the lockfile to reproduce CI's dependency graph:
+
 ```bash
-npm install
+npm ci
 ```
 
 ## Build the package
@@ -17,6 +21,16 @@ npm run build
 ```bash
 npm test
 ```
+
+This runs Vitest with coverage. On Linux, the guard-proxy browser acceptance tests run when a detectable local browser or managed Chromium is available. They skip when no browser is available. CI installs Chromium and sets `PI_WEB_AGENT_REQUIRE_BROWSER_TESTS=1` so a missing browser fails the run instead of skipping that coverage.
+
+For the same browser requirement locally, install the browser through the repo's Playwright CLI as described under [Browser rendering](/install#browser-rendering), then run:
+
+```bash
+PI_WEB_AGENT_REQUIRE_BROWSER_TESTS=1 npm test -- --maxWorkers=1 --no-file-parallelism --maxConcurrency=1
+```
+
+The single-worker flags limit concurrent test work. Live backend tests are separate: `SEARXNG_TEST_URL` and `FIRECRAWL_TEST_URL` opt into calls to those services; Firecrawl also reads `PI_WEB_AGENT_FIRECRAWL_API_KEY` when needed. Leave those URLs unset for ordinary local and CI runs.
 
 ## Run lint/typecheck
 
@@ -33,6 +47,8 @@ npm run docs:dev
 ```
 
 That starts the VitePress docs site locally.
+
+Check the production docs build with `npm run docs:build` before opening a docs PR.
 
 ## Local Pi development
 
