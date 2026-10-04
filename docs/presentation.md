@@ -140,7 +140,17 @@ The `web_explore` override inherits from the current default mode unless you set
 
 So if your default mode is `preview` and `web_explore` is set to `verbose`, then `web_explore` uses `verbose`.
 
-When you switch `web_explore` back to `inherit`, the package removes that override instead of writing extra noise into the config file.
+When you switch `web_explore` back to `inherit`, it uses the current default mode. Project settings save a `presentation.cleared` marker when removing a tool override, so a global tool override does not reappear after reload:
+
+```json
+{
+  "presentation": {
+    "cleared": ["tools.web_explore"]
+  }
+}
+```
+
+Omitting a project setting inherits the global setting. A clear marker removes the lower layer's tool override before this layer's values are applied. Changing the default mode then changes the inherited tool mode too. Selecting an explicit tool mode replaces the clear; removing the marker or resetting project config restores the global tool setting.
 
 ## Example config
 

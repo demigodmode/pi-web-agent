@@ -1,4 +1,5 @@
 import {
+  CLEARABLE_PRESENTATION_PATHS,
   PRESENTATION_MODES,
   type PresentationConfig,
   type PresentationConfigFile,
@@ -22,6 +23,11 @@ export function extractPresentationConfigOverride(
   file: PresentationConfigFile | null | undefined
 ): PresentationConfigOverride {
   const presentation = file?.presentation;
+  const cleared = Array.isArray(presentation?.cleared)
+    ? [...new Set(presentation.cleared.filter((path): path is typeof CLEARABLE_PRESENTATION_PATHS[number] =>
+        typeof path === 'string' && (CLEARABLE_PRESENTATION_PATHS as readonly string[]).includes(path)
+      ))]
+    : [];
   const tools = Object.fromEntries(
     Object.entries(presentation?.tools ?? {}).flatMap(([toolName, value]) => {
       if (!value || !isPresentationMode(value.mode)) {
@@ -33,6 +39,7 @@ export function extractPresentationConfigOverride(
   ) as PresentationConfig['tools'];
 
   return {
+    ...(cleared.length ? { cleared } : {}),
     defaultMode: isPresentationMode(presentation?.defaultMode)
       ? presentation.defaultMode
       : undefined,
@@ -56,15 +63,15 @@ export function mergePresentationConfigLayers(
   globalConfig?: PresentationConfigOverride,
   projectConfig?: PresentationConfigOverride
 ): PresentationConfig {
-  return {
-    defaultMode:
-      projectConfig?.defaultMode ?? globalConfig?.defaultMode ?? defaults.defaultMode,
-    tools: {
-      ...defaults.tools,
-      ...globalConfig?.tools,
-      ...projectConfig?.tools
+  return [globalConfig, projectConfig].reduce<PresentationConfig>((current, layer) => {
+    const tools = { ...current.tools };
+    for (const path of layer?.cleared ?? []) {
+      if ((CLEARABLE_PRESENTATION_PATHS as readonly string[]).includes(path)) {
+        delete tools[path.slice('tools.'.length) as PresentationToolName];
+      }
     }
-  };
+    return { defaultMode: layer?.defaultMode ?? current.defaultMode, tools: { ...tools, ...layer?.tools } };
+  }, { defaultMode: defaults.defaultMode, tools: { ...defaults.tools } });
 }
 
 export function resolvePresentationMode(

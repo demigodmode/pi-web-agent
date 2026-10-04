@@ -89,6 +89,8 @@ async function readPresentationConfigFile(filePath: string): Promise<Presentatio
 function serializePresentationConfigOverride(config: PresentationConfigOverride): PresentationConfigFile {
   const presentation: NonNullable<PresentationConfigFile['presentation']> = {};
 
+  if (config.cleared?.length) presentation.cleared = [...config.cleared];
+
   if (config.defaultMode) {
     presentation.defaultMode = config.defaultMode;
   }

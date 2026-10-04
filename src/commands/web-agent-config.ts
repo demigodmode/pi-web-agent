@@ -25,6 +25,8 @@ import {
 import {
   Container,
   Input,
+  Key,
+  matchesKey,
   SelectList,
   SettingsList,
   Text,
@@ -48,6 +50,7 @@ import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch
 import { createProxyFetch } from '../fetch/proxy-fetch.js';
 import { checkJitiCompat } from '../jiti-compat.js';
 import { getLatestChangelogEntry } from '../changelog-notice.js';
+import { CLEARABLE_PRESENTATION_PATHS } from '../presentation/types.js';
 import type {
   PresentationConfig,
   PresentationConfigOverride,
@@ -728,8 +731,14 @@ export function applySettingsValue(
 
 export function collapsePresentationConfigToOverride(
   config: PresentationConfig,
-  inheritedConfig: PresentationConfig
+  inheritedConfig: PresentationConfig,
+  existingOverride?: PresentationConfigOverride
 ): PresentationConfigOverride {
+  const cleared = CLEARABLE_PRESENTATION_PATHS.filter((path) => {
+    const toolName = path.slice('tools.'.length) as PresentationToolName;
+    return !config.tools[toolName] && (inheritedConfig.tools[toolName] !== undefined ||
+      existingOverride?.tools[toolName] !== undefined || existingOverride?.cleared?.includes(path));
+  });
   const tools = Object.fromEntries(
     PRESENTATION_TOOL_NAMES.flatMap((toolName) => {
       const configuredMode = config.tools[toolName]?.mode;
@@ -747,6 +756,7 @@ export function collapsePresentationConfigToOverride(
   ) as PresentationConfigOverride['tools'];
 
   return {
+    ...(cleared.length ? { cleared } : {}),
     defaultMode:
       config.defaultMode === inheritedConfig.defaultMode ? undefined : config.defaultMode,
     tools
@@ -865,15 +875,15 @@ export function collapseBackendConfigToOverride(
 }
 
 export function handleSettingsShortcut(data: string): { action: 'cancel' | 'reset' | 'save' } | undefined {
-  if (data === '\u001b') {
+  if (matchesKey(data, Key.escape)) {
     return { action: 'cancel' };
   }
 
-  if (data === '\u0012') {
+  if (matchesKey(data, Key.ctrl('r'))) {
     return { action: 'reset' };
   }
 
-  if (data === '\u0013') {
+  if (matchesKey(data, Key.ctrl('s'))) {
     return { action: 'save' };
   }
 
@@ -989,7 +999,7 @@ async function openPresentationSettingsUi(
           rebuildSettingsList();
           container.invalidate();
         },
-        () => done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends }),
+        () => done({ action: 'cancel' }),
         { enableSearch: true }
       );
 
@@ -1002,7 +1012,7 @@ async function openPresentationSettingsUi(
       render: (width: number) => container.render(width),
       invalidate: () => container.invalidate(),
       handleInput: (data: string) => {
-        const shortcut = handleSettingsShortcut(JSON.stringify(data).slice(1, -1));
+        const shortcut = handleSettingsShortcut(data);
 
         if (shortcut?.action === 'cancel') {
           done({ action: 'cancel' });
@@ -1061,7 +1071,7 @@ async function openBackendSettingsUi(
           rebuildSettingsList();
           container.invalidate();
         },
-        () => done({ action: 'save', scope: state.scope, config: state.config, backends: state.backends }),
+        () => done({ action: 'cancel' }),
         { enableSearch: true }
       );
 
@@ -1082,7 +1092,7 @@ async function openBackendSettingsUi(
           return;
         }
 
-        const shortcut = handleSettingsShortcut(JSON.stringify(data).slice(1, -1));
+        const shortcut = handleSettingsShortcut(data);
 
         if (shortcut?.action === 'cancel') {
           done({ action: 'cancel' });
@@ -1215,7 +1225,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
         const inheritedConfig = getInheritedConfigForScope(loaded, scope);
 
         if (first && isModeOrInherit(first) && first !== 'inherit') {
-          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig));
+          await save(scope, collapsePresentationConfigToOverride({ ...baseConfig, defaultMode: first }, inheritedConfig, loaded[scope].rawConfig));
           ctx.ui.notify(`Saved project default mode = ${first}`, 'info');
           return;
         }
@@ -1231,7 +1241,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
           await save(
             scope,
-            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig)
+            collapsePresentationConfigToOverride({ ...baseConfig, tools: nextTools }, inheritedConfig, loaded[scope].rawConfig)
           );
           ctx.ui.notify(`Saved project ${first} = ${second}`, 'info');
           return;
@@ -1269,7 +1279,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
             result.scope,
             collapsePresentationConfigToOverride(
               result.config,
-              getInheritedConfigForScope(loaded, result.scope)
+              getInheritedConfigForScope(loaded, result.scope),
+              loaded[result.scope].rawConfig
             )
           );
           ctx.ui.notify(`Saved ${result.scope} presentation config`, 'info');

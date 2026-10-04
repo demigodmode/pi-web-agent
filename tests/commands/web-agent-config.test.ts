@@ -1544,6 +1544,7 @@ describe('web-agent config commands', () => {
     await handler('mode web_explore inherit', { ui: { notify: vi.fn() } });
 
     expect(save).toHaveBeenCalledWith('project', {
+      cleared: ['tools.web_explore'],
       tools: {}
     });
   });
