@@ -54,6 +54,8 @@ Compared to other web tooling for agents:
 
 > `pi-web-agent` requires Pi 0.74+ (Pi packages moved to the `@earendil-works/*` scope). Update Pi before updating this package. On older Pi, stay on `@demigodmode/pi-web-agent@0.6.x`. The extension works on Pi 0.99 and 1.0; `typebox` is a peer dependency that Pi already provides.
 
+CI runs on Node 22. The locked runtime dependency `undici@8.10.2` declares Node `>=22.19.0`; see [installation requirements](https://demigodmode.github.io/pi-web-agent/install#requirements).
+
 ```bash
 pi install npm:@demigodmode/pi-web-agent
 ```
@@ -67,7 +69,7 @@ Reload or restart Pi after installing, then:
 
 Update later with `pi update --extensions`.
 
-**Browser rendering:** headless first tries a detected Chromium-family browser (Chrome, Chromium, Edge, Brave). If none is found, it falls back to Playwright-managed Chromium. Firefox/Safari-only systems still get search and plain HTTP reads.
+**Browser rendering:** headless first tries a detected Chromium-family browser (Chrome, Chromium, Edge, Brave). If none is found, it tries Playwright-managed Chromium, which must already be installed. See [browser setup](https://demigodmode.github.io/pi-web-agent/install#browser-rendering) for the matching install command. Firefox/Safari-only systems still get search and plain HTTP reads.
 
 ## Usage
 
@@ -83,7 +85,7 @@ If a pass comes back thin, call `web_explore` again with a narrower query.
 
 ## Backends
 
-Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Switch providers from `/web-agent settings → Backends`. API keys stay in environment variables, never in config files.
+Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Switch providers from `/web-agent settings → Backends`. The UI does not write API keys. Manual Firecrawl `apiKey` and proxy `password` config values are supported, but a Backends save removes them from that scope's file. Environment variables survive those saves.
 
 | Backend | Role | Enable with |
 | --- | --- | --- |
@@ -132,6 +134,8 @@ Presentation modes:
 - `compact`: short summary, the default everywhere
 - `preview`: slightly richer bounded view
 - `verbose`: fuller bounded view
+
+Modes change the terminal display; the model receives findings, sources, and caveats in every mode. In settings, Ctrl+S saves, Esc discards edits, and Ctrl+R immediately deletes the whole selected scope's config file, including both presentation and backend settings, without confirmation. Confirmation is deferred in [#98](https://github.com/demigodmode/pi-web-agent/issues/98).
 
 ## Docs
 
