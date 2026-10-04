@@ -17,7 +17,7 @@ The format is intentionally simple and release-oriented.
 - Legacy SearXNG endpoints survive config loading when a hosted search provider is selected (#92).
 - Clearing inherited backend settings persists across project save/reload, including search endpoints (#94).
 - Presentation settings preserve `inherit` choices and explicit modes across save/reload. Inherited tool modes follow the current default, and explicit modes stay pinned even when they match the global default (#94).
-- Ctrl+S saves, Ctrl+R resets, and Esc cancels in the presentation and backend settings screens.
+- The shortcuts shown on the presentation and backend settings screens work now: Ctrl+S saves, Esc cancels and Ctrl+R resets. If you got used to the old behavior, note that Esc used to save your edits and now discards them. Ctrl+R deletes the selected scope's config file, presentation and backend settings both, without asking first. A confirmation is planned (#98).
 - Update the locked development dependency brace-expansion to 5.0.12 for CVE-2026-102277.
 
 ### Breaking
