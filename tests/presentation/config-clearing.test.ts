@@ -123,6 +123,113 @@ describe('persisted backend layers', () => {
     expect(reloaded.effectiveBackends.fetch.options).toBeUndefined();
   });
 
+  it('keeps the other endpoint inherited when clearing one slot from a populated map', async () => {
+    await saveBackendConfigScope(options, 'global', { search: {
+      provider: 'searxng', baseUrls: { searxng: 'https://searx.invalid', 'google-serp': 'https://old-google.invalid' }
+    } });
+    const loaded = await loadPresentationConfigLayers(options);
+    const draft = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:baseUrl', '');
+    await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(draft.backends, getInheritedBackendsForScope(loaded, 'project')));
+    await saveBackendConfigScope(options, 'global', { search: {
+      provider: 'searxng', baseUrls: { searxng: 'https://searx.invalid', 'google-serp': 'https://new-google.invalid' }
+    } });
+    const reloaded = await loadPresentationConfigLayers(options);
+    expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, 'searxng')).toBeUndefined();
+    expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, 'google-serp')).toBe('https://new-google.invalid');
+    expect(reloaded.project.rawBackends?.search?.baseUrls?.['google-serp']).toBeUndefined();
+  });
+
+  it('keeps endpoint inheritance after switching providers while retaining a changed slot', async () => {
+    await saveBackendConfigScope(options, 'global', { search: {
+      provider: 'searxng', baseUrls: { searxng: 'https://old-searx.invalid', 'google-serp': 'https://google.invalid' }
+    } });
+    const loaded = await loadPresentationConfigLayers(options);
+    const draft = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:provider', 'google-serp');
+    draft.backends.search.baseUrls = { ...draft.backends.search.baseUrls, 'google-serp': 'https://project-google.invalid' };
+    await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(draft.backends, getInheritedBackendsForScope(loaded, 'project')));
+    await saveBackendConfigScope(options, 'global', { search: {
+      provider: 'searxng', baseUrls: { searxng: 'https://new-searx.invalid', 'google-serp': 'https://google.invalid' }
+    } });
+    const reloaded = await loadPresentationConfigLayers(options);
+    expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, 'searxng')).toBe('https://new-searx.invalid');
+    expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, 'google-serp')).toBe('https://project-google.invalid');
+    expect(reloaded.project.rawBackends?.search?.baseUrls).toEqual({ 'google-serp': 'https://project-google.invalid' });
+  });
+
+  it.each(['searxng', 'google-serp'] as const)('clears only %s when the global legacy URL changes provider', async (provider) => {
+    await saveBackendConfigScope(options, 'global', { search: { provider, baseUrl: 'https://old.invalid' } });
+    const loaded = await loadPresentationConfigLayers(options);
+    const draft = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:baseUrl', '');
+    await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(draft.backends, getInheritedBackendsForScope(loaded, 'project')));
+    const other = provider === 'searxng' ? 'google-serp' : 'searxng';
+    await saveBackendConfigScope(options, 'global', { search: {
+      provider: other, baseUrl: 'https://other.invalid', baseUrls: { [provider]: 'https://revived.invalid' }
+    } });
+    const reloaded = await loadPresentationConfigLayers(options);
+    expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, provider)).toBeUndefined();
+    expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, other)).toBe('https://other.invalid');
+  });
+
+  for (const provider of ['searxng', 'google-serp'] as const) {
+    it.each(['legacy', 'per-provider'] as const)(`keeps ${provider} cleared after migrating from %s storage`, async (storage) => {
+      const endpoint = storage === 'legacy' ? { baseUrl: 'https://old.invalid' } : { baseUrls: { [provider]: 'https://old.invalid' } };
+      await saveBackendConfigScope(options, 'global', { search: { provider, ...endpoint } });
+      const loaded = await loadPresentationConfigLayers(options);
+      const draft = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:search:baseUrl', '');
+      await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(draft.backends, getInheritedBackendsForScope(loaded, 'project')));
+
+      await saveBackendConfigScope(options, 'global', { search: { provider } });
+      const absent = await loadPresentationConfigLayers(options);
+      const unrelated = applySettingsValue(createSettingsDraftState(absent, 'project'), 'backend:search:fanout:mode', 'on');
+      await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(
+        unrelated.backends, getInheritedBackendsForScope(absent, 'project'), absent.project.rawBackends
+      ));
+      const migrated = storage === 'legacy' ? { baseUrls: { [provider]: 'https://new.invalid' } } : { baseUrl: 'https://new.invalid' };
+      await saveBackendConfigScope(options, 'global', { search: { provider, ...migrated } });
+      const reloaded = await loadPresentationConfigLayers(options);
+      expect(resolveSearchBaseUrl(reloaded.effectiveBackends.search, provider)).toBeUndefined();
+
+      const restored = applySettingsValue(createSettingsDraftState(reloaded, 'project'), 'backend:search:baseUrl', 'https://restored.invalid');
+      await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(
+        restored.backends, getInheritedBackendsForScope(reloaded, 'project'), reloaded.project.rawBackends
+      ));
+      expect(resolveSearchBaseUrl((await loadPresentationConfigLayers(options)).effectiveBackends.search, provider)).toBe('https://restored.invalid');
+      await resetPresentationConfigScope(options, 'project');
+      expect(resolveSearchBaseUrl((await loadPresentationConfigLayers(options)).effectiveBackends.search, provider)).toBe('https://new.invalid');
+    });
+  }
+
+  it('keeps a proxy disabled through an unrelated settings save while the global proxy is absent', async () => {
+    await saveBackendConfigScope(options, 'global', { proxy: { url: 'https://old-proxy.invalid' } });
+    const loaded = await loadPresentationConfigLayers(options);
+    const cleared = applySettingsValue(createSettingsDraftState(loaded, 'project'), 'backend:proxy:url', '');
+    await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(cleared.backends, getInheritedBackendsForScope(loaded, 'project')));
+    expect((await loadPresentationConfigLayers(options)).project.rawBackends?.proxy).toEqual({ url: '' });
+    await saveBackendConfigScope(options, 'global', {});
+    const absent = await loadPresentationConfigLayers(options);
+    const draft = applySettingsValue(createSettingsDraftState(absent, 'project'), 'backend:search:fanout:mode', 'on');
+    let handler: (args: string, ctx: unknown) => Promise<void> = async () => { throw new Error('command missing'); };
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: { handler: typeof handler }) => { handler = command.handler; } } as never, {
+      load: () => loadPresentationConfigLayers(options),
+      saveBackends: (scope, config) => saveBackendConfigScope(options, scope, config)
+    });
+    const custom = vi.fn().mockResolvedValueOnce('backends').mockResolvedValueOnce({
+      action: 'save', scope: 'project', config: draft.config, backends: draft.backends
+    });
+    await handler('settings', { ui: { custom, notify: vi.fn() } });
+    expect((await loadPresentationConfigLayers(options)).project.rawBackends?.proxy).toEqual({ url: '' });
+    await saveBackendConfigScope(options, 'global', { proxy: { url: 'https://new-proxy.invalid' } });
+    const reloaded = await loadPresentationConfigLayers(options);
+    expect(reloaded.effectiveBackends.proxy).toBeUndefined();
+    const restored = applySettingsValue(createSettingsDraftState(reloaded, 'project'), 'backend:proxy:url', 'https://project-proxy.invalid');
+    await saveBackendConfigScope(options, 'project', collapseBackendConfigToOverride(
+      restored.backends, getInheritedBackendsForScope(reloaded, 'project'), reloaded.project.rawBackends
+    ));
+    expect((await loadPresentationConfigLayers(options)).effectiveBackends.proxy?.url).toBe('https://project-proxy.invalid');
+    await resetPresentationConfigScope(options, 'project');
+    expect((await loadPresentationConfigLayers(options)).effectiveBackends.proxy?.url).toBe('https://new-proxy.invalid');
+  });
+
   it.each([['proxy', 'network'], ['network.allowRanges']] as const)(
     'preserves existing compatibility masks %j through the settings command', async (...paths) => {
       const cleared = paths.flat();
@@ -203,4 +310,18 @@ it('applies valid clear markers before explicit values and rejects required or p
   expect(mergeBackendConfigLayers(base, {}).search.baseUrl).toBe('https://old.invalid');
   expect(mergeBackendConfigLayers(base, override, { search: { baseUrl: 'https://higher.invalid' } }).search.baseUrl).toBe('https://higher.invalid');
   expect({}).not.toHaveProperty('polluted');
+});
+
+it.each(['searxng', 'google-serp'] as const)('applies the %s endpoint marker before same-layer and higher-layer URLs', (provider) => {
+  const other = provider === 'searxng' ? 'google-serp' : 'searxng';
+  const base = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, { search: {
+    provider, baseUrl: 'https://legacy.invalid', baseUrls: { [provider]: 'https://slot.invalid', [other]: 'https://other.invalid' }
+  } });
+  const override = extractBackendConfigOverride({ backends: { cleared: [`search.endpoints.${provider}`] } });
+  const cleared = mergeBackendConfigLayers(base, override);
+  expect(resolveSearchBaseUrl(cleared.search, provider)).toBeUndefined();
+  expect(resolveSearchBaseUrl(cleared.search, other)).toBe('https://other.invalid');
+  expect(resolveSearchBaseUrl(base.search, provider)).toBe('https://legacy.invalid');
+  expect(resolveSearchBaseUrl(mergeBackendConfigLayers(base, { ...override, search: { baseUrl: 'https://same.invalid' } }).search, provider)).toBe('https://same.invalid');
+  expect(resolveSearchBaseUrl(mergeBackendConfigLayers(base, override, { search: { baseUrls: { [provider]: 'https://higher.invalid' } } }).search, provider)).toBe('https://higher.invalid');
 });

@@ -61,6 +61,8 @@ export type BackendConfig = {
 };
 
 export const CLEARABLE_BACKEND_PATHS = [
+  'search.endpoints.searxng',
+  'search.endpoints.google-serp',
   'search.baseUrl',
   'search.baseUrls',
   'search.baseUrls.searxng',
@@ -88,6 +90,12 @@ export const CLEARABLE_BACKEND_PATHS = [
 ] as const;
 
 export type BackendClearPath = typeof CLEARABLE_BACKEND_PATHS[number];
+
+export function endpointProviderForClearPath(path: string): 'searxng' | 'google-serp' | undefined {
+  if (path === 'search.endpoints.searxng') return 'searxng';
+  if (path === 'search.endpoints.google-serp') return 'google-serp';
+  return undefined;
+}
 
 export type BackendConfigOverride = {
   /** Optional values removed from lower-priority layers before applying this layer. */
@@ -536,6 +544,12 @@ function clearBackendPaths(config: BackendConfig, paths: BackendClearPath[] | un
   const next = structuredClone(config);
   for (const path of paths) {
     if (!(CLEARABLE_BACKEND_PATHS as readonly string[]).includes(path)) continue;
+    const provider = endpointProviderForClearPath(path);
+    if (provider) {
+      delete next.search.baseUrls?.[provider];
+      if (searchBaseUrlApplies(next.search, provider)) delete next.search.baseUrl;
+      continue;
+    }
     const parts = path.split('.');
     const key = parts.pop()!;
     let parent: Record<string, unknown> | undefined = next as unknown as Record<string, unknown>;

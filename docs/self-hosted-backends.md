@@ -634,16 +634,18 @@ Check that:
 
 Project settings inherit the global config. Clearing an optional value in **Settings → Backends** saves a `backends.cleared` marker in the project file so the value stays cleared after reload.
 
-For example, this project config removes the inherited SearXNG endpoint from both URL fields:
+For example, this project config clears the inherited SearXNG endpoint, whether the global config uses `baseUrl` or `baseUrls.searxng`:
 
 ```json
 {
   "backends": {
-    "cleared": ["search.baseUrl", "search.baseUrls.searxng"]
+    "cleared": ["search.endpoints.searxng"]
   }
 }
 ```
 
 Omitting a setting inherits it. A clear marker removes it before this layer's values are applied, so an explicit value in the same layer or a higher layer can restore it. Entering a new URL in settings replaces the cleared endpoint. Removing the marker, or resetting project config, restores inheritance.
+
+Settings saves use `search.endpoints.searxng` or `search.endpoints.google-serp` to keep that provider cleared if the global config changes URL formats. Each marker leaves the other provider's endpoint inherited. The field paths `search.baseUrl` and `search.baseUrls.<provider>` clear only the named field.
 
 Clear markers support optional backend URLs, per-provider endpoints, headers, fallbacks, options, fanout configuration, proxy credentials and network settings. Required provider fields cannot be cleared. Unknown paths are ignored. Clearing the selected provider's required endpoint leaves it unconfigured; choose another provider or enter a new endpoint before using it.

@@ -3,6 +3,7 @@ import {
   CLEARABLE_BACKEND_PATHS,
   DEFAULT_BACKEND_CONFIG,
   DUCKDUCKGO_FALLBACK_PROVIDERS,
+  endpointProviderForClearPath,
   isValidProxyUrl,
   mergeBackendConfigLayers,
   resolveSearchBaseUrl,
@@ -753,6 +754,8 @@ export function collapsePresentationConfigToOverride(
 }
 
 function backendValueAtPath(config: BackendConfig, path: string): unknown {
+  const provider = endpointProviderForClearPath(path);
+  if (provider) return resolveSearchBaseUrl(config.search, provider);
   return path.split('.').reduce<unknown>((value, key) =>
     value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined, config);
 }
@@ -763,8 +766,15 @@ export function collapseBackendConfigToOverride(
   existingOverride?: BackendConfigOverride
 ): BackendConfigOverride {
   const override: BackendConfigOverride = {};
+  const removedEndpoints = BASE_URL_SEARCH_PROVIDERS.filter((provider) =>
+    resolveSearchBaseUrl(inheritedConfig.search, provider) !== undefined && resolveSearchBaseUrl(config.search, provider) === undefined
+  );
+  const legacyProvider = inheritedConfig.search.provider === 'google-serp' ? 'google-serp' : 'searxng';
   const removed = CLEARABLE_BACKEND_PATHS.filter((path) =>
-    path !== 'search.baseUrls' && backendValueAtPath(inheritedConfig, path) !== undefined &&
+    path !== 'search.baseUrls' &&
+    !(path === 'search.baseUrl' && removedEndpoints.includes(legacyProvider)) &&
+    !removedEndpoints.some((provider) => path === `search.baseUrls.${provider}`) &&
+    backendValueAtPath(inheritedConfig, path) !== undefined &&
     backendValueAtPath(config, path) === undefined
   );
   // A parent deletion already removes its children.
@@ -778,11 +788,16 @@ export function collapseBackendConfigToOverride(
   if (cleared.length) override.cleared = cleared;
 
   if (!sameJson(config.search, inheritedConfig.search)) {
+    const baseUrls = Object.fromEntries(Object.entries(config.search.baseUrls ?? {}).filter(([provider, url]) =>
+      url !== undefined && url !== inheritedConfig.search.baseUrls?.[provider as SearchProviderName]
+    ));
+    const changedBaseUrls = Object.keys(baseUrls).length ? { baseUrls } : {};
+    const { baseUrls: _baseUrls, ...search } = config.search;
     override.search = config.search.provider !== inheritedConfig.search.provider
-      ? { ...config.search }
+      ? { ...search, ...changedBaseUrls }
       : {
           ...(config.search.baseUrl !== inheritedConfig.search.baseUrl ? { baseUrl: config.search.baseUrl } : {}),
-          ...(!sameJson(config.search.baseUrls, inheritedConfig.search.baseUrls) ? { baseUrls: config.search.baseUrls } : {}),
+          ...changedBaseUrls,
           ...(config.search.keyHeader !== inheritedConfig.search.keyHeader ? { keyHeader: config.search.keyHeader } : {}),
           ...(config.search.fallback !== inheritedConfig.search.fallback ? { fallback: config.search.fallback } : {}),
           ...(!sameJson(config.search.options, inheritedConfig.search.options) ? { options: config.search.options } : {}),
@@ -828,6 +843,7 @@ export function collapseBackendConfigToOverride(
       override.proxy = { url: '' };
     }
   }
+  if (!config.proxy && existingOverride?.proxy?.url === '') override.proxy = { url: '' };
 
   if (!sameJson(config.network, inheritedConfig.network)) {
     if (config.network) {
