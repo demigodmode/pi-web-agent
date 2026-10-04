@@ -139,7 +139,7 @@ Supported SearXNG options can stay in config:
 }
 ```
 
-These map to SearXNG search query params. Unsupported or malformed values show up as config warnings in `/web-agent doctor`.
+These map to SearXNG search query params. Config loading filters the options before doctor validates the effective config. Unknown options and some malformed values, such as `safesearch: 9` or a categories array containing a non-string, are ignored. Empty categories or a blank language survive loading and produce warnings. `backend config: ok` therefore does not mean every field in the file was accepted. Whether loading should report every rejected field is still an open question.
 
 ## Google SERP endpoint
 
@@ -199,7 +199,7 @@ The key is sent as-is in the header, so if the header needs a scheme (like `Auth
 Two things worth knowing:
 
 - Vendors in this space often answer HTTP 200 with a status envelope in the body. A 2xx status in the body is treated as success even if it carries a message field. Higher status codes (e.g., 1001 for unauthorized, 1504 for transient) are checked against documented error codes and wording to classify the failure, so a bad key or empty balance shows up as an auth or quota failure instead of "no results".
-- SerpApi needs the key as a query parameter and returns `organic_results`, so it is a separate profile rather than part of this one.
+- SerpApi needs the key as a query parameter and returns `organic_results`. That request/response profile is not supported by this adapter.
 
 Run `/web-agent doctor` after editing config: it sends the same one-result probe and reports `search backend: google-serp ok`, a warning with the reason, or the missing base URL/key.
 
@@ -346,6 +346,8 @@ The settings UI does not write API keys. You can still set an API key in config 
 
 Avoid committing project config files that contain secrets.
 
+Saving **Backends** replaces the selected scope's backend section without a manually stored Firecrawl `apiKey` or proxy `password`, including when you save an unrelated field. Presentation saves preserve the backend section. Use environment variables if you want those secrets to survive backend settings saves.
+
 Supported Firecrawl options can stay in config:
 
 ```json
@@ -381,9 +383,11 @@ When fanout runs, the provider set defaults to the providers you have actually c
 
 To select which providers fan out, set the fanout mode from **Settings → Backends**, then toggle individual providers on or off. Only usable providers appear in that list. You can also edit `backends.search.fanout.providers` directly in the config file.
 
+The selected primary provider always participates, even if its toggle says `excluded` or you omit it from `fanout.providers`. A configured DuckDuckGo fallback is also included under fanout, even when it is absent from that list. Disabling fallback stops this automatic DuckDuckGo addition; excluding the primary requires selecting a different primary. An omitted or empty provider list uses all usable providers.
+
 Each provider gets a short timeout during fanout, so one slow or unreachable backend (for example a self-hosted SearXNG that is down) is skipped instead of stalling the whole research pass.
 
-`searxng` and `google-serp` are the two providers that need an endpoint, and each reads its own: `backends.search.baseUrl` belongs to the provider you selected, and `backends.search.baseUrls.<provider>` gives one to another provider. So a fanout set that mixes both looks like this:
+`searxng` and `google-serp` need endpoints. For the selected endpoint provider, `backends.search.baseUrl` takes precedence over its `backends.search.baseUrls.<provider>` entry. Other providers use their own entries. Legacy configs with DuckDuckGo or a hosted provider selected can still use `baseUrl` for SearXNG; Google SERP does not reuse that URL. A fanout set that mixes both endpoint providers looks like this:
 
 ```json
 {
@@ -644,7 +648,9 @@ For example, this project config clears the inherited SearXNG endpoint, whether 
 }
 ```
 
-Omitting a setting inherits it. A clear marker removes it before this layer's values are applied, so an explicit value in the same layer or a higher layer can restore it. Entering a new URL in settings replaces the cleared endpoint. Removing the marker, or resetting project config, restores inheritance.
+When the provider stays the same, omitting a setting inherits it. Changing the search provider drops the lower layer's legacy `baseUrl`, fallback, options, and fanout configuration unless this layer supplies them; the per-provider `baseUrls` map and `keyHeader` still inherit. Changing the fetch provider drops its lower-layer URL, key, fallback, and options. Per-provider search endpoint maps merge across layers, so setting one entry leaves the other inherited.
+
+A clear marker removes a value before this layer's values are applied, so an explicit value in the same layer or a higher layer can restore it. Entering a new URL in settings replaces the cleared endpoint. Removing the marker, or resetting project config, restores inheritance.
 
 Settings saves use `search.endpoints.searxng` or `search.endpoints.google-serp` to keep that provider cleared if the global config changes URL formats. Each marker leaves the other provider's endpoint inherited. The field paths `search.baseUrl` and `search.baseUrls.<provider>` clear only the named field.
 

@@ -4,6 +4,8 @@ If you just want to try the package in Pi, this is the short version.
 
 ## Install it
 
+Check the [Pi and Node requirements](/install#requirements) first.
+
 ```bash
 pi install npm:@demigodmode/pi-web-agent
 ```
@@ -92,7 +94,7 @@ This project only connects to existing SearXNG/Firecrawl services; it does not m
 
 Headless rendering first tries a detectable Chromium-family browser: Chrome, Chromium, Edge, or Brave.
 
-If none is found, it falls back to Playwright-managed Chromium and still runs headless. Firefox/Safari-only systems can still use search and plain HTTP reads; browser-rendered fallback uses Chromium.
+If none is found, it tries Playwright-managed Chromium, which must already be installed. See [Browser rendering](/install#browser-rendering) for the command that installs the browser matching the package's Playwright version. Firefox/Safari-only systems can still use search and plain HTTP reads.
 
 ## One thing to keep in mind
 

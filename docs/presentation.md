@@ -29,6 +29,8 @@ If you want more detail inline, switch modes in `/web-agent` settings instead of
 - `preview`: findings with internal provenance
 - `verbose`: findings, sources, caveats, and internal provenance
 
+These modes control terminal display. The model receives the findings, source citations, and caveats in every mode, including `compact`.
+
 The important part is that these are not stacked on top of each other.
 
 If a result is shown in `preview`, you get the preview body instead of a compact summary plus extra text under it.
@@ -64,13 +66,13 @@ Those labels are internal provenance. They do not mean `web_search`, `web_fetch`
 
 ## The fastest way to change it
 
-Open the settings UI:
+Open the action menu and choose **Settings**:
 
 ```text
 /web-agent
 ```
 
-That is the shorthand. The explicit form is:
+To open the settings section menu directly:
 
 ```text
 /web-agent settings
@@ -102,9 +104,13 @@ From either settings screen you can:
 
 Keyboard shortcuts in the settings UI:
 
-- `Ctrl+S` save
-- `Ctrl+R` reset current scope
-- `Esc` cancel
+- `Ctrl+S` saves edits to the selected scope
+- `Ctrl+R` immediately deletes the selected scope's entire config file, including both presentation and backend settings, without confirmation
+- `Esc` discards unsaved edits and closes settings
+
+The reset menu entries and `/web-agent reset project` or `/web-agent reset global` also delete the whole scope file. Reset confirmation is deferred to a release after 1.14.1 in [issue #98](https://github.com/demigodmode/pi-web-agent/issues/98).
+
+While an inline backend URL editor is open, its keys take precedence: Enter accepts the field edit and Esc cancels that edit. Return to the settings screen before using Ctrl+S to save the scope.
 
 ## Config files
 

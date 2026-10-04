@@ -7,6 +7,12 @@ There are two real ways people end up using this project:
 
 The important thing is not to mix those up without meaning to, because Pi can end up loading a different copy than the one you think you are testing.
 
+## Requirements
+
+Update Pi to 0.74 or newer before installing this package. Pi packages moved to the `@earendil-works/*` scope in that version. On older Pi, stay on `@demigodmode/pi-web-agent@0.6.x`. The extension works on Pi 0.99 and 1.0.
+
+CI runs on Node 22. The locked runtime dependency `undici@8.10.2` declares Node `>=22.19.0`; that is its dependency requirement, while this repo's CI covers the Node 22 line.
+
 ## Install from npm in Pi
 
 ```bash
@@ -29,7 +35,18 @@ That checks whether the package loaded and reports the configured search, fetch,
 
 Headless rendering first tries a local Chromium-family browser. Supported local browsers are Chrome, Chromium, Edge, and Brave when they can be detected on Windows, macOS, or Linux.
 
-If none is detected, `web_explore` falls back to Playwright-managed Chromium and still launches with `headless: true`. Firefox/Safari-only systems can still use search and plain HTTP reads; browser-rendered fallback uses Chromium.
+If none is detected, `web_explore` tries Playwright-managed Chromium with `headless: true`. That browser must already be installed; installing pi-web-agent does not download it. Firefox/Safari-only systems can still use search and plain HTTP reads.
+
+To install the matching Chromium build, run the installed package's Playwright CLI as the same user who runs Pi. Start in the `@demigodmode/pi-web-agent` package directory. For Pi's default global npm installation:
+
+```bash
+cd ~/.pi/agent/npm/node_modules/@demigodmode/pi-web-agent
+node -e "const path = require('node:path'); require('node:child_process').execFileSync(process.execPath, [path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'), 'install', 'chromium'], { stdio: 'inherit' });"
+```
+
+Adjust the directory for a project or custom installation. This resolves the Playwright dependency from that package directory, including a nested copy, so the browser matches the version Pi will load. If a package update changes Playwright, rerun the command. Linux also needs the browser's system libraries; see [Playwright's browser installation and system requirements](https://playwright.dev/docs/browsers#install-system-dependencies).
+
+Doctor detects local browsers. Its `managed Chromium fallback configured` line describes the fallback configuration; it does not check that the managed browser exists or can launch.
 
 ## Work from the repo locally
 
@@ -94,7 +111,7 @@ If your Firecrawl instance requires a key, prefer an environment variable:
 PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 ```
 
-The settings UI does not write API keys. For local-only configs you can still add `"apiKey": "..."` to the `fetch` config manually.
+The settings UI does not write API keys. For local-only configs you can still add `"apiKey": "..."` to the `fetch` config manually. Saving **Backends** replaces that scope's backend section without the Firecrawl `apiKey` or proxy `password`, even if you edited another field. Use environment variables to keep those secrets through settings saves.
 
 Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values, warns when a hosted search provider is selected without its key, checks hosted backends when a key is present, checks configured SearXNG/Firecrawl endpoints with a short timeout, and shows the network allow list and whether the upstream proxy is trusted to resolve names.
 
