@@ -384,7 +384,7 @@ describe('research worker', () => {
     expect(result.gaps[0].kind).toBe('fetch-failed');
   });
 
-  it('returns reader method content as primary-content with full text, not summarized', async () => {
+  it('keeps full reader text without treating the reader method as authority', async () => {
     const fullYoutubeText =
       'This is a very long transcript from a YouTube video that contains detailed technical information about the topic. It has more than 180 characters of content that should be preserved in full for primary-content evidence extraction.';
 
@@ -419,13 +419,13 @@ describe('research worker', () => {
 
     expect(result.evidence).toHaveLength(1);
     const evidence = result.evidence[0];
-    expect(evidence?.sourceKind).toBe('primary-content');
+    expect(evidence?.sourceKind).toBe('unknown');
     expect(evidence?.method).toBe('youtube');
     expect(evidence?.summary).toBe(fullYoutubeText);
     expect(evidence?.supports[0]).toBe(fullYoutubeText);
   });
 
-  it('does not turn reader method response with empty text into primary-content', async () => {
+  it('does not accept an empty reader response as evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
         status: 'ok',
@@ -455,11 +455,10 @@ describe('research worker', () => {
       maxFetches: 1
     });
 
-    const primaryContent = result.evidence.find((e) => e.sourceKind === 'primary-content');
-    expect(primaryContent).toBeUndefined();
+    expect(result.evidence.some((item) => item.method === 'pdf')).toBe(false);
   });
 
-  it('does not turn reader method response with only whitespace into primary-content', async () => {
+  it('does not accept a whitespace-only reader response as evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
         status: 'ok',
@@ -489,11 +488,10 @@ describe('research worker', () => {
       maxFetches: 1
     });
 
-    const primaryContent = result.evidence.find((e) => e.sourceKind === 'primary-content');
-    expect(primaryContent).toBeUndefined();
+    expect(result.evidence.some((item) => item.method === 'pdf')).toBe(false);
   });
 
-  it('makes reader method content primary-content even if url classifies as package-page', async () => {
+  it('keeps reader content from a deep package URL without treating it as a package listing', async () => {
     const pdfText = 'This is actual PDF content from a package documentation PDF hosted on npmjs.';
 
     const worker = createResearchWorker({
@@ -527,7 +525,7 @@ describe('research worker', () => {
 
     expect(result.evidence).toHaveLength(1);
     const evidence = result.evidence[0];
-    expect(evidence?.sourceKind).toBe('primary-content');
+    expect(evidence?.sourceKind).toBe('unknown');
     expect(evidence?.method).toBe('pdf');
     expect(evidence?.summary).toBe(pdfText);
   });

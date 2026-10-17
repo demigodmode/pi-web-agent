@@ -30,14 +30,14 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
   const content = fetched.content;
   if (fetched.status !== 'ok' || !content) return null;
   if (isBotCheckContent({ title: content.title, text: content.text, botCheck: content.botCheck })) return null;
+  if (!content.text.trim()) return null;
 
-  // A successful reader read with usable text is primary content, exempt from the
-  // package-page filter below.
-  if (isReaderMethod(fetched.metadata.method) && content.text.trim()) {
+  // Reader extraction keeps its full text while source authority comes from the URL.
+  if (isReaderMethod(fetched.metadata.method)) {
     return {
       title: content.title ?? fallbackTitle,
       url: fetched.url,
-      sourceKind: 'primary-content',
+      sourceKind: classifySource(fetched.url),
       method: fetched.metadata.method,
       summary: content.text,
       supports: [content.text]

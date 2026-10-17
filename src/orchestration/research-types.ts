@@ -1,13 +1,13 @@
 import type { Attempt, SearchProviderName } from '../types.js';
 
 export type ResearchSourceKind =
-  | 'primary-content'
   | 'official-docs'
   | 'official-api'
   | 'official-discussion'
   | 'community'
   | 'issue-thread'
   | 'package-page'
+  | 'unknown'
   | 'other';
 
 export type ResearchMethod = 'search' | 'http' | 'headless' | 'firecrawl' | 'github' | 'pdf' | 'youtube';

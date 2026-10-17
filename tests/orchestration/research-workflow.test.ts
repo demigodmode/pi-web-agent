@@ -262,7 +262,60 @@ describe('research workflow composition', () => {
     expect(result.evidence.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('short-circuits research when direct url with reader method provides primary-content', async () => {
+  it('stops after unfamiliar documentation with an authority caveat', async () => {
+    const search = vi.fn(async () => ({
+      status: 'ok' as const,
+      results: [
+        { title: 'React reference', url: 'https://react.dev/reference/react/useEffect', snippet: 'Effect API' },
+        { title: 'Python reference', url: 'https://docs.python.org/3/library/asyncio.html', snippet: 'Async API' }
+      ],
+      metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+    }));
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok', url,
+        content: { title: url, text: 'Reference material describing the API behavior.' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      }),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'Compare React and Python API behavior' });
+
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(result.sources).toHaveLength(2);
+    expect(result.caveat).toContain('source authority could not be confirmed');
+    expect(result.caveat).not.toContain('community');
+  });
+
+  it('uses discussions to answer a requested opinion question without demanding docs', async () => {
+    const search = vi.fn(async () => ({
+      status: 'ok' as const,
+      results: [
+        { title: 'User discussion', url: 'https://reddit.com/r/react/comments/123', snippet: 'User experience' },
+        { title: 'Issue discussion', url: 'https://github.com/facebook/react/issues/456', snippet: 'User experience' }
+      ],
+      metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+    }));
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok', url,
+        content: { title: url, text: 'People described their practical experience with this API.' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      }),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'What do users think about this React API?' });
+
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(result.sources).toHaveLength(2);
+    expect(result.caveat).toBeUndefined();
+  });
+
+  it('short-circuits a direct reader request while keeping source authority neutral', async () => {
     const fullPdfText =
       'This is a comprehensive technical document extracted from a PDF that contains detailed implementation guides and best practices. The document is very long with much more than 180 characters of content that needs to be preserved in full for accurate research results.';
 
@@ -292,7 +345,7 @@ describe('research workflow composition', () => {
 
     expect(result.decision.action).toBe('answer');
     expect(result.evidence).toHaveLength(1);
-    expect(result.evidence[0]?.sourceKind).toBe('primary-content');
+    expect(result.evidence[0]?.sourceKind).toBe('unknown');
     expect(result.evidence[0]?.method).toBe('pdf');
     expect(result.evidence[0]?.summary).toBe(fullPdfText);
     expect(result.metadata?.caveatReasons).toHaveLength(0);

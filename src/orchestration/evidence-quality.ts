@@ -2,6 +2,7 @@ import type { ResearchEvidence, ResearchGap, ResearchLowValueOutcome } from './r
 
 export type EvidenceCaveatReason =
   | 'community-only'
+  | 'unknown-authority'
   | 'low-diversity'
   | 'unreadable-direct-source'
   | 'unreadable-thread-source'
@@ -16,7 +17,7 @@ export type EvidenceQualityReport = {
     community: number;
     thread: number;
     packagePage: number;
-    primaryContent: number;
+    unknown: number;
     distinctHosts: number;
   };
   flags: {
@@ -58,30 +59,34 @@ export function analyzeEvidenceQuality({
   evidence,
   gaps,
   lowValueOutcomes,
-  partialSearchCoverage = false
+  partialSearchCoverage = false,
+  opinionQuestion = false
 }: {
   evidence: ResearchEvidence[];
   gaps: ResearchGap[];
   lowValueOutcomes: ResearchLowValueOutcome[];
   partialSearchCoverage?: boolean;
+  opinionQuestion?: boolean;
 }): EvidenceQualityReport {
   const official = evidence.filter((item) => item.sourceKind === 'official-docs' || item.sourceKind === 'official-api').length;
   const community = evidence.filter((item) => item.sourceKind === 'community').length;
   const thread = evidence.filter((item) => item.sourceKind === 'issue-thread' || item.sourceKind === 'official-discussion').length;
   const packagePage = evidence.filter((item) => item.sourceKind === 'package-page').length;
-  const primaryContent = evidence.filter((item) => item.sourceKind === 'primary-content').length;
+  const unknown = evidence.filter((item) => item.sourceKind === 'unknown').length;
   const distinctHosts = new Set(evidence.map((item) => hostname(item.url))).size;
 
   const hasOfficialEvidence = official > 0;
-  const hasOnlyCommunityEvidence = evidence.length > 0 && official === 0 && primaryContent === 0;
-  const hasLowDiversity = evidence.length > 1 && distinctHosts <= 1 && primaryContent === 0;
+  const hasOnlyCommunityEvidence = evidence.length > 0 && evidence.every((item) =>
+    item.sourceKind === 'community' || item.sourceKind === 'issue-thread' || item.sourceKind === 'official-discussion');
+  const hasLowDiversity = evidence.length > 1 && distinctHosts <= 1;
   const hasUnreadableDirectSource = gaps.some((gap) => /Direct URL could not be read reliably/i.test(gap.message));
   const hasUnreadableThreadSource = gaps.some((gap) => /Thread source could not be read reliably/i.test(gap.message));
   const hasPossibleConflict = hasConflictMarkers(evidence);
   const hasBotCheck = lowValueOutcomes.some((outcome) => outcome.kind === 'bot-check');
 
   const caveatReasons: EvidenceCaveatReason[] = [];
-  addReason(caveatReasons, 'community-only', hasOnlyCommunityEvidence);
+  addReason(caveatReasons, 'community-only', hasOnlyCommunityEvidence && !opinionQuestion);
+  addReason(caveatReasons, 'unknown-authority', unknown > 0 && !hasOfficialEvidence);
   addReason(caveatReasons, 'low-diversity', hasLowDiversity);
   addReason(caveatReasons, 'unreadable-direct-source', hasUnreadableDirectSource);
   addReason(caveatReasons, 'unreadable-thread-source', hasUnreadableThreadSource);
@@ -96,7 +101,7 @@ export function analyzeEvidenceQuality({
       community,
       thread,
       packagePage,
-      primaryContent,
+      unknown,
       distinctHosts
     },
     flags: {

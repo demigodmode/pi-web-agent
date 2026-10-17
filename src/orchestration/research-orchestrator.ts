@@ -32,6 +32,10 @@ function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
 }
 
+function isOpinionQuestion(query: string): boolean {
+  return /\b(opinions?|experiences?|reviews?|what do (?:users|people|developers) think|reddit|forum discussions?)\b/i.test(query);
+}
+
 function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
   if (botCheck) return true;
   return hasBotCheckContent(`${title}\n${text}`);
@@ -45,7 +49,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     return {
       title: result.content.title ?? result.url,
       url: result.url,
-      sourceKind: 'primary-content',
+      sourceKind: classifyEvidenceUrl(result.url),
       method: result.metadata.method,
       summary: result.content.text,
       supports: [result.content.text]
@@ -201,6 +205,7 @@ export function createResearchOrchestrator({
 }) {
   return {
     async run({ query, signal }: { query: string; signal?: AbortSignal }): Promise<ResearchOrchestratorResult> {
+      const opinionQuestion = isOpinionQuestion(query);
       const allEvidence: ResearchEvidence[] = [];
       const allGaps: ResearchGap[] = [];
       const allLowValueOutcomes: ResearchLowValueOutcome[] = [];
@@ -301,13 +306,14 @@ export function createResearchOrchestrator({
         }
       }
 
-      if (allEvidence.some((item) => item.sourceKind === 'primary-content')) {
+      if (allEvidence.some((item) => isReaderMethod(item.method))) {
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
         const quality = analyzeEvidenceQuality({
           evidence: ranked,
           gaps: allGaps,
           lowValueOutcomes: allLowValueOutcomes,
-          partialSearchCoverage: searchCoveragePartial
+          partialSearchCoverage: searchCoveragePartial,
+          opinionQuestion
         });
         return {
           decision: decisionForAnswer({ action: 'answer', query, ranked, exhaustedBudget: false }),
@@ -326,7 +332,7 @@ export function createResearchOrchestrator({
             allLowValueOutcomes,
             headlessAttempts,
             exhaustedBudget: false,
-            caveatReasons: quality.caveatReasons,
+            caveatReasons: quality.caveatReasons.filter((reason) => reason !== 'unknown-authority'),
             ...fanoutSnapshot()
           })
         };
@@ -376,7 +382,8 @@ export function createResearchOrchestrator({
             evidence: ranked,
             gaps: allGaps,
             lowValueOutcomes: allLowValueOutcomes,
-            partialSearchCoverage: searchCoveragePartial
+            partialSearchCoverage: searchCoveragePartial,
+            opinionQuestion
           });
           const decision = decideNextResearchStep({
             evidence: ranked,
@@ -385,7 +392,8 @@ export function createResearchOrchestrator({
             maxPasses: DEFAULT_MAX_PASSES,
             headlessAttempts,
             maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS,
-            quality
+            quality,
+            opinionQuestion
           });
 
           if (decision.action === 'headless') {
@@ -401,7 +409,8 @@ export function createResearchOrchestrator({
                 evidence: updatedRanked,
                 gaps: allGaps,
                 lowValueOutcomes: allLowValueOutcomes,
-                partialSearchCoverage: searchCoveragePartial
+                partialSearchCoverage: searchCoveragePartial,
+                opinionQuestion
               });
               const updatedDecision = decideNextResearchStep({
                 evidence: updatedRanked,
@@ -410,7 +419,8 @@ export function createResearchOrchestrator({
                 maxPasses: DEFAULT_MAX_PASSES,
                 headlessAttempts,
                 maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS,
-                quality: updatedQuality
+                quality: updatedQuality,
+                opinionQuestion
               });
 
               const exhaustedBudget = updatedDecision.action !== 'answer' && passIndex + 1 >= DEFAULT_MAX_PASSES;
@@ -502,7 +512,8 @@ export function createResearchOrchestrator({
         evidence: ranked,
         gaps: allGaps,
         lowValueOutcomes: allLowValueOutcomes,
-        partialSearchCoverage: searchCoveragePartial
+        partialSearchCoverage: searchCoveragePartial,
+        opinionQuestion
       });
       return {
         decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: true }),

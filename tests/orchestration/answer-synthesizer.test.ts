@@ -12,6 +12,10 @@ const evidence = (sourceKind: ResearchEvidence['sourceKind'], summary: string): 
 });
 
 describe('synthesizeAnswer', () => {
+  it('explains when source authority was not established', () => {
+    const result = synthesizeAnswer({ evidence: [], partial: true, caveatReasons: ['unknown-authority'] });
+    expect(result.caveat).toContain('source authority could not be confirmed');
+  });
   it('uses official evidence as primary findings', () => {
     expect(
       synthesizeAnswer({

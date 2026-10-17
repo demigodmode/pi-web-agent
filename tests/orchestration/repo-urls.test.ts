@@ -132,7 +132,7 @@ describe('typed repo URLs', () => {
     expect(result.evidence[0]).toMatchObject({
       url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`,
       method: 'github',
-      sourceKind: 'primary-content',
+      sourceKind: 'unknown',
       summary: readme,
       supports: [readme]
     });

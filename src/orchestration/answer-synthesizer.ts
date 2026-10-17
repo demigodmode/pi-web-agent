@@ -9,6 +9,8 @@ function sentenceForReason(reason: EvidenceCaveatReason): string {
   switch (reason) {
     case 'community-only':
       return 'the strongest readable sources were mostly community/practical context';
+    case 'unknown-authority':
+      return 'source authority could not be confirmed';
     case 'low-diversity':
       return 'the source set was narrow';
     case 'unreadable-direct-source':
