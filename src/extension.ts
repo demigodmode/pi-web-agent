@@ -105,6 +105,7 @@ export default function extension(pi: ExtensionAPI) {
   const makeRepoCache = (pi as ExtensionAPI & { __repoCacheFactory?: () => RepoCache }).__repoCacheFactory ?? (() => createRepoCache());
   type Session = {
     repoCache: RepoCache;
+    shutdownDeadline?: number;
     cachedBackendKey?: string;
     cachedWorkflow?: Workflow;
     cachedWebExplore?: ReturnType<typeof createWebExploreTool>;
@@ -172,6 +173,9 @@ export default function extension(pi: ExtensionAPI) {
     if (injectedWebExplore) return injectedWebExplore;
 
     const backendConfig = await getEffectiveBackendConfig(pi);
+    if (configuredSession.shutdownDeadline !== undefined && Date.now() >= configuredSession.shutdownDeadline) {
+      throw new Error('The session has ended.');
+    }
     const backendKey = JSON.stringify(backendConfig);
     if (!configuredSession.cachedWebExplore || configuredSession.cachedBackendKey !== backendKey) {
       if (configuredSession.cachedWorkflow) retire(configuredSession.cachedWorkflow);
@@ -186,8 +190,9 @@ export default function extension(pi: ExtensionAPI) {
 
   pi.on('session_shutdown', async () => {
     const shuttingDown = session;
-    session = makeSession();
     const deadline = Date.now() + SESSION_SHUTDOWN_GRACE_MS;
+    shuttingDown.shutdownDeadline = deadline;
+    session = makeSession();
     const remaining = () => Math.max(0, deadline - Date.now());
     // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
     await waitWithin(Promise.allSettled([...shuttingDown.operations]), remaining());

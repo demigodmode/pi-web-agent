@@ -567,6 +567,44 @@ describe('Pi extension entrypoint', () => {
     expect(firstCache.close).toHaveBeenCalledTimes(1);
   });
 
+  it('does not create a workflow after configuration finishes beyond the shutdown grace period', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    let resolveConfig!: (value: unknown) => void;
+    const configLoaded = new Promise<unknown>((resolve) => { resolveConfig = resolve; });
+    const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    const createResearchWorkflow = vi.fn(() => workflow);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    const firstCache = { close: vi.fn(async () => undefined) };
+    const secondCache = { close: vi.fn(async () => undefined) };
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: vi.fn().mockReturnValueOnce(firstCache).mockReturnValue(secondCache),
+      __presentationConfigStore: { load: vi.fn().mockImplementationOnce(() => configLoaded) }
+    };
+
+    try {
+      dynamicExtension(pi as never);
+      const execution = tools.find((tool) => tool.name === 'web_explore').execute('call-1', { query: 'x' });
+      await vi.waitFor(() => expect(pi.__presentationConfigStore.load).toHaveBeenCalledTimes(1));
+      const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'new' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await shutdown;
+
+      resolveConfig({ effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } } });
+      await expect(execution).rejects.toThrow('session has ended');
+      expect(createResearchWorkflow).not.toHaveBeenCalled();
+      expect(firstCache.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('waits for detached workflow work before closing the session repo cache', async () => {
     vi.resetModules();
     let releaseClose!: () => void;

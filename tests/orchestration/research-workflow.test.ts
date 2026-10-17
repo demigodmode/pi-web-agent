@@ -584,4 +584,29 @@ describe('research workflow ownership', () => {
       vi.useRealTimers();
     }
   });
+
+  it('returns from close when an owned backend close never settles', async () => {
+    vi.useFakeTimers();
+    const close = vi.fn(() => new Promise<void>(() => undefined));
+    vi.resetModules();
+    vi.doMock('../../src/backends/factory.js', () => ({
+      createBackendSet: vi.fn(() => ({ search: vi.fn(), fetchPage: vi.fn(), headlessFetch: vi.fn(), close }))
+    }));
+    const { createResearchWorkflow: createWorkflow } = await import('../../src/orchestration/index.js');
+    const workflow = createWorkflow({});
+
+    try {
+      let finished = false;
+      const firstClose = workflow.close();
+      const secondClose = workflow.close();
+      expect(secondClose).toBe(firstClose);
+      void firstClose.then(() => { finished = true; });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await firstClose;
+      expect(finished).toBe(true);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
