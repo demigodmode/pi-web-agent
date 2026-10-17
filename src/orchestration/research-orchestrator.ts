@@ -37,7 +37,7 @@ function isReaderMethod(method: string): boolean {
 }
 
 function isOpinionQuestion(query: string): boolean {
-  return /\b(?:what do (?:users|people|developers) (?:think|say)(?: about)?|(?:users?|people|developers?|community)[’']?\s+(?:opinions?|experiences?|reviews?|feedback)(?:\s+(?:with|of|about|using))?)\b/i.test(query);
+  return /\b(?:what do (?:users|people|developers) (?:think|feel|say)(?: about)?|(?:users?|people|developers?|community)[’']?\s+(?:opinions?|experiences?|reviews?|feedback)(?:\s+(?:with|of|about|using))?)\b/i.test(query);
 }
 
 function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {

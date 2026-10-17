@@ -405,6 +405,7 @@ describe('research workflow composition', () => {
     'Show user reviews of this React API',
     'Show community reviews of this React API',
     'Show user feedback about this React API',
+    'What do users feel about React?',
     'What do users say about this React API?'
   ])('uses discussions for an explicit opinion question: %s', async (query) => {
     const search = vi.fn(async () => ({
