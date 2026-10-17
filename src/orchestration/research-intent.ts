@@ -19,6 +19,10 @@ function hostOf(url: string): string | undefined {
   }
 }
 
+function isMultiSubjectHost(host: string): boolean {
+  return host === 'developer.mozilla.org' || host === 'learn.microsoft.com' || host.endsWith('.wikipedia.org');
+}
+
 function subjectTerms(title: string): Set<string> {
   const subject = title.split(/[|–—-]/, 1)[0] ?? title;
   return new Set(
@@ -32,7 +36,7 @@ function coversUrl(item: ResearchEvidence, target: string): boolean {
     .some((url) => url !== undefined && canonicalizeUrl(url) === requested);
 }
 
-function representsDistinctSubject(left: ResearchEvidence, right: ResearchEvidence): boolean {
+function representsDistinctSubject(left: ResearchEvidence, right: ResearchEvidence, preserveProjectIdentity: boolean): boolean {
   const leftRepo = parseRepoUrl(left.url);
   const rightRepo = parseRepoUrl(right.url);
   if (leftRepo || rightRepo) {
@@ -44,6 +48,7 @@ function representsDistinctSubject(left: ResearchEvidence, right: ResearchEviden
   const rightHost = hostOf(right.url);
   if (!leftHost || !rightHost) return left.url !== right.url;
   if (leftHost !== rightHost) return true;
+  if (preserveProjectIdentity && !isMultiSubjectHost(leftHost)) return false;
 
   const leftTerms = subjectTerms(left.title);
   const rightTerms = subjectTerms(right.title);
@@ -103,7 +108,7 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
   if (intent.requiresAlternative) {
     const requested = intent.targets.find((target): target is ResearchTarget & { kind: 'url' } => target.kind === 'url');
     const primary = requested ? evidence.filter((item) => coversUrl(item, requested.value)) : evidence;
-    if (!primary.some((item) => evidence.some((alternative) => alternative !== item && representsDistinctSubject(item, alternative)))) {
+    if (!primary.some((item) => evidence.some((alternative) => alternative !== item && representsDistinctSubject(item, alternative, requested !== undefined)))) {
       missing.push('alternatives');
     }
   }

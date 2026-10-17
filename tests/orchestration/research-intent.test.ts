@@ -74,6 +74,16 @@ describe('classifyResearchIntent', () => {
     expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
   });
 
+  it('does not treat differently titled pages from one project documentation site as alternatives', () => {
+    const intent = classifyResearchIntent('Compare https://react.dev/learn with alternatives');
+    const evidence = [
+      { title: 'Quick Start | React', url: 'https://react.dev/learn', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'React quick start', supports: [] },
+      { title: 'Hooks | React', url: 'https://react.dev/reference/react/useState', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'React hooks reference', supports: [] }
+    ];
+
+    expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
+  });
+
   it('counts distinct subjects on the same documentation host as alternatives', () => {
     const intent = classifyResearchIntent('Compare https://developer.mozilla.org/en-US/docs/Web/JavaScript with alternatives');
     const evidence = [
