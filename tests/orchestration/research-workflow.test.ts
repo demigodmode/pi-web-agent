@@ -400,6 +400,35 @@ describe('research workflow composition', () => {
     expect(result.caveat).toBeUndefined();
   });
 
+  it.each([
+    'What are community opinions about this React API?',
+    'Show user reviews of this React API',
+    'What do users say about this React API?'
+  ])('uses discussions for an explicit opinion question: %s', async (query) => {
+    const search = vi.fn(async () => ({
+      status: 'ok' as const,
+      results: [
+        { title: 'User discussion', url: 'https://reddit.com/r/react/comments/123', snippet: 'User experience' },
+        { title: 'Issue discussion', url: 'https://github.com/facebook/react/issues/456', snippet: 'User experience' }
+      ],
+      metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+    }));
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok', url,
+        content: { title: url, text: 'People described their practical experience with this API.' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      }),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await createWebExploreTool({ explore: workflow })({ query });
+
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(result.caveat).toBeUndefined();
+  });
+
   it('keeps searching for documentary evidence when a technical request also asks for forum discussions', async () => {
     const search = vi.fn(async () => ({
       status: 'ok' as const,
