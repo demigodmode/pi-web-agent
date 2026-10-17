@@ -8,6 +8,7 @@ import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presenta
 import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
+import { sanitizeTerminalText } from './presentation/explore-presentation.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
 import type { WebExploreResponse } from './types.js';
@@ -264,7 +265,7 @@ export default function extension(pi: ExtensionAPI) {
           details?.terminalText ??
           legacy ??
           'web_explore result';
-        return new Text(text, 0, 0);
+        return new Text(sanitizeTerminalText(text), 0, 0);
       } catch {
         // Never throw: a thrown renderer makes Pi fall back to raw content, which would dump
         // the full model-facing findings into the terminal.

@@ -290,6 +290,47 @@ describe('Pi extension entrypoint', () => {
     expect(rendered).not.toContain('A concise finding.');
   }, 15000);
 
+  it('sanitizes persisted legacy presentation views before rendering them in the terminal', () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn()
+    };
+    const osc = '\u001b]8;;https://example.com\u0007linked\u001b]8;;\u0007';
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const persistedResult = {
+      details: {
+        presentation: {
+          views: {
+            compact: `Legacy \u001b[31mcompact ${osc}`,
+            verbose: `Legacy first line\r\nLegacy second line ${osc}`
+          }
+        }
+      }
+    };
+    const compact = webExplore
+      .renderResult(persistedResult, { expanded: false, isPartial: false }, {}, {})
+      .render(120)
+      .join('\n');
+    const verboseLines = webExplore
+      .renderResult(persistedResult, { expanded: true, isPartial: false }, {}, {})
+      .render(120);
+    const verbose = verboseLines.join('\n');
+
+    for (const output of [compact, verbose]) {
+      expect(output).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+      expect(output).not.toContain('\u001b');
+    }
+    expect(verboseLines.map((line: string) => line.trimEnd())).toEqual([
+      'Legacy first line',
+      'Legacy second line ]8;;https://example.comlinked]8;;'
+    ]);
+  });
+
   it('falls back to built-in defaults when the store cannot load config', async () => {
     const tools: any[] = [];
     const pi = {

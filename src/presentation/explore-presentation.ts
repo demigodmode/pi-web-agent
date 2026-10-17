@@ -12,7 +12,7 @@ function internalReaderLabel(method?: FetchMethod) {
   return 'web_explore';
 }
 
-function terminalText(text: string): string {
+export function sanitizeTerminalText(text: string): string {
   return text
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '')
@@ -25,7 +25,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     return {
       mode: 'compact',
       views: {
-        compact: `Research failed: ${terminalText(result.error?.message ?? 'Unknown research failure.')}`
+        compact: `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`
       }
     };
   }
@@ -42,12 +42,12 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     : undefined;
   const hasEvidence = result.findings.length > 0 || result.sources.length > 0;
   const evidenceLines = hasEvidence
-    ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${terminalText(finding)}`)
+    ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${sanitizeTerminalText(finding)}`)
     : ['No usable evidence found.'];
   const verboseFindings = result.findings.map((finding, index) => {
     const ids = result.findingSourceIds?.[index] ?? [];
-    const sourceIds = ids.map(terminalText);
-    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${terminalText(finding)}`;
+    const sourceIds = ids.map(sanitizeTerminalText);
+    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
   });
   const preview = [
     ...evidenceLines,
@@ -60,17 +60,17 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
     'Sources',
-    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${terminalText(source.title)}: ${terminalText(source.url)}`),
+    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`),
     ...(result.evidence?.length ? [
       '',
       'Evidence',
       ...result.evidence.flatMap((item) => [
-        `- [${terminalText(item.id)}] ${terminalText(item.title)}: ${terminalText(item.url)}`,
-        ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${terminalText(excerpt.anchor)}: ` : ''}${terminalText(excerpt.text)}`)
+        `- [${sanitizeTerminalText(item.id)}] ${sanitizeTerminalText(item.title)}: ${sanitizeTerminalText(item.url)}`,
+        ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`)
       ])
     ] : []),
     internalSummary ? `\nInternal tools\n${internalSummary}` : undefined,
-    result.caveat ? `\nCaveat\n${terminalText(result.caveat)}` : undefined,
+    result.caveat ? `\nCaveat\n${sanitizeTerminalText(result.caveat)}` : undefined,
     attemptLines(result.metadata?.attempts)
   ]
     .filter((line) => line !== undefined)
@@ -93,8 +93,8 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     },
     sources: result.sources.map((source) => ({
       ...source,
-      title: terminalText(source.title),
-      url: terminalText(source.url)
+      title: sanitizeTerminalText(source.title),
+      url: sanitizeTerminalText(source.url)
     }))
   };
 }
