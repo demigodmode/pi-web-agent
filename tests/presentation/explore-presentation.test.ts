@@ -10,6 +10,11 @@ describe('buildExplorePresentation', () => {
         { title: 'Browsers | Playwright', url: 'https://playwright.dev/docs/browsers', method: 'http' },
         { title: 'BrowserType | Playwright', url: 'https://playwright.dev/docs/api/class-browsertype', method: 'headless' }
       ],
+      findingSourceIds: [['S1'], ['S2']],
+      evidence: [
+        { id: 'S1', title: 'Browsers | Playwright', url: 'https://playwright.dev/docs/browsers', method: 'http', excerpts: [{ text: 'Use the branded browser channel.' }], truncated: false },
+        { id: 'S2', title: 'BrowserType | Playwright', url: 'https://playwright.dev/docs/api/class-browsertype', method: 'headless', excerpts: [{ text: 'The executable path is risky.', anchor: 'executablepath' }], truncated: false }
+      ],
       caveat: undefined,
       metadata: {
         searchPasses: 2,
@@ -24,6 +29,8 @@ describe('buildExplorePresentation', () => {
     expect(presentation.views.preview).toContain('- [web_fetch_headless] Treat executablePath as fallback');
     expect(presentation.views.preview).toContain('Internal research: web_search ×2');
     expect(presentation.views.verbose).toContain('Sources');
+    expect(presentation.views.verbose).toContain('[S2] Treat executablePath as fallback');
+    expect(presentation.views.verbose).toContain('The executable path is risky.');
     expect(presentation.views.verbose).toContain('- [web_fetch_headless] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
     expect(presentation.views.verbose).toContain('Internal tools');
   });
@@ -111,5 +118,42 @@ describe('buildExplorePresentation', () => {
     });
     const preview = presentation.views.preview as string;
     expect(preview).toContain('(fanout; skipped: brave, exa)');
+  });
+
+  it('removes terminal and bidi formatting controls from source-controlled evidence fields', () => {
+    const control = '\u001b[31m';
+    const bidi = '\u202d\u202e\u2066\u2069';
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      findings: [`Finding ${control}from a page`],
+      sources: [{ title: `Title ${control}${bidi} café`, url: `https://example.com/${control}${bidi}path`, method: 'http' }],
+      findingSourceIds: [[`S${control}1`]],
+      evidence: [{
+        id: `S${control}1`,
+        title: `Evidence title ${control}${bidi}`,
+        url: `https://evidence.example/${control}${bidi}`,
+        method: 'http',
+        excerpts: [{ text: `First excerpt line\nSecond excerpt\tline\r${control}${bidi}text`, anchor: `section${control}one` }],
+        truncated: false
+      }],
+      caveat: `Caveat ${control}text`,
+      metadata: {
+        searchPasses: 1,
+        fetchedPages: 1,
+        headlessAttempts: 0,
+        exhaustedBudget: false
+      }
+    });
+
+    for (const view of [presentation.views.preview, presentation.views.verbose]) {
+      expect(view).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+      expect(view).not.toContain('\u001b');
+    }
+    expect(presentation.views.verbose).toContain('First excerpt line\nSecond excerpt    line[31mtext');
+    expect(presentation.views.verbose).toContain('Title [31m café: https://example.com/[31mpath');
+    expect(presentation.sources).not.toContainEqual(expect.objectContaining({ title: expect.stringContaining('\u001b') }));
+    expect(presentation.sources).not.toContainEqual(expect.objectContaining({ url: expect.stringContaining('\u001b') }));
+    expect(presentation.sources?.[0]?.title).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+    expect(presentation.sources?.[0]?.url).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
   });
 });

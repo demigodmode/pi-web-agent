@@ -5,13 +5,15 @@ import { buildExplorePresentation } from '../presentation/explore-presentation.j
 import type { EvidenceCaveatReason } from '../orchestration/evidence-quality.js';
 import type { WebExploreResponse } from '../types.js';
 import { raceAbort, throwIfAborted } from '../abort.js';
+import { buildEvidenceRecords } from './evidence-records.js';
+import type { ResearchProgress } from '../orchestration/progress.js';
 
 export function createWebExploreTool({
   explore = createResearchWorkflow()
 }: {
   explore?:
     | {
-        run: (input: { query: string; signal?: AbortSignal }) => Promise<{
+        run: (input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
           decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
           evidence: ResearchEvidence[];
           workerPass: unknown;
@@ -19,7 +21,7 @@ export function createWebExploreTool({
           terminalFailure?: { code: string; message: string };
         }>;
       }
-    | ((input: { query: string; signal?: AbortSignal }) => Promise<{
+    | ((input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
         decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
         evidence: ResearchEvidence[];
         workerPass: unknown;
@@ -29,7 +31,7 @@ export function createWebExploreTool({
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
 
-  return async function webExplore({ query, signal }: { query: string; signal?: AbortSignal }) {
+  return async function webExplore({ query, signal, onProgress }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) {
     throwIfAborted(signal);
     const normalizedQuery = query.trim();
 
@@ -47,11 +49,22 @@ export function createWebExploreTool({
       };
     }
 
-    const run = runExplore({ query: normalizedQuery, ...(signal ? { signal } : {}) });
+    const safeProgress = onProgress ? (event: ResearchProgress) => {
+      try { onProgress(event); } catch { /* Display callbacks must not fail research. */ }
+    } : undefined;
+    const run = runExplore({ query: normalizedQuery, ...(signal ? { signal } : {}), ...(safeProgress ? { onProgress: safeProgress } : {}) });
     // Backstop: Pi waits for this promise, so answer the cancel right away even if
     // some layer underneath is slow to stop. The run itself keeps its lease in
     // extension.ts until it really settles.
     const result = signal ? await raceAbort(run, signal) : await run;
+    if (!result.terminalFailure) {
+      const counts = result.metadata?.budget ?? {
+        searches: result.metadata?.searchPasses ?? 0,
+        fetches: result.metadata?.fetchedPages ?? 0,
+        headless: result.metadata?.headlessAttempts ?? 0
+      };
+      safeProgress?.({ phase: 'complete', searches: counts.searches, fetches: counts.fetches, headless: counts.headless });
+    }
     if (result.terminalFailure) {
       const failed: WebExploreResponse = {
         status: 'error',
@@ -63,7 +76,9 @@ export function createWebExploreTool({
       return { ...failed, presentation: buildExplorePresentation(failed) };
     }
 
-    const sources = result.evidence.slice(0, 4).map((item) => ({
+    const selectedEvidence = result.evidence.slice(0, 5);
+    const evidence = buildEvidenceRecords(selectedEvidence);
+    const sources = selectedEvidence.map((item) => ({
       title: item.title,
       url: item.url,
       method: item.method
@@ -72,16 +87,19 @@ export function createWebExploreTool({
     const decisionPartial = result.decision.action !== 'answer';
     const coveragePartial = reasons.includes('partial-search-coverage');
     const synthesized = synthesizeAnswer({
-      evidence: result.evidence,
+      evidence: selectedEvidence,
       partial: decisionPartial || coveragePartial,
       // A confident answer with partial coverage mentions only the coverage, not unrelated quality notes.
-      caveatReasons: decisionPartial ? reasons : ['partial-search-coverage']
+      caveatReasons: decisionPartial ? reasons : ['partial-search-coverage'],
+      missingComparisonTargets: result.metadata?.missingComparisonTargets
     });
 
     const shaped: WebExploreResponse = {
       status: 'ok',
       findings: synthesized.findings,
       sources,
+      evidence,
+      findingSourceIds: evidence.map((item) => [item.id]),
       caveat: synthesized.caveat,
       metadata: result.metadata
     };

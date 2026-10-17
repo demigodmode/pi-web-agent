@@ -4,7 +4,10 @@ import type { Attempt, ResearchFetchInput, SearchInput, WebFetchResponse, WebSea
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { selectEvidencePassages } from './evidence-passages.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import type { ResearchRunBudget } from './run-budget.js';
+import type { ResearchProgress } from './progress.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -30,17 +33,20 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
   const content = fetched.content;
   if (fetched.status !== 'ok' || !content) return null;
   if (isBotCheckContent({ title: content.title, text: content.text, botCheck: content.botCheck })) return null;
+  if (!content.text.trim()) return null;
 
-  // A successful reader read with usable text is primary content, exempt from the
-  // package-page filter below.
-  if (isReaderMethod(fetched.metadata.method) && content.text.trim()) {
+  // Reader extraction keeps its full text while source authority comes from the URL.
+  if (isReaderMethod(fetched.metadata.method)) {
     return {
       title: content.title ?? fallbackTitle,
       url: fetched.url,
-      sourceKind: 'primary-content',
+      sourceKind: classifySource(fetched.url),
       method: fetched.metadata.method,
       summary: content.text,
-      supports: [content.text]
+      supports: [content.text],
+      ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
+      ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+      truncated: fetched.metadata.truncated ?? false
     } satisfies ResearchEvidence;
   }
 
@@ -49,13 +55,17 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
     return null;
   }
 
+  const passages = selectEvidencePassages(content.text, query);
   return {
     title: content.title ?? fallbackTitle,
     url: fetched.url,
     sourceKind,
     method: fetched.metadata.method,
     summary: selectRelevantExcerpt(content.text, query, 180),
-    supports: [selectRelevantExcerpt(content.text, query, 120)]
+    supports: passages.excerpts,
+    ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
+    ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    truncated: (fetched.metadata.truncated ?? false) || passages.truncated
   } satisfies ResearchEvidence;
 }
 
@@ -91,18 +101,31 @@ export function createResearchWorker({
       query,
       maxSearchRounds,
       maxFetches,
-      signal
+      signal,
+      budget,
+      onProgress,
+      onPartial
     }: {
       query: string;
       maxSearchRounds: number;
       maxFetches: number;
       signal?: AbortSignal;
+      budget?: ResearchRunBudget;
+      onProgress?: (event: ResearchProgress) => void;
+      onPartial?: (result: ResearchWorkerResult) => void;
     }): Promise<ResearchWorkerResult> {
+      const activeSignal = budget?.signal ?? signal;
       const searchQueries = [query];
       const evidence: ResearchEvidence[] = [];
       const gaps: ResearchGap[] = [];
       const lowValueOutcomes: ResearchLowValueOutcome[] = [];
       let suggestedHeadlessUrl: string | undefined;
+      let exhaustedBudget = false;
+      const emit = (phase: ResearchProgress['phase']) => {
+        if (!onProgress) return;
+        const { searches, fetches, headless } = budget?.snapshot() ?? { searches: 0, fetches: 0, headless: 0 };
+        try { onProgress({ phase, searches, fetches, headless }); } catch { /* Progress is observational. */ }
+      };
 
       if (maxSearchRounds <= 0 || maxFetches <= 0) {
         return {
@@ -115,9 +138,14 @@ export function createResearchWorker({
         };
       }
 
-      throwIfAborted(signal);
-      const searchResult = await search({ query, signal });
-      throwIfAborted(signal);
+      throwIfAborted(activeSignal);
+      if (budget && !budget.claimSearch()) {
+        return { searchQueries: [], evidence, gaps, lowValueOutcomes, exhaustedBudget: true };
+      }
+      emit('search');
+      const searchWork = search({ query, signal: activeSignal });
+      const searchResult = budget ? await budget.wait(searchWork) : await searchWork;
+      throwIfAborted(activeSignal);
       const searchCoveragePartial = searchResult.metadata.coverage?.partial === true;
       const searchAttempts = searchResult.metadata.attempts;
       if (isTerminalFailure(failureOf(searchResult))) {
@@ -179,68 +207,114 @@ export function createResearchWorker({
       const candidates = selectCandidates({
         query,
         results: searchResult.results,
-        seenUrls: new Set(evidence.map((item) => item.url)),
+        seenUrls: budget?.visitedUrls ?? new Set(evidence.map((item) => item.url)),
         maxCandidates: maxFetches
       });
 
-      const fetchAttempts: Attempt[] = [];
-      for (const candidate of candidates) {
-        throwIfAborted(signal);
-        const fetched = await fetchPage({ url: candidate.url, query, signal });
-        // Readers report a cancel as an error result; never record it as a gap.
-        throwIfAborted(signal);
-        if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
+      const outcomes: Array<WebFetchResponse | Error | undefined> = new Array(candidates.length);
+      const parsedEvidenceByCandidate = new Map<number, ResearchEvidence | null>();
+      const collectOutcomes = (): ResearchWorkerResult => {
+        const completedEvidence: ResearchEvidence[] = [];
+        const completedGaps: ResearchGap[] = [];
+        const completedLowValueOutcomes: ResearchLowValueOutcome[] = [];
+        const fetchAttempts: Attempt[] = [];
+        let completedHeadlessUrl: string | undefined;
+        for (const [index, candidate] of candidates.entries()) {
+          const fetched = outcomes[index];
+          if (!fetched) continue;
+          if (fetched instanceof Error) {
+            completedGaps.push({ kind: 'fetch-failed', message: `Fetch failed for ${candidate.url}: ${fetched.message}` });
+            continue;
+          }
+          if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
 
-        if (fetched.status === 'ok') {
-          const parsedEvidence = evidenceFromFetch(fetched, candidate.title, query);
-          if (parsedEvidence) {
-            evidence.push(parsedEvidence);
+          if (fetched.status === 'ok') {
+            if (!parsedEvidenceByCandidate.has(index)) {
+              parsedEvidenceByCandidate.set(index, evidenceFromFetch(fetched, candidate.title, query) ?? null);
+            }
+            const parsedEvidence = parsedEvidenceByCandidate.get(index);
+            if (parsedEvidence) {
+              completedEvidence.push(parsedEvidence);
+              continue;
+            }
+            const lowValueOutcome = lowValueOutcomeFromFetch(fetched);
+            if (lowValueOutcome) completedLowValueOutcomes.push(lowValueOutcome);
             continue;
           }
 
-          const lowValueOutcome = lowValueOutcomeFromFetch(fetched);
-          if (lowValueOutcome) {
-            lowValueOutcomes.push(lowValueOutcome);
+          if (isTerminalFailure(failureOf(fetched))) {
+            completedGaps.push({ kind: 'fetch-failed', message: fetched.error?.message ?? `Fetch failed for ${candidate.url}` });
+            continue;
           }
-          continue;
+          if (fetched.status === 'needs_headless') {
+            completedHeadlessUrl ??= fetched.url;
+            completedGaps.push({ kind: 'fetch-failed', message: `HTTP fetch was weak for ${fetched.url}` });
+            continue;
+          }
+          completedGaps.push({ kind: 'fetch-failed', message: fetched.error?.message ?? `Fetch failed for ${candidate.url}` });
         }
-
-        // guard_refused and friends are final; never hand them to headless.
-        if (isTerminalFailure(failureOf(fetched))) {
-          gaps.push({
-            kind: 'fetch-failed',
-            message: fetched.error?.message ?? `Fetch failed for ${candidate.url}`
+        return {
+          searchQueries,
+          evidence: completedEvidence,
+          gaps: completedGaps,
+          lowValueOutcomes: completedLowValueOutcomes,
+          suggestedHeadlessUrl: completedHeadlessUrl,
+          exhaustedBudget,
+          fanoutProviders,
+          fanoutSkipped,
+          searchCoveragePartial,
+          searchAttempts,
+          fetchAttempts
+        };
+      };
+      const started = new Set<number>();
+      const activeHosts = new Set<string>();
+      const inFlight = new Map<number, Promise<void>>();
+      const host = (url: string) => {
+        try { return new URL(url).hostname.toLowerCase(); } catch { return url; }
+      };
+      const startAvailable = () => {
+        while (inFlight.size < 3) {
+          const index = candidates.findIndex((candidate, position) => !started.has(position) && !activeHosts.has(host(candidate.url)));
+          if (index < 0) break;
+          const candidate = candidates[index];
+          const hostname = host(candidate.url);
+          started.add(index);
+          if (budget && !budget.claimFetch(candidate.url)) {
+            if (budget.snapshot().limitReason === 'fetch-limit') exhaustedBudget = true;
+            continue;
+          }
+          emit('fetch');
+          activeHosts.add(hostname);
+          const request = (async () => {
+            try {
+              throwIfAborted(activeSignal);
+              const fetchWork = fetchPage({ url: candidate.url, query, signal: activeSignal });
+              outcomes[index] = budget ? await budget.wait(fetchWork) : await fetchWork;
+            } catch (error) {
+              throwIfAborted(activeSignal);
+              outcomes[index] = error instanceof Error ? error : new Error(String(error));
+            }
+          })().finally(() => {
+            activeHosts.delete(hostname);
+            inFlight.delete(index);
+            if (outcomes[index] && onPartial) {
+              try { onPartial(collectOutcomes()); } catch { /* Partial evidence is observational. */ }
+            }
           });
-          continue;
+          request.catch(() => undefined);
+          inFlight.set(index, request);
         }
-
-        if (fetched.status === 'needs_headless') {
-          if (!suggestedHeadlessUrl) {
-            suggestedHeadlessUrl = fetched.url;
-          }
-          gaps.push({ kind: 'fetch-failed', message: `HTTP fetch was weak for ${fetched.url}` });
-          continue;
-        }
-
-        gaps.push({
-          kind: 'fetch-failed',
-          message: fetched.error?.message ?? `Fetch failed for ${candidate.url}`
-        });
+      };
+      startAvailable();
+      while (inFlight.size > 0) {
+        await Promise.race(inFlight.values());
+        throwIfAborted(activeSignal);
+        startAvailable();
       }
 
-      return {
-        searchQueries,
-        evidence,
-        gaps,
-        lowValueOutcomes,
-        suggestedHeadlessUrl,
-        exhaustedBudget: false,
-        fanoutProviders,
-        fanoutSkipped,
-        searchCoveragePartial,
-        searchAttempts,
-        fetchAttempts
-      };
+      throwIfAborted(activeSignal);
+      return collectOutcomes();
     }
   };
 }

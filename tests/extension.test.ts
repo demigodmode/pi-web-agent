@@ -2,6 +2,33 @@ import { describe, expect, it, vi } from 'vitest';
 import extension from '../src/extension.js';
 
 describe('Pi extension entrypoint', () => {
+  it('sends short progress updates through Pi without exposing evidence text', async () => {
+    const updates = vi.fn();
+    const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      onProgress?.({ phase: 'fetch', searches: 1, fetches: 2, headless: 0 });
+      return { status: 'ok' as const, findings: ['Secret extracted evidence'], sources: [] };
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(updates.mock.calls)).toContain('Searching');
+    expect(JSON.stringify(updates.mock.calls)).not.toContain('Secret extracted evidence');
+  });
+
+  it('keeps researching when the Pi progress callback throws', async () => {
+    const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { status: 'ok' as const, findings: [], sources: [] };
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+
+    await expect(tools[0].execute('call-1', { query: 'example' }, undefined, () => { throw new Error('display gone'); })).resolves.toMatchObject({ isError: false });
+  });
   it('reuses the configured web_explore workflow while backend config is unchanged', async () => {
     vi.resetModules();
     const createResearchWorkflow = vi.fn().mockReturnValue({
@@ -227,6 +254,8 @@ describe('Pi extension entrypoint', () => {
         status: 'ok',
         findings: ['A concise finding.'],
         sources: [{ title: 'Source', url: 'https://example.com', method: 'http' }],
+        findingSourceIds: [['S1']],
+        evidence: [{ id: 'S1', title: 'Source', url: 'https://example.com', method: 'http', excerpts: [{ text: 'The source passage that supports the finding.', anchor: 'details' }], truncated: false }],
         presentation: {
           mode: 'compact',
           views: {
@@ -246,6 +275,9 @@ describe('Pi extension entrypoint', () => {
 
     // The model receives the actual findings, not the compact count line.
     expect(result.content[0].text).toContain('A concise finding.');
+    expect(result.content[0].text).toContain('[S1] A concise finding.');
+    expect(result.content[0].text).toContain('The source passage that supports the finding.');
+    expect(result.content[0].text).toContain('[S1] Source: https://example.com');
     expect(result.content[0].text).not.toContain('Reviewed');
     // The compact terminal view is carried separately for the renderer.
     expect(result.details.terminalText).toBe('Reviewed 1 sources · synthesized answer with 1 findings');
@@ -257,6 +289,71 @@ describe('Pi extension entrypoint', () => {
     expect(rendered).toContain('Reviewed 1 sources');
     expect(rendered).not.toContain('A concise finding.');
   }, 15000);
+
+  it('sends an unreadable direct-source caveat to the model when no evidence was usable', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'The direct URL could not be read.'
+      })
+    };
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const result = await webExplore.execute('tool-call-1', { query: 'https://example.com/unreadable' });
+
+    expect(result.content[0].text).toContain('The direct URL could not be read.');
+    expect(result.details.terminalText).toBe('web_explore result');
+  });
+
+  it('sanitizes terminal and bidi formatting controls in persisted legacy presentation views', () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn()
+    };
+    const osc = '\u001b]8;;https://example.com\u0007linked\u001b]8;;\u0007';
+    const bidi = '\u202d\u202e\u2066\u2069';
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const persistedResult = {
+      details: {
+        presentation: {
+          views: {
+            compact: `Legacy \u001b[31mcompact ${bidi}${osc}`,
+            verbose: `Legacy first line\r\nLegacy second line ${bidi}${osc}`
+          }
+        }
+      }
+    };
+    const compact = webExplore
+      .renderResult(persistedResult, { expanded: false, isPartial: false }, {}, {})
+      .render(120)
+      .join('\n');
+    const verboseLines = webExplore
+      .renderResult(persistedResult, { expanded: true, isPartial: false }, {}, {})
+      .render(120);
+    const verbose = verboseLines.join('\n');
+
+    for (const output of [compact, verbose]) {
+      expect(output).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+      expect(output).not.toContain('\u001b');
+    }
+    expect(verboseLines.map((line: string) => line.trimEnd())).toEqual([
+      'Legacy first line',
+      'Legacy second line ]8;;https://example.comlinked]8;;'
+    ]);
+  });
 
   it('falls back to built-in defaults when the store cannot load config', async () => {
     const tools: any[] = [];
@@ -419,6 +516,190 @@ describe('Pi extension entrypoint', () => {
     await handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
 
     await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+  });
+
+  it('closes a workflow whose config load completes during session shutdown', async () => {
+    vi.resetModules();
+    let resolveConfig!: (value: unknown) => void;
+    let releaseRun!: () => void;
+    const configLoaded = new Promise<unknown>((resolve) => { resolveConfig = resolve; });
+    const workflow = {
+      run: vi.fn(() => new Promise((resolve) => { releaseRun = () => resolve(answer); })),
+      close: vi.fn(async () => undefined)
+    };
+    const createResearchWorkflow = vi.fn(() => workflow);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    const firstCache = { close: vi.fn(async () => undefined) };
+    const secondCache = { close: vi.fn(async () => undefined) };
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: vi.fn().mockReturnValueOnce(firstCache).mockReturnValue(secondCache),
+      __presentationConfigStore: {
+        load: vi.fn().mockImplementationOnce(() => configLoaded).mockResolvedValue({
+          effectiveConfig: { defaultMode: 'compact', tools: {} },
+          effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+        })
+      }
+    };
+
+    dynamicExtension(pi as never);
+    const execution = tools.find((tool) => tool.name === 'web_explore').execute('call-1', { query: 'x' });
+    await vi.waitFor(() => expect(pi.__presentationConfigStore.load).toHaveBeenCalledTimes(1));
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'new' });
+    resolveConfig({
+      effectiveConfig: { defaultMode: 'compact', tools: {} },
+      effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+    });
+
+    await vi.waitFor(() => expect(workflow.run).toHaveBeenCalledTimes(1));
+    expect(workflow.close).not.toHaveBeenCalled();
+    releaseRun();
+    await execution;
+    await shutdown;
+
+    expect(createResearchWorkflow).toHaveBeenCalledWith(expect.objectContaining({ repoCache: firstCache }));
+    expect(workflow.close).toHaveBeenCalledTimes(1);
+    expect(firstCache.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a workflow after configuration finishes beyond the shutdown grace period', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    let resolveConfig!: (value: unknown) => void;
+    const configLoaded = new Promise<unknown>((resolve) => { resolveConfig = resolve; });
+    const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    const createResearchWorkflow = vi.fn(() => workflow);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    const firstCache = { close: vi.fn(async () => undefined) };
+    const secondCache = { close: vi.fn(async () => undefined) };
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: vi.fn().mockReturnValueOnce(firstCache).mockReturnValue(secondCache),
+      __presentationConfigStore: { load: vi.fn().mockImplementationOnce(() => configLoaded) }
+    };
+
+    try {
+      dynamicExtension(pi as never);
+      const execution = tools.find((tool) => tool.name === 'web_explore').execute('call-1', { query: 'x' });
+      await vi.waitFor(() => expect(pi.__presentationConfigStore.load).toHaveBeenCalledTimes(1));
+      const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'new' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await shutdown;
+
+      resolveConfig({ effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } } });
+      await expect(execution).rejects.toThrow('session has ended');
+      expect(createResearchWorkflow).not.toHaveBeenCalled();
+      expect(firstCache.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for detached workflow work before closing the session repo cache', async () => {
+    vi.resetModules();
+    let releaseClose!: () => void;
+    const workflow = {
+      run: vi.fn().mockResolvedValue(answer),
+      close: vi.fn(() => new Promise<void>((resolve) => { releaseClose = resolve; }))
+    };
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow: vi.fn(() => workflow) }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+    await tools[0].execute('call-1', { query: 'x' });
+
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+    expect(closeCache).not.toHaveBeenCalled();
+    releaseClose();
+    await shutdown;
+    expect(closeCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes session shutdown when workflow close never settles', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const close = vi.fn(() => new Promise<void>(() => undefined));
+    vi.doMock('../src/orchestration/index.js', () => ({
+      createResearchWorkflow: vi.fn(() => ({ run: vi.fn().mockResolvedValue(answer), close }))
+    }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+
+    try {
+      await tools[0].execute('call-1', { query: 'x' });
+      const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(closeCache).toHaveBeenCalledTimes(1);
+      await shutdown;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for a replaced workflow before closing its session repo cache', async () => {
+    vi.resetModules();
+    let releaseRun!: () => void;
+    const first = {
+      run: vi.fn(() => new Promise((resolve) => { releaseRun = () => resolve(answer); })),
+      close: vi.fn(async () => undefined)
+    };
+    const second = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    vi.doMock('../src/orchestration/index.js', () => ({
+      createResearchWorkflow: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
+    }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    let backend = 'duckduckgo';
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: backend }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const inFlight = webExplore.execute('call-1', { query: 'first' });
+    await vi.waitFor(() => expect(first.run).toHaveBeenCalledTimes(1));
+    backend = 'brave';
+    await webExplore.execute('call-2', { query: 'second' });
+
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    expect(first.close).not.toHaveBeenCalled();
+    expect(closeCache).not.toHaveBeenCalled();
+    releaseRun();
+    await inFlight;
+    await shutdown;
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(second.close).toHaveBeenCalledTimes(1);
+    expect(closeCache).toHaveBeenCalledTimes(1);
   });
 
   it('owns the repo cache: shutdown awaits its close, and the next session gets a fresh one', async () => {

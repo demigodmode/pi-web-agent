@@ -27,7 +27,7 @@ const quality = (overrides: {
     community: 1,
     thread: 0,
     packagePage: 0,
-    primaryContent: 0,
+    unknown: 0,
     distinctHosts: 2,
     ...overrides.counts
   },
@@ -55,6 +55,21 @@ describe('decideNextResearchStep', () => {
         maxHeadlessAttempts: 2
       }).action
     ).toBe('answer');
+  });
+
+  it('stops with an authority caveat after two unfamiliar documentation sources', () => {
+    expect(decideNextResearchStep({
+      evidence: [evidence('unknown', 'https://react.dev/reference/a'), evidence('unknown', 'https://docs.python.org/3/library/a')],
+      suggestedHeadlessUrls: [], passIndex: 0, maxPasses: 3, headlessAttempts: 0, maxHeadlessAttempts: 2,
+      quality: quality({ caveatReasons: ['unknown-authority'] })
+    }).action).toBe('answer-with-caveat');
+  });
+
+  it('accepts discussion evidence for an explicit opinion question', () => {
+    const sources = [evidence('community', 'https://reddit.com/r/a/comments/1'), evidence('issue-thread', 'https://github.com/org/repo/issues/2')];
+    const options = { evidence: sources, suggestedHeadlessUrls: [], passIndex: 0, maxPasses: 3, headlessAttempts: 0, maxHeadlessAttempts: 2 };
+    expect(decideNextResearchStep({ ...options, opinionQuestion: true }).action).toBe('answer');
+    expect(decideNextResearchStep(options).action).toBe('search-again');
   });
 
   it('does not let partial search coverage turn a strong answer into a caveated one (#55)', () => {

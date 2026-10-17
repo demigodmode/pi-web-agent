@@ -33,7 +33,7 @@ describe('analyzeEvidenceQuality', () => {
       community: 1,
       thread: 0,
       packagePage: 0,
-      primaryContent: 0,
+      unknown: 0,
       distinctHosts: 2
     });
     expect(report.flags.hasOfficialEvidence).toBe(true);
@@ -54,6 +54,35 @@ describe('analyzeEvidenceQuality', () => {
     expect(report.flags.hasLowDiversity).toBe(true);
     expect(report.caveatReasons).toContain('community-only');
     expect(report.caveatReasons).toContain('low-diversity');
+  });
+
+  it('keeps unknown source authority distinct from community opinion', () => {
+    const report = analyzeEvidenceQuality({
+      evidence: [
+        evidence('unknown', 'https://react.dev/reference/react/useEffect'),
+        evidence('unknown', 'https://docs.python.org/3/library/asyncio.html')
+      ],
+      gaps: [],
+      lowValueOutcomes: []
+    });
+
+    expect(report.flags.hasOnlyCommunityEvidence).toBe(false);
+    expect(report.caveatReasons).not.toContain('community-only');
+    expect(report.caveatReasons).toContain('unknown-authority');
+  });
+
+  it('does not call requested opinion evidence community-only', () => {
+    const report = analyzeEvidenceQuality({
+      evidence: [
+        evidence('community', 'https://reddit.com/r/a/comments/1'),
+        evidence('issue-thread', 'https://github.com/org/repo/issues/2')
+      ],
+      gaps: [],
+      lowValueOutcomes: [],
+      opinionQuestion: true
+    });
+
+    expect(report.caveatReasons).not.toContain('community-only');
   });
 
   it('detects unreadable direct and thread source gaps', () => {
@@ -94,10 +123,10 @@ describe('analyzeEvidenceQuality', () => {
     expect(report.caveatReasons).toContain('bot-check');
   });
 
-  it('primary-content suppresses community-only and low-diversity caveats', () => {
+  it('unknown authority stays distinct from community while narrow sources remain narrow', () => {
     const report = analyzeEvidenceQuality({
       evidence: [
-        evidence('primary-content', 'https://example.com/primary'),
+        evidence('unknown', 'https://example.com/primary'),
         evidence('community', 'https://example.com/other')
       ],
       gaps: [],
@@ -105,10 +134,11 @@ describe('analyzeEvidenceQuality', () => {
     });
 
     expect(report.caveatReasons).not.toContain('community-only');
-    expect(report.caveatReasons).not.toContain('low-diversity');
+    expect(report.caveatReasons).toContain('low-diversity');
+    expect(report.caveatReasons).toContain('unknown-authority');
   });
 
-  it('community evidence still triggers community-only caveat without primary-content', () => {
+  it('community evidence triggers community-only caveat', () => {
     const report = analyzeEvidenceQuality({
       evidence: [
         evidence('community', 'https://example.com/a'),

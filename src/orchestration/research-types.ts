@@ -1,13 +1,14 @@
 import type { Attempt, SearchProviderName } from '../types.js';
+import type { ResearchBudgetReason, ResearchBudgetSnapshot } from './run-budget.js';
 
 export type ResearchSourceKind =
-  | 'primary-content'
   | 'official-docs'
   | 'official-api'
   | 'official-discussion'
   | 'community'
   | 'issue-thread'
   | 'package-page'
+  | 'unknown'
   | 'other';
 
 export type ResearchMethod = 'search' | 'http' | 'headless' | 'firecrawl' | 'github' | 'pdf' | 'youtube';
@@ -15,10 +16,15 @@ export type ResearchMethod = 'search' | 'http' | 'headless' | 'firecrawl' | 'git
 export type ResearchEvidence = {
   title: string;
   url: string;
+  /** Original direct URL when this evidence came from a redirected request. */
+  requestedUrl?: string;
   sourceKind: ResearchSourceKind;
   method: Exclude<ResearchMethod, 'search'>;
   summary: string;
   supports: string[];
+  sectionAnchor?: string;
+  retrievedAt?: string;
+  truncated?: boolean;
 };
 
 export type ResearchGap = {
@@ -56,6 +62,8 @@ export type ResearchRunMetadata = {
   fanoutSkipped?: SearchProviderName[];
   searchCoveragePartial?: boolean;
   terminalFailure?: { code: string; message: string };
+  budgetReason?: ResearchBudgetReason;
+  budget?: ResearchBudgetSnapshot;
 };
 
 export type ResearchOrchestratorDecision =

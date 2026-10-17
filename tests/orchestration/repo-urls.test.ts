@@ -44,7 +44,7 @@ describe('typed repo URLs', () => {
     await orchestrator.run({
       query: 'compare https://a.example/1 https://b.example/2 https://c.example/3 with https://github.com/acme/widget'
     });
-    expect(researchRepo).toHaveBeenCalledWith({ url: 'https://github.com/acme/widget', query: expect.any(String), signal: undefined });
+    expect(researchRepo).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://github.com/acme/widget', query: expect.any(String), signal: expect.any(AbortSignal) }));
     expect(fetchDirect).toHaveBeenCalledTimes(3);
   });
 
@@ -112,6 +112,35 @@ describe('typed repo URLs', () => {
     expect(w.run).not.toHaveBeenCalled();
   });
 
+  it('searches for external user opinion evidence after reading a typed repo', async () => {
+    const w = {
+      run: vi.fn(async () => ({
+        searchQueries: ['What do users think about https://github.com/acme/widget?'],
+        evidence: [{
+          title: 'Widget user discussion',
+          url: 'https://reddit.com/r/widgets/comments/123',
+          sourceKind: 'community' as const,
+          method: 'http' as const,
+          summary: 'Users describe their experience with Widget.',
+          supports: ['Users describe their experience with Widget.']
+        }],
+        gaps: [],
+        lowValueOutcomes: [],
+        exhaustedBudget: false
+      }))
+    };
+    const researchRepo = vi.fn(async ({ url }: { url: string }) => repoOk(url));
+    const orchestrator = createResearchOrchestrator({ worker: w, fetchDirect: vi.fn(okPage), headlessFetch: vi.fn(), researchRepo });
+
+    const result = await orchestrator.run({ query: 'What do users think about https://github.com/acme/widget?' });
+
+    expect(researchRepo).toHaveBeenCalledTimes(1);
+    expect(w.run).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'What do users think about https://github.com/acme/widget?'
+    }));
+    expect(result.evidence.some((item) => item.url === 'https://reddit.com/r/widgets/comments/123')).toBe(true);
+  });
+
   it('keeps trusted cloned README evidence that mentions bot-like phrases', async () => {
     const w = worker();
     const readme = 'The security service verifies every request. If verification fails, it may say verify you are not a bot before continuing.';
@@ -132,7 +161,7 @@ describe('typed repo URLs', () => {
     expect(result.evidence[0]).toMatchObject({
       url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`,
       method: 'github',
-      sourceKind: 'primary-content',
+      sourceKind: 'unknown',
       summary: readme,
       supports: [readme]
     });

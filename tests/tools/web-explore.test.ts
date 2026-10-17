@@ -1,7 +1,73 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
+import type { ResearchProgress } from '../../src/orchestration/progress.js';
 
 describe('web_explore tool', () => {
+  it('pairs all five findings with their sources', async () => {
+    const evidence = Array.from({ length: 6 }, (_, index) => ({
+      title: `Source ${index + 1}`,
+      url: `https://example.com/${index + 1}`,
+      sourceKind: 'official-docs' as const,
+      method: index === 4 ? 'headless' as const : 'http' as const,
+      summary: `Finding ${index + 1}`,
+      supports: [`Finding ${index + 1}`]
+    }));
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence,
+        workerPass: {}
+      })
+    });
+
+    const result = await webExplore({ query: 'Compare the six sources' });
+
+    expect(result.findings).toEqual(['Finding 1', 'Finding 2', 'Finding 3', 'Finding 4', 'Finding 5']);
+    expect(result.sources).toEqual(evidence.slice(0, 5).map(({ title, url, method }) => ({ title, url, method })));
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3'], ['S4'], ['S5']]);
+    expect(result.evidence?.map((item) => item.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
+    expect(result.presentation?.views.preview).toContain('[web_fetch_headless] Finding 5');
+    expect(result.presentation?.views.verbose).toContain('Source 5: https://example.com/5');
+    expect(result.presentation?.views.verbose).not.toContain('Source 6: https://example.com/6');
+  });
+
+  it('returns bounded excerpts with available source metadata', async () => {
+    const supports = Array.from({ length: 3 }, (_, index) => `passage ${index}: ${'x'.repeat(1000)}`);
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence: Array.from({ length: 5 }, (_, index) => ({
+          title: `Source ${index}`, url: `https://example.com/${index}`, sourceKind: 'official-docs', method: 'http',
+          summary: `Finding ${index}`, supports, sectionAnchor: 'relevant', retrievedAt: '2026-10-17T00:00:00.000Z', truncated: false
+        })),
+        workerPass: {}
+      })
+    });
+
+    const result = await webExplore({ query: 'question' });
+
+    expect(result.evidence).toHaveLength(5);
+    expect(result.evidence?.[0]?.excerpts[0]).toEqual({ text: supports[0].slice(0, 900), anchor: 'relevant' });
+    expect(result.evidence?.[0]?.retrievedAt).toBe('2026-10-17T00:00:00.000Z');
+    expect(result.evidence?.[0]?.truncated).toBe(true);
+    expect(result.evidence?.flatMap((item) => item.excerpts).reduce((sum, item) => sum + item.text.length, 0)).toBeLessThanOrEqual(10000);
+    expect(result.evidence?.[4]?.excerpts.length).toBeGreaterThan(0);
+    expect(result.findingSourceIds?.every((ids, index) => ids[0] === result.evidence?.[index]?.id)).toBe(true);
+  });
+
+  it('passes progress events from the workflow to its caller', async () => {
+    const onProgress = vi.fn();
+    const explore = vi.fn(async ({ onProgress: emit }: { onProgress?: (event: ResearchProgress) => void }) => {
+      emit?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+    });
+    const webExplore = createWebExploreTool({ explore });
+
+    await webExplore({ query: 'example', onProgress });
+
+    expect(onProgress).toHaveBeenCalledWith({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete' }));
+  });
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({

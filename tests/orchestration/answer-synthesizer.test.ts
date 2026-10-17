@@ -12,6 +12,18 @@ const evidence = (sourceKind: ResearchEvidence['sourceKind'], summary: string): 
 });
 
 describe('synthesizeAnswer', () => {
+  it('explains when a run budget stops research', () => {
+    const result = synthesizeAnswer({ evidence: [], partial: true, caveatReasons: ['budget-exhausted'] });
+    expect(result.caveat).toContain('research reached its run limit');
+  });
+  it('names the comparison target that lacks evidence', () => {
+    const result = synthesizeAnswer({ evidence: [], partial: true, caveatReasons: ['missing-comparison-target'], missingComparisonTargets: ['Vue'] });
+    expect(result.caveat).toContain('Vue');
+  });
+  it('explains when source authority was not established', () => {
+    const result = synthesizeAnswer({ evidence: [], partial: true, caveatReasons: ['unknown-authority'] });
+    expect(result.caveat).toContain('source authority could not be confirmed');
+  });
   it('uses official evidence as primary findings', () => {
     expect(
       synthesizeAnswer({

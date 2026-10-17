@@ -15,10 +15,14 @@ import type {
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { selectEvidencePassages } from './evidence-passages.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
 import { parseRepoUrl } from '../repo/repo-url.js';
+import { classifyResearchIntent, missingComparisonTargets } from './research-intent.js';
+import { createResearchRunBudget, type ResearchBudgetReason, type ResearchBudgetSnapshot } from './run-budget.js';
+import type { ResearchProgress } from './progress.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -32,12 +36,16 @@ function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
 }
 
+function isOpinionQuestion(query: string): boolean {
+  return /\b(?:what do (?:users|people|developers) (?:think|feel|say)(?: about)?|(?:users?|people|developers?|community)[’']?\s+(?:opinions?|experiences?|reviews?|feedback)(?:\s+(?:with|of|about|using))?)\b/i.test(query);
+}
+
 function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
   if (botCheck) return true;
   return hasBotCheckContent(`${title}\n${text}`);
 }
 
-function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedContent = false }: { trustedContent?: boolean } = {}): ResearchEvidence | null {
+function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedContent = false, requestedUrl }: { trustedContent?: boolean; requestedUrl?: string } = {}): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (!trustedContent && isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
@@ -45,34 +53,48 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     return {
       title: result.content.title ?? result.url,
       url: result.url,
-      sourceKind: 'primary-content',
+      ...(requestedUrl ? { requestedUrl } : {}),
+      sourceKind: classifyEvidenceUrl(result.url),
       method: result.metadata.method,
       summary: result.content.text,
-      supports: [result.content.text]
+      supports: [result.content.text],
+      ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
+      ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+      truncated: result.metadata.truncated ?? false
     };
   }
 
+  const passages = selectEvidencePassages(result.content.text, query);
   return {
     title: result.content.title ?? result.url,
     url: result.url,
+    ...(requestedUrl ? { requestedUrl } : {}),
     sourceKind: classifyEvidenceUrl(result.url),
     method: result.metadata.method,
     summary: selectRelevantExcerpt(result.content.text, query, 180),
-    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
+    supports: passages.excerpts,
+    ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
+    ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    truncated: (result.metadata.truncated ?? false) || passages.truncated
   };
 }
 
-function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): ResearchEvidence | null {
+function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string, requestedUrl?: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
+  const passages = selectEvidencePassages(result.content.text, query);
   return {
     title: result.content.title ?? result.url,
     url: result.url,
+    ...(requestedUrl ? { requestedUrl } : {}),
     sourceKind: classifyEvidenceUrl(result.url),
     method: 'headless',
     summary: selectRelevantExcerpt(result.content.text, query, 180),
-    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
+    supports: passages.excerpts,
+    ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
+    ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    truncated: (result.metadata.truncated ?? false) || passages.truncated
   };
 }
 
@@ -119,9 +141,12 @@ function buildMetadata({
   headlessAttempts,
   exhaustedBudget,
   caveatReasons = [],
+  missingComparisonTargets = [],
   fanoutProviders,
   fanoutSkipped,
-  attempts
+  attempts,
+  budgetReason,
+  budget
 }: {
   previousQueries: string[];
   allEvidence: ResearchEvidence[];
@@ -130,9 +155,12 @@ function buildMetadata({
   headlessAttempts: number;
   exhaustedBudget: boolean;
   caveatReasons?: EvidenceCaveatReason[];
+  missingComparisonTargets?: string[];
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
   attempts?: Attempt[];
+  budgetReason?: ResearchBudgetReason;
+  budget?: ResearchBudgetSnapshot;
 }) {
   return {
     searchPasses: previousQueries.length,
@@ -140,8 +168,11 @@ function buildMetadata({
     headlessAttempts,
     exhaustedBudget,
     caveatReasons,
+    missingComparisonTargets,
     fanoutProviders,
     fanoutSkipped,
+    budgetReason,
+    budget,
     ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
 }
@@ -192,6 +223,9 @@ export function createResearchOrchestrator({
       maxSearchRounds: number;
       maxFetches: number;
       signal?: AbortSignal;
+      budget?: import('./run-budget.js').ResearchRunBudget;
+      onProgress?: (event: ResearchProgress) => void;
+      onPartial?: (result: ResearchWorkerResult) => void;
     }) => Promise<ResearchWorkerResult>;
   };
   fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
@@ -199,25 +233,72 @@ export function createResearchOrchestrator({
   /** Typed GitHub repo URLs (#72). Without it, they go through fetchDirect like any page. */
   researchRepo?: (input: RepoResearchInput) => Promise<RepoResearchResult>;
 }) {
+  const pending = new Set<Promise<unknown>>();
+  const track = (promise: Promise<unknown>) => {
+    pending.add(promise);
+    void promise.finally(() => pending.delete(promise)).catch(() => undefined);
+  };
+
   return {
-    async run({ query, signal }: { query: string; signal?: AbortSignal }): Promise<ResearchOrchestratorResult> {
+    async run({ query, signal, onProgress }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }): Promise<ResearchOrchestratorResult> {
+      const budget = createResearchRunBudget({ signal, track });
+      const emit = (phase: ResearchProgress['phase']) => {
+        if (!onProgress) return;
+        const { searches, fetches, headless } = budget.snapshot();
+        try { onProgress({ phase, searches, fetches, headless }); } catch { /* Progress is observational. */ }
+      };
+      const intent = classifyResearchIntent(query);
+      const opinionQuestion = isOpinionQuestion(query);
       const allEvidence: ResearchEvidence[] = [];
       const allGaps: ResearchGap[] = [];
       const allLowValueOutcomes: ResearchLowValueOutcome[] = [];
       const previousQueries: string[] = [];
       const suggestedHeadlessUrls: string[] = [];
+      const attemptedHeadlessUrls = new Set<string>();
       let headlessAttempts = 0;
       let lastPass: ResearchWorkerResult | undefined;
+      let partialWorkerPass: ResearchWorkerResult | undefined;
       let searchCoveragePartial = false;
       const fanoutProvidersSeen = new Set<SearchProviderName>();
       const fanoutSkippedSeen = new Set<SearchProviderName>();
       // Search and fetch attempts from every pass and direct URL, for verbose provenance.
       const runAttempts: Attempt[] = [];
 
+      const partialBudgetResult = (): ResearchOrchestratorResult => {
+        const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+        const missingTargets = missingComparisonTargets(intent, ranked);
+        const quality = analyzeEvidenceQuality({
+          evidence: ranked,
+          gaps: allGaps,
+          lowValueOutcomes: allLowValueOutcomes,
+          partialSearchCoverage: searchCoveragePartial,
+          opinionQuestion,
+          missingComparisonTargets: missingTargets
+        });
+        const snapshot = budget.snapshot();
+        return {
+          decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: true }),
+          evidence: ranked,
+          workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: true }),
+          metadata: buildMetadata({
+            previousQueries,
+            allEvidence,
+            allGaps,
+            allLowValueOutcomes,
+            headlessAttempts,
+            exhaustedBudget: true,
+            caveatReasons: [...quality.caveatReasons, 'budget-exhausted'],
+            missingComparisonTargets: missingTargets,
+            budgetReason: snapshot.limitReason,
+            ...fanoutSnapshot()
+          })
+        };
+      };
+
       function fanoutSnapshot() {
         const providers = fanoutProvidersSeen.size ? [...fanoutProvidersSeen] : undefined;
         const skipped = [...fanoutSkippedSeen].filter((p) => !fanoutProvidersSeen.has(p));
-        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts] };
+        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts], budget: budget.snapshot() };
       }
 
       const terminal = (terminalFailure: { code: string; message: string }) => ({
@@ -228,7 +309,8 @@ export function createResearchOrchestrator({
         terminalFailure
       });
 
-      // Typed repo links are sorted out before the page budget, so none is ever skipped (#72).
+      try {
+      // Typed repo links are researched directly and consume the same bounded fetch allowance.
       const typedUrls = extractDirectUrls(query);
       const repoUrls = researchRepo ? typedUrls.filter((url) => parseRepoUrl(url) !== undefined) : [];
       const pageUrls = typedUrls.filter((url) => !repoUrls.includes(url));
@@ -246,7 +328,10 @@ export function createResearchOrchestrator({
       }
       for (const url of uniqueRepoUrls) {
         throwIfAborted(signal);
-        const researched = await researchRepo!({ url, query, signal });
+        if (!budget.claimFetch(url)) return partialBudgetResult();
+        emit('fetch');
+        const repoWork = researchRepo!({ url, query, signal: budget.signal });
+        const researched = await budget.wait(repoWork);
         throwIfAborted(signal);
         // A typed repo that can't be researched ends the run: the README reader must not stand in for the code.
         if (!researched.ok) return terminal({ code: researched.error.code, message: researched.error.message });
@@ -258,10 +343,13 @@ export function createResearchOrchestrator({
       if (fetchDirect) {
         for (const url of pageUrls.slice(0, 3)) {
           throwIfAborted(signal);
-          const directResult = await fetchDirect({ url, query, signal });
+          if (!budget.claimFetch(url)) return partialBudgetResult();
+          emit('fetch');
+          const directWork = fetchDirect({ url, query, signal: budget.signal });
+          const directResult = await budget.wait(directWork);
           throwIfAborted(signal);
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
-          const directEvidence = evidenceFromFetch(directResult, query);
+          const directEvidence = evidenceFromFetch(directResult, query, { requestedUrl: url });
           if (directEvidence) {
             allEvidence.push(directEvidence);
             continue;
@@ -270,18 +358,22 @@ export function createResearchOrchestrator({
           if (isTerminalFailure(failureOf(directResult))) {
             allGaps.push({
               kind: 'fetch-failed',
-              message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
+              message: directUnreadableMessage(directResult.url)
             });
             continue;
           }
 
           if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
+              if (!budget.claimHeadless()) return partialBudgetResult();
+              emit('headless');
               headlessAttempts++;
+              attemptedHeadlessUrls.add(directResult.url);
               throwIfAborted(signal);
-              const headlessResult = await headlessFetch({ url: directResult.url, query, signal });
+              const headlessWork = headlessFetch({ url: directResult.url, query, signal: budget.signal });
+              const headlessResult = await budget.wait(headlessWork);
               throwIfAborted(signal);
-              const headlessEvidence = evidenceFromHeadless(headlessResult, query);
+              const headlessEvidence = evidenceFromHeadless(headlessResult, query, url);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
               } else {
@@ -293,7 +385,7 @@ export function createResearchOrchestrator({
           } else if (directResult.status !== 'ok') {
             allGaps.push({
               kind: 'fetch-failed',
-              message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
+              message: directUnreadableMessage(directResult.url)
             });
           } else {
             allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
@@ -301,16 +393,17 @@ export function createResearchOrchestrator({
         }
       }
 
-      if (allEvidence.some((item) => item.sourceKind === 'primary-content')) {
+      if (intent.kind === 'read') {
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
         const quality = analyzeEvidenceQuality({
           evidence: ranked,
           gaps: allGaps,
           lowValueOutcomes: allLowValueOutcomes,
-          partialSearchCoverage: searchCoveragePartial
+          partialSearchCoverage: searchCoveragePartial,
+          opinionQuestion
         });
         return {
-          decision: decisionForAnswer({ action: 'answer', query, ranked, exhaustedBudget: false }),
+          decision: decisionForAnswer({ action: ranked.length ? 'answer' : 'answer-with-caveat', query, ranked, exhaustedBudget: false }),
           evidence: ranked,
           workerPass: combinedWorkerPass({
             lastPass,
@@ -326,29 +419,69 @@ export function createResearchOrchestrator({
             allLowValueOutcomes,
             headlessAttempts,
             exhaustedBudget: false,
-            caveatReasons: quality.caveatReasons,
+            caveatReasons: quality.caveatReasons.filter((reason) => reason !== 'unknown-authority'),
             ...fanoutSnapshot()
           })
         };
       }
 
+      if (intent.kind === 'compare' && allEvidence.length >= 2 && missingComparisonTargets(intent, allEvidence).length === 0) {
+        const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+        const quality = analyzeEvidenceQuality({ evidence: ranked, gaps: allGaps, lowValueOutcomes: allLowValueOutcomes, opinionQuestion });
+        const decision = decideNextResearchStep({
+          evidence: ranked, suggestedHeadlessUrls: [], passIndex: 0, maxPasses: DEFAULT_MAX_PASSES,
+          headlessAttempts, maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS, quality, opinionQuestion
+        });
+        if (decision.action === 'answer' || decision.action === 'answer-with-caveat') {
+          return {
+            decision: decisionForAnswer({ action: decision.action, query, ranked, exhaustedBudget: false }),
+            evidence: ranked,
+            workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
+            metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, caveatReasons: quality.caveatReasons, ...fanoutSnapshot() })
+          };
+        }
+      }
+
       for (let passIndex = 0; passIndex < DEFAULT_MAX_PASSES; passIndex++) {
+        const evidenceText = allEvidence.flatMap((item) => [item.title, item.summary, ...item.supports]).join(' ');
+        const planningGaps = [
+          ...allGaps.map((gap) => gap.message),
+          ...missingComparisonTargets(intent, allEvidence).map((target) => `Need comparison evidence for target: ${target}`)
+        ];
+        if (/\b(?:versions?|compatibility|supported since)\b/i.test(query) && !/\bv?\d+\.\d+(?:\.\d+)?\b/i.test(evidenceText)) {
+          planningGaps.push('Need supported version details.');
+        }
+        if (/\b(?:API|method|function|parameter)\b/i.test(query) && allEvidence.length === 0) {
+          planningGaps.push('Need exact API behavior.');
+        }
+        if (opinionQuestion && !allEvidence.some((item) => item.sourceKind === 'community' || item.sourceKind === 'issue-thread' || item.sourceKind === 'official-discussion')) {
+          planningGaps.push('Need user experience.');
+        }
+        if (analyzeEvidenceQuality({ evidence: allEvidence, gaps: allGaps, lowValueOutcomes: allLowValueOutcomes }).flags.hasPossibleConflict) {
+          planningGaps.push('Sources disagree about the recommendation.');
+        }
         const queries = planSearchQueries({
           originalQuery: query,
           passIndex,
           previousQueries,
-          gaps: allGaps.map((gap) => gap.message)
+          gaps: planningGaps
         });
 
         for (const plannedQuery of queries) {
           previousQueries.push(plannedQuery);
           throwIfAborted(signal);
-          const pass = await worker.run({
+          partialWorkerPass = undefined;
+          const workerWork = worker.run({
             query: plannedQuery,
             maxSearchRounds: 1,
             maxFetches: DEFAULT_MAX_FETCHES_PER_PASS,
-            signal
+            signal,
+            budget,
+            onProgress,
+            onPartial: (partial) => { partialWorkerPass = partial; }
           });
+          const pass = await budget.wait(workerWork);
+          partialWorkerPass = undefined;
           throwIfAborted(signal);
 
           lastPass = pass;
@@ -370,38 +503,50 @@ export function createResearchOrchestrator({
           allGaps.push(...pass.gaps);
           allLowValueOutcomes.push(...pass.lowValueOutcomes);
           if (pass.suggestedHeadlessUrl) suggestedHeadlessUrls.push(pass.suggestedHeadlessUrl);
+          if (pass.exhaustedBudget) return partialBudgetResult();
 
           const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+          const missingTargets = missingComparisonTargets(intent, ranked);
           const quality = analyzeEvidenceQuality({
             evidence: ranked,
             gaps: allGaps,
             lowValueOutcomes: allLowValueOutcomes,
-            partialSearchCoverage: searchCoveragePartial
+            partialSearchCoverage: searchCoveragePartial,
+            opinionQuestion,
+            missingComparisonTargets: missingTargets
           });
           const decision = decideNextResearchStep({
             evidence: ranked,
-            suggestedHeadlessUrls,
+            suggestedHeadlessUrls: suggestedHeadlessUrls.filter((url) => !attemptedHeadlessUrls.has(url)),
             passIndex,
             maxPasses: DEFAULT_MAX_PASSES,
             headlessAttempts,
             maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS,
-            quality
+            quality,
+            opinionQuestion
           });
 
           if (decision.action === 'headless') {
+            if (!budget.claimHeadless()) return partialBudgetResult();
+            emit('headless');
             headlessAttempts++;
+            attemptedHeadlessUrls.add(decision.url);
             throwIfAborted(signal);
-            const headlessResult = await headlessFetch({ url: decision.url, query, signal });
+            const headlessWork = headlessFetch({ url: decision.url, query, signal: budget.signal });
+            const headlessResult = await budget.wait(headlessWork);
             throwIfAborted(signal);
             const headlessEvidence = evidenceFromHeadless(headlessResult, query);
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);
               const updatedRanked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+              const updatedMissingTargets = missingComparisonTargets(intent, updatedRanked);
               const updatedQuality = analyzeEvidenceQuality({
                 evidence: updatedRanked,
                 gaps: allGaps,
                 lowValueOutcomes: allLowValueOutcomes,
-                partialSearchCoverage: searchCoveragePartial
+                partialSearchCoverage: searchCoveragePartial,
+                opinionQuestion,
+                missingComparisonTargets: updatedMissingTargets
               });
               const updatedDecision = decideNextResearchStep({
                 evidence: updatedRanked,
@@ -410,13 +555,18 @@ export function createResearchOrchestrator({
                 maxPasses: DEFAULT_MAX_PASSES,
                 headlessAttempts,
                 maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS,
-                quality: updatedQuality
+                quality: updatedQuality,
+                opinionQuestion
               });
 
-              const exhaustedBudget = updatedDecision.action !== 'answer' && passIndex + 1 >= DEFAULT_MAX_PASSES;
+              const needsMoreResearch = updatedDecision.action === 'search-again' || updatedMissingTargets.length > 0;
+              if (needsMoreResearch && (passIndex + 1 < DEFAULT_MAX_PASSES || plannedQuery !== queries.at(-1))) {
+                continue;
+              }
+              const exhaustedBudget = needsMoreResearch && passIndex + 1 >= DEFAULT_MAX_PASSES;
               return {
                 decision: decisionForAnswer({
-                  action: updatedDecision.action === 'answer' ? 'answer' : 'answer-with-caveat',
+                  action: !needsMoreResearch && updatedDecision.action === 'answer' ? 'answer' : 'answer-with-caveat',
                   query,
                   ranked: updatedRanked,
                   exhaustedBudget
@@ -437,6 +587,7 @@ export function createResearchOrchestrator({
                   headlessAttempts,
                   exhaustedBudget,
                   caveatReasons: updatedQuality.caveatReasons,
+                  missingComparisonTargets: updatedMissingTargets,
                   ...fanoutSnapshot()
                 })
               };
@@ -465,15 +616,19 @@ export function createResearchOrchestrator({
                 headlessAttempts,
                 exhaustedBudget: false,
                 caveatReasons: quality.caveatReasons,
+                missingComparisonTargets: missingTargets,
                 ...fanoutSnapshot()
               })
             };
           }
 
           if (decision.action === 'answer' || decision.action === 'answer-with-caveat') {
+            if (missingTargets.length > 0 && (passIndex + 1 < DEFAULT_MAX_PASSES || plannedQuery !== queries.at(-1))) {
+              continue;
+            }
             const exhaustedBudget = decision.action === 'answer-with-caveat' && passIndex + 1 >= DEFAULT_MAX_PASSES;
             return {
-              decision: decisionForAnswer({ action: decision.action, query, ranked, exhaustedBudget }),
+              decision: decisionForAnswer({ action: missingTargets.length ? 'answer-with-caveat' : decision.action, query, ranked, exhaustedBudget }),
               evidence: ranked,
               workerPass: combinedWorkerPass({
                 lastPass,
@@ -490,6 +645,7 @@ export function createResearchOrchestrator({
                 headlessAttempts,
                 exhaustedBudget,
                 caveatReasons: quality.caveatReasons,
+                missingComparisonTargets: missingTargets,
                 ...fanoutSnapshot()
               })
             };
@@ -498,11 +654,14 @@ export function createResearchOrchestrator({
       }
 
       const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+      const missingTargets = missingComparisonTargets(intent, ranked);
       const quality = analyzeEvidenceQuality({
         evidence: ranked,
         gaps: allGaps,
         lowValueOutcomes: allLowValueOutcomes,
-        partialSearchCoverage: searchCoveragePartial
+        partialSearchCoverage: searchCoveragePartial,
+        opinionQuestion,
+        missingComparisonTargets: missingTargets
       });
       return {
         decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: true }),
@@ -522,9 +681,36 @@ export function createResearchOrchestrator({
           headlessAttempts,
           exhaustedBudget: true,
           caveatReasons: quality.caveatReasons,
+          missingComparisonTargets: missingTargets,
           ...fanoutSnapshot()
         })
       };
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (budget.deadlineReached()) {
+          if (partialWorkerPass) {
+            const partial = partialWorkerPass;
+            lastPass = partial;
+            if (partial.searchAttempts) runAttempts.push(...partial.searchAttempts);
+            if (partial.fetchAttempts) runAttempts.push(...partial.fetchAttempts);
+            if (partial.searchCoveragePartial) searchCoveragePartial = true;
+            partial.fanoutProviders?.forEach((provider) => fanoutProvidersSeen.add(provider));
+            partial.fanoutSkipped?.forEach((provider) => fanoutSkippedSeen.add(provider));
+            allEvidence.push(...partial.evidence);
+            allGaps.push(...partial.gaps);
+            allLowValueOutcomes.push(...partial.lowValueOutcomes);
+          }
+          return partialBudgetResult();
+        }
+        throw error;
+      } finally {
+        budget.dispose();
+      }
+    },
+    async drain() {
+      while (pending.size > 0) {
+        await Promise.allSettled([...pending]);
+      }
     }
   };
 }

@@ -9,6 +9,10 @@ function sentenceForReason(reason: EvidenceCaveatReason): string {
   switch (reason) {
     case 'community-only':
       return 'the strongest readable sources were mostly community/practical context';
+    case 'unknown-authority':
+      return 'source authority could not be confirmed';
+    case 'missing-comparison-target':
+      return 'comparison evidence is missing for one or more targets';
     case 'low-diversity':
       return 'the source set was narrow';
     case 'unreadable-direct-source':
@@ -21,6 +25,8 @@ function sentenceForReason(reason: EvidenceCaveatReason): string {
       return 'some candidate sources showed bot-check or security verification pages';
     case 'partial-search-coverage':
       return 'some search backends were unavailable, so results may be incomplete';
+    case 'budget-exhausted':
+      return 'research reached its run limit';
   }
 }
 
@@ -30,9 +36,11 @@ function joinReasons(reasons: string[]) {
   return `${reasons.slice(0, -1).join(', ')}, and ${reasons.at(-1)}`;
 }
 
-function caveatText(partial: boolean, caveatReasons: EvidenceCaveatReason[] = []) {
+function caveatText(partial: boolean, caveatReasons: EvidenceCaveatReason[] = [], missingComparisonTargets: string[] = []) {
   if (!partial) return undefined;
-  const specificReasons = caveatReasons.map(sentenceForReason);
+  const specificReasons = caveatReasons.map((reason) => reason === 'missing-comparison-target' && missingComparisonTargets.length
+    ? `comparison evidence is missing for ${missingComparisonTargets.join(', ')}`
+    : sentenceForReason(reason));
   if (specificReasons.length > 0) {
     return `Evidence is partial: ${joinReasons(specificReasons)}.`;
   }
@@ -42,11 +50,13 @@ function caveatText(partial: boolean, caveatReasons: EvidenceCaveatReason[] = []
 export function synthesizeAnswer({
   evidence,
   partial,
-  caveatReasons = []
+  caveatReasons = [],
+  missingComparisonTargets = []
 }: {
   evidence: ResearchEvidence[];
   partial: boolean;
   caveatReasons?: EvidenceCaveatReason[];
+  missingComparisonTargets?: string[];
 }) {
   const findings = evidence.slice(0, 5).map((item) => {
     const summary = normalizeSummary(item.summary);
@@ -57,6 +67,6 @@ export function synthesizeAnswer({
 
   return {
     findings,
-    caveat: caveatText(partial, caveatReasons)
+    caveat: caveatText(partial, caveatReasons, missingComparisonTargets)
   };
 }

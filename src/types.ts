@@ -156,6 +156,17 @@ export type WebExploreResponse = {
   status: 'ok' | 'error';
   findings: string[];
   sources: Array<{ title: string; url: string; method?: FetchMethod }>;
+  /** Source IDs for each finding, in finding order. */
+  findingSourceIds?: string[][];
+  evidence?: Array<{
+    id: string;
+    url: string;
+    title: string;
+    method?: FetchMethod;
+    excerpts: Array<{ text: string; anchor?: string }>;
+    retrievedAt?: string;
+    truncated: boolean;
+  }>;
   caveat?: string;
   metadata?: {
     searchPasses: number;
@@ -163,6 +174,9 @@ export type WebExploreResponse = {
     headlessAttempts: number;
     exhaustedBudget: boolean;
     caveatReasons?: string[];
+    budgetReason?: 'deadline' | 'search-limit' | 'fetch-limit' | 'headless-limit';
+    budget?: { searches: number; fetches: number; headless: number; limitReason?: 'deadline' | 'search-limit' | 'fetch-limit' | 'headless-limit' };
+    missingComparisonTargets?: string[];
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];
     attempts?: Attempt[];

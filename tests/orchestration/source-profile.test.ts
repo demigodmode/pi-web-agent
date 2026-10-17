@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { classifySourceProfile } from '../../src/orchestration/source-profile.js';
 
 describe('classifySourceProfile', () => {
+  it('does not label unfamiliar documentation as community opinion', () => {
+    expect(classifySourceProfile('https://react.dev/reference/react/useEffect').sourceKind).toBe('unknown');
+    expect(classifySourceProfile('https://docs.python.org/3/library/asyncio.html').sourceKind).toBe('unknown');
+    expect(classifySourceProfile('https://playwright.dev/docs/intro').sourceKind).toBe('official-docs');
+  });
+
   it('classifies reddit posts and comments as forum threads', () => {
     expect(classifySourceProfile('https://www.reddit.com/r/selfhosted/comments/abc/post_title/')).toEqual({
       kind: 'forum-thread',
@@ -35,7 +41,7 @@ describe('classifySourceProfile', () => {
   });
 
   it('does not treat generic config or single-letter paths as special sources', () => {
-    expect(classifySourceProfile('https://example.com/blog/config/options').kind).toBe('community');
-    expect(classifySourceProfile('https://example.com/t/not-a-thread').kind).toBe('community');
+    expect(classifySourceProfile('https://example.com/blog/config/options').kind).toBe('unknown');
+    expect(classifySourceProfile('https://example.com/t/not-a-thread').kind).toBe('unknown');
   });
 });
