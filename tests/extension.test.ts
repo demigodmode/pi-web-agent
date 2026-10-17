@@ -572,6 +572,36 @@ describe('Pi extension entrypoint', () => {
     expect(closeCache).toHaveBeenCalledTimes(1);
   });
 
+  it('finishes session shutdown when workflow close never settles', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const close = vi.fn(() => new Promise<void>(() => undefined));
+    vi.doMock('../src/orchestration/index.js', () => ({
+      createResearchWorkflow: vi.fn(() => ({ run: vi.fn().mockResolvedValue(answer), close }))
+    }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+
+    try {
+      await tools[0].execute('call-1', { query: 'x' });
+      const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(closeCache).toHaveBeenCalledTimes(1);
+      await shutdown;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('waits for a replaced workflow before closing its session repo cache', async () => {
     vi.resetModules();
     let releaseRun!: () => void;

@@ -557,4 +557,31 @@ describe('research workflow ownership', () => {
       vi.useRealTimers();
     }
   });
+
+  it('closes owned backends after a grace period when detached work never settles', async () => {
+    vi.useFakeTimers();
+    const close = vi.fn(async () => undefined);
+    const search = vi.fn(() => new Promise<never>(() => undefined));
+    vi.resetModules();
+    vi.doMock('../../src/backends/factory.js', () => ({
+      createBackendSet: vi.fn(() => ({ search, fetchPage: vi.fn(), headlessFetch: vi.fn(), close }))
+    }));
+    const { createResearchWorkflow: createWorkflow } = await import('../../src/orchestration/index.js');
+    const workflow = createWorkflow({});
+    const controller = new AbortController();
+
+    try {
+      const run = workflow.run({ query: 'pending search', signal: controller.signal }).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(search).toHaveBeenCalledTimes(1);
+      controller.abort();
+      await run;
+      const closing = workflow.close();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(close).toHaveBeenCalledTimes(1);
+      await closing;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

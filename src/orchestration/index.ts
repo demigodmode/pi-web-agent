@@ -5,6 +5,8 @@ import type { ResearchFetchInput, SearchInput, WebFetchHeadlessResponse, WebFetc
 import { createResearchOrchestrator } from './research-orchestrator.js';
 import { createResearchWorker } from './research-worker.js';
 
+const WORKFLOW_DRAIN_GRACE_MS = 5_000;
+
 export function createResearchWorkflow({
   backendConfig,
   search,
@@ -37,8 +39,19 @@ export function createResearchWorkflow({
   return Object.assign(orchestrator, {
     /** Releases the backend set this workflow created. Injected capabilities and the repo cache are left alone. */
     async close() {
-      await orchestrator.drain();
-      await backends?.close?.();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          orchestrator.drain(),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, WORKFLOW_DRAIN_GRACE_MS);
+            timer.unref?.();
+          })
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+        await backends?.close?.();
+      }
     }
   });
 }

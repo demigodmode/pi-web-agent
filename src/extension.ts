@@ -17,6 +17,20 @@ import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
 import { formatResearchProgress } from './orchestration/progress.js';
 
+const SESSION_SHUTDOWN_GRACE_MS = 5_000;
+
+async function waitWithin<T>(work: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * What the model receives as the tool result: the actual synthesized findings (which for a
  * direct GitHub/PDF/YouTube read is the full extracted content), plus source citations and any
@@ -173,11 +187,13 @@ export default function extension(pi: ExtensionAPI) {
   pi.on('session_shutdown', async () => {
     const shuttingDown = session;
     session = makeSession();
+    const deadline = Date.now() + SESSION_SHUTDOWN_GRACE_MS;
+    const remaining = () => Math.max(0, deadline - Date.now());
     // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
-    await Promise.allSettled([...shuttingDown.operations]);
-    await Promise.allSettled([...shuttingDown.workflows].flatMap((workflow) => [...(activeRunSettlements.get(workflow) ?? [])]));
-    await Promise.allSettled([...shuttingDown.workflows].map(closeWorkflowNow));
-    await shuttingDown.repoCache.close();
+    await waitWithin(Promise.allSettled([...shuttingDown.operations]), remaining());
+    await waitWithin(Promise.allSettled([...shuttingDown.workflows].flatMap((workflow) => [...(activeRunSettlements.get(workflow) ?? [])])), remaining());
+    await waitWithin(Promise.allSettled([...shuttingDown.workflows].map(closeWorkflowNow)), remaining());
+    await waitWithin(shuttingDown.repoCache.close(), remaining());
   });
 
   pi.on('session_start', async (_event, ctx) => {
