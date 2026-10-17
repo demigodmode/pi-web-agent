@@ -38,11 +38,16 @@ async function waitWithin<T>(work: Promise<T>, timeoutMs: number): Promise<T | u
  * gets the substance regardless of the user's compact/preview/verbose presentation setting.
  */
 function serializeForModel(result: WebExploreResponse): string {
-  if (result.status === 'error') {
-    return `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`;
-  }
+  const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
+    `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
+  );
+  const terminalError = result.status === 'error'
+    ? `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`
+    : undefined;
   if (result.findings.length === 0 && result.sources.length === 0) {
-    return ['No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
+    return terminalError
+      ? [...requiredNotices, terminalError].filter(Boolean).join('\n\n')
+      : ['No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
   }
   const linked = (result.evidence?.length ?? 0) > 0;
   const findings = result.findings.map((finding, index) => {
@@ -55,11 +60,13 @@ function serializeForModel(result: WebExploreResponse): string {
     item.truncated ? '  (source excerpt truncated)' : undefined
   ].filter(Boolean).join('\n')).join('\n');
   return [
+    ...requiredNotices,
     findings.join('\n\n'),
     linked ? `Evidence:\n${evidence}` : result.sources.length
       ? `Sources:\n${result.sources.map((source) => `- ${source.title}: ${source.url}`).join('\n')}`
       : undefined,
-    result.caveat
+    result.caveat,
+    terminalError
   ]
     .filter(Boolean)
     .join('\n\n');

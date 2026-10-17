@@ -21,11 +21,17 @@ export function sanitizeTerminalText(text: string): string {
 }
 
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
+  const notices = (result.requiredSourceFailures ?? []).map((failure) =>
+    sanitizeTerminalText(`Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`)
+  );
   if (result.status === 'error') {
+    const successful = result.sources.length
+      ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
+      : [];
     return {
       mode: 'compact',
       views: {
-        compact: `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`
+        compact: [...successful, ...notices, `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n')
       }
     };
   }
@@ -50,12 +56,14 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
   });
   const preview = [
+    ...notices,
     ...evidenceLines,
     internalSummary ? `\n${internalSummary}` : undefined
   ]
     .filter((line) => line !== undefined)
     .join('\n');
   const verbose = [
+    ...notices,
     'Findings',
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
@@ -76,7 +84,9 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     .filter((line) => line !== undefined)
     .join('\n');
 
-  const compact = hasEvidence
+  const compact = notices.length
+    ? notices.join('\n')
+    : hasEvidence
     ? `Reviewed ${result.sources.length} sources · synthesized answer with ${result.findings.length} findings`
     : 'No usable evidence found';
 

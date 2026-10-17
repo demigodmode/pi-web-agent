@@ -287,6 +287,34 @@ describe('Pi extension entrypoint', () => {
     expect(rendered).not.toContain('A concise finding.');
   }, 15000);
 
+  it('keeps successful direct evidence in model content when later research terminates', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'error',
+        findings: ['Direct source finding.'],
+        sources: [{ title: 'Direct source', url: 'https://final.example/doc', requestedUrl: 'https://input.example/doc', method: 'http' }],
+        findingSourceIds: [['S1']],
+        evidence: [{ id: 'S1', title: 'Direct source', url: 'https://final.example/doc', method: 'http', excerpts: [{ text: 'Direct supporting passage.' }], truncated: false }],
+        requiredSourceFailures: [{ url: 'https://failed.example/issue', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'Could not read issue.' }],
+        error: { code: 'WORKER_FAILED', message: 'Later research stopped.' },
+        presentation: { mode: 'compact', views: { compact: 'terminal' } }
+      })
+    };
+    extension(pi as never);
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'links' });
+    const text = result.content[0].text as string;
+    expect(text).toContain('Required source not read: https://failed.example/issue');
+    expect(text).toContain('[S1] Direct source finding.');
+    expect(text).toContain('[S1] Direct source: https://final.example/doc');
+    expect(text).toContain('Direct supporting passage.');
+    expect(text).toContain('Research failed: Later research stopped.');
+    expect(text.indexOf('Required source not read')).toBeLessThan(text.indexOf('[S1] Direct source finding.'));
+    expect(text.indexOf('[S1] Direct source finding.')).toBeLessThan(text.indexOf('Research failed:'));
+    expect(text).not.toContain('[S2]');
+  });
+
   it('sends an unreadable direct-source caveat to the model when no evidence was usable', async () => {
     const tools: any[] = [];
     const pi = {

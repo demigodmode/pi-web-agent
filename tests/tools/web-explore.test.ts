@@ -3,6 +3,18 @@ import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { ResearchProgress } from '../../src/orchestration/progress.js';
 
 describe('web_explore tool', () => {
+  it('keeps all successful required sources public while findings use the first five', async () => {
+    const required = Array.from({ length: 8 }, (_, index) => ({
+      title: `Required ${index + 1}`, url: `https://required.example/${index + 1}`, requestedUrl: `https://query.example/${index + 1}`,
+      sourceKind: 'official-docs' as const, method: 'http' as const, summary: `Required finding ${index + 1}`, supports: [`Required finding ${index + 1}`]
+    }));
+    const webExplore = createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [...required, { title: 'Extra', url: 'https://extra.example', sourceKind: 'community', method: 'http', summary: 'Extra finding', supports: ['Extra finding'] }], requiredSourceEvidence: required, requiredSourceFailures: [], workerPass: {} }) });
+    const result = await webExplore({ query: 'Read required links' });
+    expect(result.sources).toHaveLength(9);
+    expect(result.evidence).toHaveLength(9);
+    expect(result.findings).toEqual(required.slice(0, 5).map((item) => item.summary));
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3'], ['S4'], ['S5']]);
+  });
   it('forces a model-facing caveat for incomplete GitHub thread comments even when answering', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({
@@ -334,5 +346,42 @@ describe('web_explore cancellation (#59)', () => {
     const controller = new AbortController();
     await createWebExploreTool({ explore })({ query: 'q', signal: controller.signal });
     expect(explore).toHaveBeenCalledWith({ query: 'q', signal: controller.signal });
+  });
+});
+
+describe('web_explore terminal source preservation', () => {
+  it('keeps earlier required evidence and reports required failures when later work terminates', async () => {
+    const direct = { title: 'Direct', url: 'https://example.test/final', requestedUrl: 'https://example.test/requested', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Direct finding', supports: ['Direct finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+      decision: { action: 'research-again' }, evidence: [direct], requiredSourceEvidence: [direct],
+      requiredSourceFailures: [{ url: 'https://example.test/bad', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'unreadable' }],
+      workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'worker stopped' }
+    }) })({ query: 'read links' });
+    expect(result.status).toBe('error');
+    expect(result.sources).toEqual([expect.objectContaining({ requestedUrl: 'https://example.test/requested' })]);
+    expect(result.evidence?.[0]).toMatchObject({ url: 'https://example.test/final' });
+    expect(result.presentation?.views.compact).toContain('Required source not read');
+  });
+
+  it('retains requested URL identity for a redirected required source', async () => {
+    const source = { title: 'Final', url: 'https://example.test/final', requestedUrl: 'https://example.test/requested', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Final evidence', supports: ['Final evidence'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [source], requiredSourceEvidence: [source], workerPass: {} }) })({ query: 'read source' });
+    expect(result.sources).toEqual([expect.objectContaining({ url: source.url, requestedUrl: source.requestedUrl })]);
+    expect(result.evidence?.[0]?.url).toBe(source.url);
+  });
+
+  it('includes two required sources before ranked discretionary findings and keeps source IDs aligned', async () => {
+    const required = [1, 2].map((n) => ({ title: `Required ${n}`, url: `https://required.test/${n}`, requestedUrl: `https://input.test/${n}`, sourceKind: 'official-docs' as const, method: 'http' as const, summary: `Required ${n}`, supports: [`Required ${n}`] }));
+    const discretionary = { title: 'Ranked', url: 'https://ranked.test', sourceKind: 'community' as const, method: 'http' as const, summary: 'Ranked finding', supports: ['Ranked finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [...required, discretionary], requiredSourceEvidence: required, workerPass: {} }) })({ query: 'compare' });
+    expect(result.sources.map((item) => item.url)).toEqual([...required.map((item) => item.url), discretionary.url]);
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3']]);
+  });
+
+  it('reports a terminal required failure before its error when there are no findings', async () => {
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'research-again' }, evidence: [], requiredSourceFailures: [{ url: 'https://bad.test', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'cannot read' }], workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'stopped' } }) })({ query: 'read' });
+    expect(result.findings).toEqual([]);
+    const compact = result.presentation?.views.compact ?? '';
+    expect(compact.indexOf('Required source not read')).toBeLessThan(compact.indexOf('Research failed'));
   });
 });

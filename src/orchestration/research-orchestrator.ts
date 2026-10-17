@@ -10,6 +10,7 @@ import type {
   ResearchGap,
   ResearchLowValueOutcome,
   ResearchOrchestratorDecision,
+  RequiredSourceFailure,
   ResearchWorkerResult
 } from './research-types.js';
 import { decideNextResearchStep } from './stop-decider.js';
@@ -148,7 +149,8 @@ function buildMetadata({
   fanoutSkipped,
   attempts,
   budgetReason,
-  budget
+  budget,
+  requiredSourceFailures
 }: {
   previousQueries: string[];
   allEvidence: ResearchEvidence[];
@@ -163,11 +165,12 @@ function buildMetadata({
   attempts?: Attempt[];
   budgetReason?: ResearchBudgetReason;
   budget?: ResearchBudgetSnapshot;
+  requiredSourceFailures?: RequiredSourceFailure[];
 }) {
   return {
     searchPasses: previousQueries.length,
     fetchedPages: allEvidence.length + allGaps.length + allLowValueOutcomes.length,
-    headlessAttempts,
+    headlessAttempts: budget?.headless ?? headlessAttempts,
     exhaustedBudget,
     caveatReasons,
     missingComparisonTargets,
@@ -175,6 +178,7 @@ function buildMetadata({
     fanoutSkipped,
     budgetReason,
     budget,
+    ...(requiredSourceFailures?.length ? { requiredSourceFailures } : {}),
     ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
 }
@@ -185,6 +189,8 @@ type ResearchOrchestratorResult = {
   workerPass: ResearchWorkerResult;
   metadata: ReturnType<typeof buildMetadata>;
   terminalFailure?: { code: string; message: string };
+  requiredSourceEvidence: ResearchEvidence[];
+  requiredSourceFailures: RequiredSourceFailure[];
 };
 
 function decisionForAnswer({
@@ -243,7 +249,15 @@ export function createResearchOrchestrator({
 
   return {
     async run({ query, signal, onProgress }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }): Promise<ResearchOrchestratorResult> {
-      const budget = createResearchRunBudget({ signal, track });
+      // Direct links are contractual inputs. Reserve their bounded work before
+      // discretionary search gets a chance to spend the run budget.
+      const typedUrls = extractDirectUrls(query);
+      const budget = createResearchRunBudget({
+        signal,
+        track,
+        maxFetches: 20 + Math.min(8, typedUrls.length),
+        maxHeadless: 2 + Math.min(8, typedUrls.filter((url) => !parseRepoUrl(url)).length)
+      });
       const emit = (phase: ResearchProgress['phase']) => {
         if (!onProgress) return;
         const { searches, fetches, headless } = budget.snapshot();
@@ -257,7 +271,10 @@ export function createResearchOrchestrator({
       const previousQueries: string[] = [];
       const suggestedHeadlessUrls: string[] = [];
       const attemptedHeadlessUrls = new Set<string>();
+      // Only discretionary escalations consume the decider's two attempts.
+      // Direct links reserve one independent retry each.
       let headlessAttempts = 0;
+      let directHeadlessAttempts = 0;
       let lastPass: ResearchWorkerResult | undefined;
       let partialWorkerPass: ResearchWorkerResult | undefined;
       let searchCoveragePartial = false;
@@ -265,6 +282,21 @@ export function createResearchOrchestrator({
       const fanoutSkippedSeen = new Set<SearchProviderName>();
       // Search and fetch attempts from every pass and direct URL, for verbose provenance.
       const runAttempts: Attempt[] = [];
+      const requiredSourceEvidence: ResearchEvidence[] = [];
+      const requiredSourceFailures: RequiredSourceFailure[] = [];
+      const requiredFailure = (url: string, reason: RequiredSourceFailure['reason'], code: string, message: string, failure?: RequiredSourceFailure['failure']) => {
+        requiredSourceFailures.push({ url, reason, code, message, ...(failure ? { failure } : {}) });
+        if (reason === 'read-failed') allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(url) });
+      };
+      const complete = (result: Omit<ResearchOrchestratorResult, 'requiredSourceEvidence' | 'requiredSourceFailures'>): ResearchOrchestratorResult => ({
+        ...result,
+        requiredSourceEvidence: [...requiredSourceEvidence],
+        requiredSourceFailures: [...requiredSourceFailures],
+        metadata: {
+          ...result.metadata,
+          ...(requiredSourceFailures.length ? { requiredSourceFailures: [...requiredSourceFailures] } : {})
+        }
+      });
 
       const partialBudgetResult = (): ResearchOrchestratorResult => {
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
@@ -278,7 +310,7 @@ export function createResearchOrchestrator({
           missingComparisonTargets: missingTargets
         });
         const snapshot = budget.snapshot();
-        return {
+        return complete({
           decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: true }),
           evidence: ranked,
           workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: true }),
@@ -294,16 +326,22 @@ export function createResearchOrchestrator({
             budgetReason: snapshot.limitReason,
             ...fanoutSnapshot()
           })
-        };
+        });
       };
 
       function fanoutSnapshot() {
         const providers = fanoutProvidersSeen.size ? [...fanoutProvidersSeen] : undefined;
         const skipped = [...fanoutSkippedSeen].filter((p) => !fanoutProvidersSeen.has(p));
-        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts], budget: budget.snapshot() };
+        return {
+          fanoutProviders: providers,
+          fanoutSkipped: skipped.length ? skipped : undefined,
+          attempts: [...runAttempts],
+          budget: budget.snapshot(),
+          ...(requiredSourceFailures.length ? { requiredSourceFailures } : {})
+        };
       }
 
-      const terminal = (terminalFailure: { code: string; message: string }) => ({
+      const terminal = (terminalFailure: { code: string; message: string }) => complete({
         decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked: [], exhaustedBudget: false }),
         evidence: [],
         workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
@@ -312,90 +350,112 @@ export function createResearchOrchestrator({
       });
 
       try {
-      // Typed repo links are researched directly and consume the same bounded fetch allowance.
-      const typedUrls = extractDirectUrls(query);
-      const repoUrls = researchRepo ? typedUrls.filter((url) => parseRepoUrl(url) !== undefined) : [];
-      const pageUrls = typedUrls.filter((url) => !repoUrls.includes(url));
+      // Walk the user's links in their original order. A repo alias is the same
+      // source, but a distinct page link is always an independently required read.
+      const repoUrls = typedUrls.filter((url) => parseRepoUrl(url) !== undefined);
       const repoKeys = new Set<string>();
+      const acceptedRepoUrls = new Set<string>();
       const uniqueRepoUrls = repoUrls.filter((url) => {
         const target = parseRepoUrl(url)!;
         const key = `${target.owner.toLowerCase()}/${target.repo.toLowerCase()}\0${target.refAndPath ?? ''}`;
         if (repoKeys.has(key)) return false;
         repoKeys.add(key);
+        acceptedRepoUrls.add(url);
         return true;
       });
-
-      if (uniqueRepoUrls.length > REPO_MAX_TYPED_REPOS) {
-        return terminal({ code: 'REPO_TOO_MANY', message: 'Too many repo links in one question; ask about one or two at a time.' });
-      }
-      for (const url of uniqueRepoUrls) {
-        throwIfAborted(signal);
-        if (!budget.claimFetch(url)) return partialBudgetResult();
-        emit('fetch');
-        const repoWork = researchRepo!({ url, query, signal: budget.signal });
-        const researched = await budget.wait(repoWork);
-        throwIfAborted(signal);
-        // A typed repo that can't be researched ends the run: the README reader must not stand in for the code.
-        if (!researched.ok) return terminal({ code: researched.error.code, message: researched.error.message });
-        const repoEvidence = evidenceFromFetch(researched.response, query, { trustedContent: true });
-        if (repoEvidence) allEvidence.push(repoEvidence);
-        else allGaps.push({ kind: 'fetch-failed', message: `Nothing readable came back for ${url}.` });
-      }
-
-      if (fetchDirect) {
-        for (const url of pageUrls.slice(0, 3)) {
+      let acceptedSources = 0;
+      let acceptedRepos = 0;
+      for (const url of typedUrls) {
+        const repoTarget = parseRepoUrl(url);
+        const repo = researchRepo && repoTarget;
+        // Repo aliases are already represented by the first spelling.
+        if (repoTarget && !acceptedRepoUrls.has(url)) continue;
+        if (acceptedSources >= 8 || (repoTarget && acceptedRepos >= REPO_MAX_TYPED_REPOS)) {
+          requiredFailure(url, 'limit', 'DIRECT_SOURCE_LIMIT', 'Source limit reached; use a follow-up call for this URL.');
+          continue;
+        }
+        acceptedSources++;
+        if (repoTarget) acceptedRepos++;
+        if (repo) {
           throwIfAborted(signal);
-          if (!budget.claimFetch(url)) return partialBudgetResult();
+          if (!budget.claimFetch(url)) {
+            requiredFailure(url, budget.deadlineReached() ? 'deadline-unvisited' : 'limit', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_LIMIT', budget.deadlineReached() ? 'Source deadline reached before this URL could be read.' : 'Source limit reached; use a follow-up call for this URL.');
+            continue;
+          }
           emit('fetch');
-          const directWork = fetchDirect({ url, query, signal: budget.signal });
-          const directResult = await budget.wait(directWork);
+          let researched: RepoResearchResult;
+          try { researched = await budget.wait(researchRepo!({ url, query, signal: budget.signal })); }
+          catch (error) {
+            if (signal?.aborted) throw error;
+            requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : `Direct URL could not be read reliably: ${url}`);
+            continue;
+          }
           throwIfAborted(signal);
-          if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
-          const directEvidence = evidenceFromFetch(directResult, query, { requestedUrl: url });
+          if (!researched.ok) { requiredFailure(url, 'read-failed', researched.error.code, researched.error.message, researched.error.failure); continue; }
+          const repoEvidence = evidenceFromFetch(researched.response, query, { trustedContent: true, requestedUrl: url });
+          if (repoEvidence) { allEvidence.push(repoEvidence); requiredSourceEvidence.push(repoEvidence); }
+          else requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', `Direct URL could not be read reliably: ${url}`);
+          continue;
+        }
+        if (!fetchDirect) {
+          requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', `Direct URL could not be read reliably: ${url}`);
+          continue;
+        }
+        throwIfAborted(signal);
+        if (!budget.claimFetch(url)) {
+          requiredFailure(url, budget.deadlineReached() ? 'deadline-unvisited' : 'limit', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_LIMIT', budget.deadlineReached() ? 'Source deadline reached before this URL could be read.' : 'Source limit reached; use a follow-up call for this URL.');
+          continue;
+        }
+        emit('fetch');
+        let directResult: WebFetchResponse;
+        try { directResult = await budget.wait(fetchDirect({ url, query, signal: budget.signal })); }
+        catch (error) {
+          if (signal?.aborted) throw error;
+          requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : `Direct URL could not be read reliably: ${url}`);
+          continue;
+        }
+        throwIfAborted(signal);
+        if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
+        const directEvidence = evidenceFromFetch(directResult, query, { requestedUrl: url });
           if (directEvidence) {
             allEvidence.push(directEvidence);
+            requiredSourceEvidence.push(directEvidence);
             continue;
           }
-
-          if (isTerminalFailure(failureOf(directResult))) {
-            allGaps.push({
-              kind: 'fetch-failed',
-              message: directUnreadableMessage(directResult.url)
-            });
-            continue;
-          }
-
-          if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
-            if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
-              if (!budget.claimHeadless()) return partialBudgetResult();
+          if (!isTerminalFailure(failureOf(directResult)) && shouldRetryDirectWithHeadless(directResult, directEvidence)) {
+            if (directHeadlessAttempts < 8 && budget.claimHeadless()) {
               emit('headless');
-              headlessAttempts++;
+              directHeadlessAttempts++;
               attemptedHeadlessUrls.add(directResult.url);
               throwIfAborted(signal);
-              const headlessWork = headlessFetch({ url: directResult.url, query, signal: budget.signal });
-              const headlessResult = await budget.wait(headlessWork);
+              let headlessResult: WebFetchHeadlessResponse;
+              try {
+                const headlessWork = headlessFetch({ url: directResult.url, query, signal: budget.signal });
+                headlessResult = await budget.wait(headlessWork);
+              } catch (error) {
+                if (signal?.aborted) throw error;
+                requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : directUnreadableMessage(directResult.url));
+                continue;
+              }
               throwIfAborted(signal);
               const headlessEvidence = evidenceFromHeadless(headlessResult, query, url);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
+                requiredSourceEvidence.push(headlessEvidence);
               } else {
-                allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+                requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', directUnreadableMessage(directResult.url));
               }
             } else {
-              allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+              requiredFailure(url, 'limit', 'DIRECT_SOURCE_LIMIT', 'Source limit reached; use a follow-up call for this URL.');
             }
-          } else if (directResult.status !== 'ok') {
-            allGaps.push({
-              kind: 'fetch-failed',
-              message: directUnreadableMessage(directResult.url)
-            });
           } else {
-            allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
+            requiredFailure(url, 'read-failed', directResult.error?.code ?? 'DIRECT_SOURCE_READ_FAILED', directResult.error?.message ?? directUnreadableMessage(directResult.url), directResult.error?.failure);
           }
-        }
       }
 
       if (intent.kind === 'read') {
+        const exhaustedBudget = budget.deadlineReached();
+        const snapshot = budget.snapshot();
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
         const quality = analyzeEvidenceQuality({
           evidence: ranked,
@@ -404,15 +464,15 @@ export function createResearchOrchestrator({
           partialSearchCoverage: searchCoveragePartial,
           opinionQuestion
         });
-        return {
-          decision: decisionForAnswer({ action: ranked.length ? 'answer' : 'answer-with-caveat', query, ranked, exhaustedBudget: false }),
+        return complete({
+          decision: decisionForAnswer({ action: ranked.length && requiredSourceFailures.length === 0 && !exhaustedBudget ? 'answer' : 'answer-with-caveat', query, ranked, exhaustedBudget }),
           evidence: ranked,
           workerPass: combinedWorkerPass({
             lastPass,
             previousQueries,
             allGaps,
             allLowValueOutcomes,
-            exhaustedBudget: false
+            exhaustedBudget
           }),
           metadata: buildMetadata({
             previousQueries,
@@ -420,11 +480,12 @@ export function createResearchOrchestrator({
             allGaps,
             allLowValueOutcomes,
             headlessAttempts,
-            exhaustedBudget: false,
-            caveatReasons: quality.caveatReasons.filter((reason) => reason !== 'unknown-authority'),
-            ...fanoutSnapshot()
+            exhaustedBudget,
+            caveatReasons: [...quality.caveatReasons.filter((reason) => reason !== 'unknown-authority'), ...(requiredSourceFailures.length ? ['unreadable-direct-source' as EvidenceCaveatReason] : []), ...(exhaustedBudget ? ['budget-exhausted' as EvidenceCaveatReason] : [])],
+            budgetReason: snapshot.limitReason,
+            ...fanoutSnapshot(), requiredSourceFailures
           })
-        };
+        });
       }
 
       if (intent.kind === 'compare' && allEvidence.length >= 2 && missingComparisonTargets(intent, allEvidence).length === 0) {
@@ -435,12 +496,12 @@ export function createResearchOrchestrator({
           headlessAttempts, maxHeadlessAttempts: DEFAULT_MAX_HEADLESS_ATTEMPTS, quality, opinionQuestion
         });
         if (decision.action === 'answer' || decision.action === 'answer-with-caveat') {
-          return {
+          return complete({
             decision: decisionForAnswer({ action: decision.action, query, ranked, exhaustedBudget: false }),
             evidence: ranked,
             workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
             metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, caveatReasons: quality.caveatReasons, ...fanoutSnapshot() })
-          };
+          });
         }
       }
 
@@ -491,13 +552,13 @@ export function createResearchOrchestrator({
           if (pass.fetchAttempts) runAttempts.push(...pass.fetchAttempts);
           if (pass.searchCoveragePartial) searchCoveragePartial = true;
           if (pass.terminalFailure) {
-            return {
+            return complete({
               decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked: [], exhaustedBudget: false }),
               evidence: [],
               workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
               metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() }),
               terminalFailure: pass.terminalFailure
-            };
+            });
           }
           pass.fanoutProviders?.forEach((p) => fanoutProvidersSeen.add(p));
           pass.fanoutSkipped?.forEach((p) => fanoutSkippedSeen.add(p));
@@ -566,7 +627,7 @@ export function createResearchOrchestrator({
                 continue;
               }
               const exhaustedBudget = needsMoreResearch && passIndex + 1 >= DEFAULT_MAX_PASSES;
-              return {
+              return complete({
                 decision: decisionForAnswer({
                   action: !needsMoreResearch && updatedDecision.action === 'answer' ? 'answer' : 'answer-with-caveat',
                   query,
@@ -592,10 +653,10 @@ export function createResearchOrchestrator({
                   missingComparisonTargets: updatedMissingTargets,
                   ...fanoutSnapshot()
                 })
-              };
+              });
             }
 
-            return {
+            return complete({
               decision: {
                 action: 'escalate-headless',
                 rationale: 'One high-value page is worth a single orchestrator-approved headless retry.',
@@ -621,7 +682,7 @@ export function createResearchOrchestrator({
                 missingComparisonTargets: missingTargets,
                 ...fanoutSnapshot()
               })
-            };
+            });
           }
 
           if (decision.action === 'answer' || decision.action === 'answer-with-caveat') {
@@ -629,7 +690,7 @@ export function createResearchOrchestrator({
               continue;
             }
             const exhaustedBudget = decision.action === 'answer-with-caveat' && passIndex + 1 >= DEFAULT_MAX_PASSES;
-            return {
+            return complete({
               decision: decisionForAnswer({ action: missingTargets.length ? 'answer-with-caveat' : decision.action, query, ranked, exhaustedBudget }),
               evidence: ranked,
               workerPass: combinedWorkerPass({
@@ -650,7 +711,7 @@ export function createResearchOrchestrator({
                 missingComparisonTargets: missingTargets,
                 ...fanoutSnapshot()
               })
-            };
+            });
           }
         }
       }
@@ -665,7 +726,7 @@ export function createResearchOrchestrator({
         opinionQuestion,
         missingComparisonTargets: missingTargets
       });
-      return {
+      return complete({
         decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: true }),
         evidence: ranked,
         workerPass: combinedWorkerPass({
@@ -686,7 +747,7 @@ export function createResearchOrchestrator({
           missingComparisonTargets: missingTargets,
           ...fanoutSnapshot()
         })
-      };
+      });
       } catch (error) {
         if (signal?.aborted) throw error;
         if (budget.deadlineReached()) {

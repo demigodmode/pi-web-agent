@@ -27,6 +27,7 @@ export function buildEvidenceRecords(items: ResearchEvidence[]): NonNullable<Web
     return {
       id: `S${index + 1}`,
       url: item.url,
+      ...(item.requestedUrl ? { requestedUrl: item.requestedUrl } : {}),
       title: item.title,
       method: item.method,
       excerpts,

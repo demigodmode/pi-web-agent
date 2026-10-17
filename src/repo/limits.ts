@@ -7,7 +7,7 @@ export const REPO_IDLE_CACHE_MAX_BYTES = 1024 ** 3;
 export const REPO_MAX_FILES = 4;
 export const MAX_SCANNED_BYTES = 64 * 1024 * 1024;
 export const MAX_SEARCH_MS = 10_000;
-export const REPO_MAX_TYPED_REPOS = 2;
+export const REPO_MAX_TYPED_REPOS = 3;
 export const REPO_CLOSE_GRACE_MS = 10_000;
 /** `gh auth token` only reads local state; a wedged gh must not hold up a run. */
 export const GH_TOKEN_TIMEOUT_MS = 5_000;

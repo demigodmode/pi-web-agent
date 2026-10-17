@@ -19,6 +19,8 @@ export function createWebExploreTool({
           workerPass: unknown;
           metadata?: WebExploreResponse['metadata'];
           terminalFailure?: { code: string; message: string };
+          requiredSourceEvidence?: ResearchEvidence[];
+          requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
         }>;
       }
     | ((input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
@@ -27,6 +29,8 @@ export function createWebExploreTool({
         workerPass: unknown;
         metadata?: WebExploreResponse['metadata'];
         terminalFailure?: { code: string; message: string };
+        requiredSourceEvidence?: ResearchEvidence[];
+        requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
       }>);
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
@@ -66,21 +70,29 @@ export function createWebExploreTool({
       safeProgress?.({ phase: 'complete', searches: counts.searches, fetches: counts.fetches, headless: counts.headless });
     }
     if (result.terminalFailure) {
+      const required = result.requiredSourceEvidence ?? [];
+      const evidence = buildEvidenceRecords(required);
       const failed: WebExploreResponse = {
         status: 'error',
-        findings: [],
-        sources: [],
+        findings: required.map((item) => item.summary),
+        sources: required.map((item) => ({ title: item.title, url: item.url, ...(item.requestedUrl ? { requestedUrl: item.requestedUrl } : {}), method: item.method })),
+        evidence,
+        findingSourceIds: required.map((_, index) => [evidence[index]!.id]),
         error: result.terminalFailure,
-        metadata: result.metadata
+        metadata: result.metadata,
+        requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures
       };
       return { ...failed, presentation: buildExplorePresentation(failed) };
     }
 
-    const selectedEvidence = result.evidence.slice(0, 5);
-    const evidence = buildEvidenceRecords(selectedEvidence);
-    const sources = selectedEvidence.map((item) => ({
+    const required = result.requiredSourceEvidence ?? [];
+    const publicEvidence = [...required, ...result.evidence.filter((item) => !required.some((direct) => direct.requestedUrl === item.requestedUrl || direct.url === item.url))].slice(0, required.length + 5);
+    const selectedEvidence = [...required, ...result.evidence.filter((item) => !required.some((direct) => direct.requestedUrl === item.requestedUrl || direct.url === item.url))].slice(0, 5);
+    const evidence = buildEvidenceRecords(publicEvidence);
+    const sources = publicEvidence.map((item) => ({
       title: item.title,
       url: item.url,
+      ...(item.requestedUrl ? { requestedUrl: item.requestedUrl } : {}),
       method: item.method
     }));
     const reasons = (result.metadata?.caveatReasons ?? []) as EvidenceCaveatReason[];
@@ -100,9 +112,10 @@ export function createWebExploreTool({
       findings: synthesized.findings,
       sources,
       evidence,
-      findingSourceIds: evidence.map((item) => [item.id]),
+      findingSourceIds: selectedEvidence.map((item) => [evidence[publicEvidence.indexOf(item)]!.id]),
       caveat: synthesized.caveat,
-      metadata: result.metadata
+      metadata: result.metadata,
+      requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures
     };
 
     return {

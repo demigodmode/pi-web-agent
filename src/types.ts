@@ -158,12 +158,13 @@ export type WebFetchHeadlessResponse = {
 export type WebExploreResponse = {
   status: 'ok' | 'error';
   findings: string[];
-  sources: Array<{ title: string; url: string; method?: FetchMethod }>;
+  sources: Array<{ title: string; url: string; requestedUrl?: string; method?: FetchMethod }>;
   /** Source IDs for each finding, in finding order. */
   findingSourceIds?: string[][];
   evidence?: Array<{
     id: string;
     url: string;
+    requestedUrl?: string;
     title: string;
     method?: FetchMethod;
     excerpts: Array<{ text: string; anchor?: string }>;
@@ -171,6 +172,13 @@ export type WebExploreResponse = {
     truncated: boolean;
   }>;
   caveat?: string;
+  requiredSourceFailures?: Array<{
+    url: string;
+    code: string;
+    message: string;
+    reason: 'read-failed' | 'limit' | 'deadline-in-flight' | 'deadline-unvisited';
+    failure?: FailureInfo;
+  }>;
   metadata?: {
     searchPasses: number;
     fetchedPages: number;
@@ -183,6 +191,7 @@ export type WebExploreResponse = {
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];
     attempts?: Attempt[];
+    requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;

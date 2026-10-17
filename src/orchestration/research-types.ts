@@ -1,4 +1,4 @@
-import type { Attempt, SearchProviderName } from '../types.js';
+import type { Attempt, FailureInfo, SearchProviderName } from '../types.js';
 import type { ResearchBudgetReason, ResearchBudgetSnapshot } from './run-budget.js';
 
 export type ResearchSourceKind =
@@ -65,6 +65,15 @@ export type ResearchRunMetadata = {
   terminalFailure?: { code: string; message: string };
   budgetReason?: ResearchBudgetReason;
   budget?: ResearchBudgetSnapshot;
+  requiredSourceFailures?: RequiredSourceFailure[];
+};
+
+export type RequiredSourceFailure = {
+  url: string;
+  code: string;
+  message: string;
+  reason: 'read-failed' | 'limit' | 'deadline-in-flight' | 'deadline-unvisited';
+  failure?: FailureInfo;
 };
 
 export type ResearchOrchestratorDecision =
