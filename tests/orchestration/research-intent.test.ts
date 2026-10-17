@@ -63,4 +63,24 @@ describe('classifyResearchIntent', () => {
     const evidence = [{ title: 'Widget', url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`, sourceKind: 'unknown' as const, method: 'github' as const, summary: 'Widget code', supports: ['Widget code'] }];
     expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
   });
+
+  it('requires an alternative identity instead of two pages from the compared site', () => {
+    const intent = classifyResearchIntent('Compare https://react.dev/learn with alternatives');
+    const evidence = [
+      { title: 'React learn', url: 'https://react.dev/learn', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React learn', supports: [] },
+      { title: 'React reference', url: 'https://react.dev/reference', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React reference', supports: [] }
+    ];
+
+    expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
+  });
+
+  it('counts different GitHub repositories as distinct alternatives', () => {
+    const intent = classifyResearchIntent('Compare https://github.com/acme/widget with alternatives');
+    const evidence = [
+      { title: 'Widget', url: 'https://github.com/acme/widget', sourceKind: 'unknown' as const, method: 'github' as const, summary: 'Widget code', supports: [] },
+      { title: 'Alternative', url: 'https://github.com/other/widget', sourceKind: 'unknown' as const, method: 'github' as const, summary: 'Alternative code', supports: [] }
+    ];
+
+    expect(missingComparisonTargets(intent, evidence)).toEqual([]);
+  });
 });

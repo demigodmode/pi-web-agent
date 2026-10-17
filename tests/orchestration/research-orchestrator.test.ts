@@ -73,6 +73,40 @@ describe('research orchestrator types', () => {
     expect(result.metadata?.searchPasses).toBe(0);
   });
 
+  it('does not answer a failed direct read from unrelated search evidence', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: ['example start'],
+        evidence: [
+          { title: 'Official A', url: 'https://official-a.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Unrelated official guidance.', supports: [] },
+          { title: 'Official B', url: 'https://official-b.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Different unrelated official guidance.', supports: [] }
+        ],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'error' as const,
+        url,
+        metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'FETCH_FAILED', message: 'Connection refused.' }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://example.com/start' });
+
+    expect(worker.run).not.toHaveBeenCalled();
+    expect(result.evidence).toEqual([]);
+    expect(result.decision.action).toBe('research-again');
+    expect(result.metadata?.caveatReasons).toContain('unreadable-direct-source');
+    expect(result.workerPass.gaps).toContainEqual({
+      kind: 'fetch-failed',
+      message: 'Direct URL could not be read reliably: https://example.com/start'
+    });
+  });
+
   it('keeps searching a named comparison until both targets have evidence', async () => {
     const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
     const vue = { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Vue details', supports: ['Vue details'] };

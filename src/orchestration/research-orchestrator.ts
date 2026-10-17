@@ -355,7 +355,7 @@ export function createResearchOrchestrator({
           if (isTerminalFailure(failureOf(directResult))) {
             allGaps.push({
               kind: 'fetch-failed',
-              message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
+              message: directUnreadableMessage(directResult.url)
             });
             continue;
           }
@@ -382,7 +382,7 @@ export function createResearchOrchestrator({
           } else if (directResult.status !== 'ok') {
             allGaps.push({
               kind: 'fetch-failed',
-              message: directResult.error?.message ?? `Direct URL fetch failed for ${directResult.url}`
+              message: directUnreadableMessage(directResult.url)
             });
           } else {
             allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(directResult.url) });
@@ -390,7 +390,7 @@ export function createResearchOrchestrator({
         }
       }
 
-      if (intent.kind === 'read' && allEvidence.some((item) => item.sourceKind !== 'package-page')) {
+      if (intent.kind === 'read') {
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
         const quality = analyzeEvidenceQuality({
           evidence: ranked,
@@ -400,7 +400,7 @@ export function createResearchOrchestrator({
           opinionQuestion
         });
         return {
-          decision: decisionForAnswer({ action: 'answer', query, ranked, exhaustedBudget: false }),
+          decision: decisionForAnswer({ action: ranked.length ? 'answer' : 'answer-with-caveat', query, ranked, exhaustedBudget: false }),
           evidence: ranked,
           workerPass: combinedWorkerPass({
             lastPass,

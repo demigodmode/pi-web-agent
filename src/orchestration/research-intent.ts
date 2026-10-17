@@ -5,6 +5,17 @@ import { parseRepoUrl } from '../repo/repo-url.js';
 export type ResearchTarget = { kind: 'url' | 'name'; value: string };
 export type ResearchIntent = { kind: 'read' | 'compare' | 'research'; targets: ResearchTarget[]; requiresAlternative: boolean };
 
+function comparisonIdentity(url: string): string {
+  const repo = parseRepoUrl(url);
+  if (repo) return `github:${repo.owner.toLowerCase()}/${repo.repo.toLowerCase()}`;
+
+  try {
+    return `host:${new URL(url).hostname.toLowerCase().replace(/^www\./, '')}`;
+  } catch {
+    return `url:${url}`;
+  }
+}
+
 function asksForExternalOpinions(query: string): boolean {
   return /\b(?:opinions?|experiences?|user (?:reviews?|feedback)|community (?:feedback|opinions?|experiences?|reviews?)|what do (?:users|people|developers) think|(?:users|people|developers) (?:think|feel|say))\b/i.test(query);
 }
@@ -55,8 +66,10 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
     return !evidence.some((item) => pattern.test([item.url, item.title, item.summary, ...item.supports].join(' ')));
   }).map((target) => target.value);
   if (intent.requiresAlternative) {
-    const urls = new Set(evidence.map((item) => extractDirectUrls(item.url)[0] ?? item.url));
-    if (urls.size < 2) missing.push('alternatives');
+    const values = intent.targets.length > 0
+      ? evidence.map((item) => comparisonIdentity(item.url))
+      : evidence.map((item) => extractDirectUrls(item.url)[0] ?? item.url);
+    if (new Set(values).size < 2) missing.push('alternatives');
   }
   return missing;
 }
