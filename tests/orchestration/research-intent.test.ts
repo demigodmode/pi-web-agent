@@ -13,6 +13,7 @@ describe('classifyResearchIntent', () => {
   it('treats a question about one typed repository as a direct read', () => {
     expect(classifyResearchIntent('where does this project refresh OAuth tokens? https://github.com/acme/widget').kind).toBe('read');
     expect(classifyResearchIntent('what is https://github.com/acme/widget').kind).toBe('read');
+    expect(classifyResearchIntent('What does this repo do with Reddit? https://github.com/acme/widget').kind).toBe('read');
   });
 
   it('treats a URL comparison with alternatives as a comparison', () => {

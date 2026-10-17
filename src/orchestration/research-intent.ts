@@ -6,7 +6,7 @@ export type ResearchTarget = { kind: 'url' | 'name'; value: string };
 export type ResearchIntent = { kind: 'read' | 'compare' | 'research'; targets: ResearchTarget[]; requiresAlternative: boolean };
 
 function asksForExternalOpinions(query: string): boolean {
-  return /\b(?:opinions?|experiences?|user (?:reviews?|feedback)|community (?:feedback|opinions?|experiences?|reviews?)|what do (?:users|people|developers) think|(?:users|people|developers) (?:think|feel|say)|reddit|forum discussions?)\b/i.test(query);
+  return /\b(?:opinions?|experiences?|user (?:reviews?|feedback)|community (?:feedback|opinions?|experiences?|reviews?)|what do (?:users|people|developers) think|(?:users|people|developers) (?:think|feel|say))\b/i.test(query);
 }
 
 export function classifyResearchIntent(query: string): ResearchIntent {
