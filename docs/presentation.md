@@ -51,6 +51,14 @@ If no useful evidence was found, compact output says that plainly:
 No usable evidence found
 ```
 
+When a direct source the user supplied cannot be read, every mode preserves that failure instead of presenting unrelated findings as a review of that source:
+
+```text
+Required source not read: https://github.com/owner/repo/issues/42. GitHub resource was not found or may require access. The requirements of this source were not checked.
+```
+
+Use a follow-up after fixing access or narrowing the source. A failed required source is never represented as reviewed.
+
 ## Preview and verbose provenance
 
 Preview and verbose modes show the internal reader that produced each finding:

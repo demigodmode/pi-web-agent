@@ -7,13 +7,14 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Pi can use `web_explore` as the public web-research entry point while still using explicitly requested task tools.
+- Authenticated GitHub readers can read private files, issues, pull requests, and README content with `GITHUB_TOKEN` or `gh auth login`.
 
 ### Changed
-- None.
+- Required direct sources now remain explicit failures when they cannot be read, while later direct links can still contribute evidence.
 
 ### Fixed
-- None.
+- GitHub thread results disclose when only part of the comment thread was read.
 
 ### Breaking
 - None.

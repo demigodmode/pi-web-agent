@@ -35,7 +35,7 @@ Right now it gives you:
 - preview/verbose modes that show internal research provenance
 - a `/web-agent` settings UI for presentation and backend config
 - direct-link and forum/thread-aware research handling
-- keyless GitHub, PDF, and YouTube readers that pull the real content behind those links
+- keyless public GitHub content plus PDF and YouTube readers that pull the real content behind those links
 - questions about a pasted GitHub repo answered from a clone of its code, with commit-pinned citations
 - Esc cancels a running research pass, and one page failing to load doesn't fail the run
 - local-browser headless rendering with managed Chromium fallback

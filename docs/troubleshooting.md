@@ -60,9 +60,9 @@ If You.com still reports an HTTP warning, check that the key is valid and that t
 
 If the key is sent in a header other than `X-API-Key`, set `backends.search.keyHeader`. If the vendor wants `Authorization: Bearer <key>`, include `Bearer ` in the key itself. A bad key or an empty balance reported inside a 200 response shows up as an auth or quota failure rather than "no results". See [Backends](/self-hosted-backends#google-serp-endpoint) for the full shape.
 
-## Asking about a GitHub repo gets a refusal
+## A required GitHub repo or direct link could not be read
 
-Repo questions stop with a reason instead of falling back to the README. The common ones:
+The result keeps the source failure visible and does not substitute a README for a repo it could not read. Other direct links later in the same question can still be read. The common repo failures are:
 
 - `git isn't installed, so repo code can't be searched.` Install `git` and make sure it is on the PATH of the process running Pi.
 - `git 2.32 or newer is needed to search repo code.` Update git. `/web-agent doctor` shows the version it found on its `repo research:` line.
@@ -72,7 +72,7 @@ Repo questions stop with a reason instead of falling back to the README. The com
 - `GitHub rate limit hit; set GITHUB_TOKEN or sign in with gh for a higher limit.` Unauthenticated GitHub calls have a low hourly limit. A token raises it.
 - `GitHub rejected the token; check GITHUB_TOKEN or run gh auth login again.` The token is wrong or expired.
 
-- `Too many repo links in one question; ask about one or two at a time.` Two repo links per question is the limit. Split the question up.
+- `Source limit reached; use a follow-up call for this URL.` A question can include up to eight direct query links, including at most three repo reads. Put excess links in a follow-up call.
 
 ## The repo cache folder is refused
 

@@ -1,10 +1,97 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
+import { createBackendSet } from '../../src/backends/factory.js';
 import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
+import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { WebFetchResponse } from '../../src/types.js';
+import extension from '../../src/extension.js';
 
 describe('research workflow composition', () => {
+  it('keeps GitHub reader access failures explicit through the factory, workflow, and public research tool', async () => {
+    vi.stubEnv('GITHUB_TOKEN', '');
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('https://search.invalid/')) {
+        return new Response(JSON.stringify({ results: [{ title: 'Unrelated result', url: 'https://example.com/unrelated', content: 'This does not review the requested GitHub specification.' }] }), { headers: { 'content-type': 'application/json' } });
+      }
+      if (url === 'https://api.github.com/repos/acme/private/issues/7') {
+        if (new Headers(init?.headers).get('authorization') !== 'Bearer stubbed-gh-token') {
+          return new Response('{}', { status: 401, headers: { 'content-type': 'application/json' } });
+        }
+        return new Response(JSON.stringify({ title: 'Private issue', body: 'Exact private issue text.' }), { headers: { 'content-type': 'application/json' } });
+      }
+      if (url === 'https://api.github.com/repos/acme/private/issues/7/comments?per_page=100') {
+        return new Response('[]', { headers: { 'content-type': 'application/json' } });
+      }
+      if (url === 'https://api.github.com/repos/acme/inaccessible/issues/8') {
+        return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+      }
+      if (url === 'https://example.com/unrelated') {
+        return new Response('<html><title>Unrelated result</title><p>This does not review the requested GitHub specification.</p></html>', { headers: { 'content-type': 'text/html' } });
+      }
+      if (url === 'https://api.github.com/repos/acme/secret/readme') {
+        return new Response(JSON.stringify({ download_url: 'https://raw.githubusercontent.com/acme/secret/main/README.md?token=private-secret' }), { headers: { 'content-type': 'application/json' } });
+      }
+      if (url.startsWith('https://raw.githubusercontent.com/acme/secret/main/README.md')) {
+        return new Response('denied', { status: 401 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchImpl);
+    const backends = createBackendSet(
+      { search: { provider: 'searxng', baseUrl: 'https://search.invalid/' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } },
+      {
+        networkGuard: createNetworkGuard({}, { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }),
+        createModelFetch: () => ((input, init) => globalThis.fetch(input, init)) as typeof fetch,
+        createGuardProxy: vi.fn(async () => { throw new Error('offline test must not start a guard proxy'); }),
+        resolveGithubToken: async () => ({ source: 'gh', token: 'stubbed-gh-token' }),
+        policy: { sleep: async () => undefined, random: () => 0 }
+      }
+    );
+    const workflow = createResearchWorkflow(backends);
+    const tool = createWebExploreTool({ explore: workflow });
+
+    try {
+      const privateIssue = await tool({ query: 'Read https://github.com/acme/private/issues/7' });
+      expect(privateIssue.findings.join('\n')).toContain('Exact private issue text.');
+      const issueRequest = fetchImpl.mock.calls.find(([input]) => String(input) === 'https://api.github.com/repos/acme/private/issues/7');
+      expect(new Headers(issueRequest?.[1]?.headers).get('authorization')).toBe('Bearer stubbed-gh-token');
+
+      const inaccessibleIssue = await tool({ query: 'Research this specification and related findings https://github.com/acme/inaccessible/issues/8' });
+      expect(inaccessibleIssue.requiredSourceFailures).toContainEqual(expect.objectContaining({
+        url: 'https://github.com/acme/inaccessible/issues/8',
+        code: 'GITHUB_FETCH_FAILED'
+      }));
+      expect(fetchImpl.mock.calls.some(([input]) => String(input) === 'https://example.com/unrelated')).toBe(true);
+      expect(inaccessibleIssue.presentation.views.compact).toContain('The requirements of this source were not checked.');
+
+      const privateReadme = await tool({ query: 'Read https://github.com/acme/secret' });
+      type RegisteredTool = {
+        name: string;
+        execute: (toolCallId: string, params: { query: string }) => Promise<{ content: Array<{ type: string; text: string }> }>;
+      };
+      const registeredTools: RegisteredTool[] = [];
+      // The extension's configured-workflow path is covered in extension.test.ts.
+      // This injection isolates its model-result serialization from the factory/tool regression above.
+      extension({
+        registerTool: (registered: RegisteredTool) => registeredTools.push(registered),
+        registerCommand: vi.fn(),
+        on: vi.fn(),
+        __webExploreTool: tool
+      } as never);
+      const extensionResult = await registeredTools.find((registered) => registered.name === 'web_explore')!.execute('call-1', { query: 'Read https://github.com/acme/secret' });
+      const modelVisible = extensionResult.content[0]!.text;
+      expect(privateReadme.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://github.com/acme/secret' }));
+      expect(modelVisible).not.toContain('private-secret');
+      expect(modelVisible).not.toContain('Authorization');
+    } finally {
+      await workflow.close();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('keeps completed pages from a concurrent pass when another fetch reaches the deadline', async () => {
     vi.useFakeTimers();
     const completedUrl = 'https://a.example.com/guide';

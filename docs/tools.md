@@ -38,7 +38,7 @@ The important bit: those internal steps are not separate public tools for normal
 
 You don't do anything special for these. If a GitHub, PDF, or YouTube URL shows up, whether you pasted it or search surfaced it, `web_explore` reads the real content instead of the rendered page:
 
-- GitHub: files come from the raw endpoint, issues and PRs come from the API with their comments, and a repo that turns up in search gives you the README plus a top-level file listing. It's keyless; set `GITHUB_TOKEN` in the environment if you want the higher API rate limit. A repo link you type yourself is handled differently, see below.
+- GitHub: files come from the raw endpoint, issues and PRs come from the API with their comments, and a repo that turns up in search gives you the README plus a top-level file listing. Public content is keyless. Private content needs `GITHUB_TOKEN` or `gh auth login`. A repo link you type yourself is handled differently, see below.
 - PDF: the text is extracted directly. A scanned PDF with no text layer can't be read, so you get a note saying so rather than a silent empty result.
 - YouTube: you get the transcript from the captions. A video with no captions gets the same kind of note.
 
@@ -55,8 +55,8 @@ When you put a repo link in your question yourself (`https://github.com/owner/re
 
 - It fetches one exact commit at depth 1, over HTTPS only, and never runs anything from the repo. Folder links limit the folder listing to that folder. They use that folder's README when it has one, or the repository root README otherwise.
 - Clones live for your Pi session in a private folder in your temp directory (`pi-web-agent-repos-<your-user-id>`), so follow-up questions about the same repo are instant. They're deleted when the session ends (quit, `/new`, `/resume`, `/fork`, reload), and anything left behind by a crash is cleaned up the next time Pi starts. Idle clones are capped at 1GB in total.
-- Limits: repos over 300MB are refused, the clone gives up after 60 seconds, and at most two repo links per question.
-- If the repo can't be read (too big, private without access, `git` missing, clone timed out), the answer says so and stops there. It doesn't fall back to the README, because that would look like an answer about the code without being one.
+- Limits: a question can contain up to eight direct query links, including at most three repo reads. Further links are reported as `Source limit reached; use a follow-up call for this URL.`
+- If a repo can't be read (too big, private without access, `git` missing, clone timed out), its required-source failure stays in the result. Later query links can still be read, but the failed repo is never replaced with its README.
 - Private repos work if you're signed in with the GitHub CLI (`gh auth login`) or have `GITHUB_TOKEN` set. The token is sent as an HTTP header, never on the command line.
 - It needs `git` 2.32 or newer. `/web-agent doctor` shows a `repo research:` line with your git version and where the GitHub token comes from.
 - Repo links that only turn up in search results still get the lighter README reader.
@@ -111,4 +111,4 @@ Evidence is partial: one or more thread sources could not be read reliably, and 
 
 If the task is web research, use `web_explore`.
 
-If you need another angle, call `web_explore` again with a better query. Do not switch to shell network commands like `curl`, `Invoke-WebRequest`, or `npm view` just to continue web research.
+If you need another angle, call `web_explore` again with a better query.

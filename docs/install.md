@@ -127,7 +127,7 @@ Secrets live in the environment, not in config the settings UI writes. The ones 
 - `TAVILY_API_KEY`: Tavily search
 - `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`: Google SERP endpoint search (`baseUrl` + header key, any vendor)
 - `PI_WEB_AGENT_FIRECRAWL_API_KEY`: Firecrawl fetch
-- `GITHUB_TOKEN`: optional, raises the GitHub reader's API rate limit and gives repo research access to private repos (GitHub links work without it; `gh auth login` works as a fallback for repo research)
+- `GITHUB_TOKEN`: optional for public GitHub content; private GitHub reader and repo-research access need `GITHUB_TOKEN` or `gh auth login`
 
 This package integrates with existing self-hosted services. SearXNG/Firecrawl installation, Docker Compose files, reverse proxies, TLS, and auth setup belong to those projects' docs.
 
