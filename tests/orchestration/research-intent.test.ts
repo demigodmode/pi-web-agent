@@ -103,4 +103,14 @@ describe('classifyResearchIntent', () => {
 
     expect(missingComparisonTargets(intent, evidence)).toEqual([]);
   });
+
+  it('counts a website as an alternative to a pinned GitHub repository', () => {
+    const intent = classifyResearchIntent('Compare https://github.com/acme/widget with alternatives');
+    const evidence = [
+      { title: 'Widget', url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`, sourceKind: 'unknown' as const, method: 'github' as const, summary: 'Widget code', supports: [] },
+      { title: 'Other Project', url: 'https://otherproject.dev/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Alternative project documentation', supports: [] }
+    ];
+
+    expect(missingComparisonTargets(intent, evidence)).toEqual([]);
+  });
 });

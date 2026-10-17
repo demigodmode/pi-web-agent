@@ -60,10 +60,10 @@ function representsDistinctSubject(left: ResearchEvidence, right: ResearchEviden
   const rightIdentityUrl = identityUrl(right);
   const leftRepo = parseRepoUrl(leftIdentityUrl);
   const rightRepo = parseRepoUrl(rightIdentityUrl);
-  if (leftRepo || rightRepo) {
-    return leftRepo !== undefined && rightRepo !== undefined &&
-      `${leftRepo.owner}/${leftRepo.repo}`.toLowerCase() !== `${rightRepo.owner}/${rightRepo.repo}`.toLowerCase();
+  if (leftRepo && rightRepo) {
+    return `${leftRepo.owner}/${leftRepo.repo}`.toLowerCase() !== `${rightRepo.owner}/${rightRepo.repo}`.toLowerCase();
   }
+  if (leftRepo || rightRepo) return true;
 
   const leftHost = hostOf(leftIdentityUrl);
   const rightHost = hostOf(rightIdentityUrl);
