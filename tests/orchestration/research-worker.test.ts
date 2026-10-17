@@ -42,6 +42,35 @@ describe('research worker', () => {
     const result = await worker.run({ query: 'cached guide', maxSearchRounds: 1, maxFetches: 1 });
     expect(result.evidence[0]?.retrievedAt).toBeUndefined();
   });
+
+  it('keeps the original retrieval time when later concurrent pages finish', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const urls = ['https://a.example.com/guide', 'https://b.example.com/guide'];
+    const waiting = new Map<string, (value: WebFetchResponse) => void>();
+    const partials: string[] = [];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: 'Guide', url, snippet: 'Guide' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage: vi.fn(({ url }: { url: string }) => new Promise<WebFetchResponse>((resolve) => waiting.set(url, resolve)))
+    });
+    const response = (url: string): WebFetchResponse => ({ status: 'ok', url, content: { title: 'Guide', text: `Guide content from ${url}` }, metadata: { method: 'http', cacheHit: false } });
+
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const run = worker.run({ query: 'guide', maxSearchRounds: 1, maxFetches: 2, onPartial: (partial) => {
+        const retrievedAt = partial.evidence.find((item) => item.url === urls[0])?.retrievedAt;
+        if (retrievedAt) partials.push(retrievedAt);
+      } });
+      await vi.waitFor(() => expect(waiting.size).toBe(2));
+      waiting.get(urls[0])!(response(urls[0]));
+      await vi.waitFor(() => expect(partials).toHaveLength(1));
+      vi.setSystemTime(new Date('2026-01-01T01:00:00.000Z'));
+      waiting.get(urls[1])!(response(urls[1]));
+      const result = await run;
+      expect(result.evidence[0]?.retrievedAt).toBe(partials[0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('reports search and fetch counts without page content', async () => {
     const url = 'https://example.com/guide';
     const events: Array<{ phase: string; searches: number; fetches: number; headless: number }> = [];

@@ -212,6 +212,7 @@ export function createResearchWorker({
       });
 
       const outcomes: Array<WebFetchResponse | Error | undefined> = new Array(candidates.length);
+      const parsedEvidenceByCandidate = new Map<number, ResearchEvidence | null>();
       const collectOutcomes = (): ResearchWorkerResult => {
         const completedEvidence: ResearchEvidence[] = [];
         const completedGaps: ResearchGap[] = [];
@@ -228,7 +229,10 @@ export function createResearchWorker({
           if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
 
           if (fetched.status === 'ok') {
-            const parsedEvidence = evidenceFromFetch(fetched, candidate.title, query);
+            if (!parsedEvidenceByCandidate.has(index)) {
+              parsedEvidenceByCandidate.set(index, evidenceFromFetch(fetched, candidate.title, query) ?? null);
+            }
+            const parsedEvidence = parsedEvidenceByCandidate.get(index);
             if (parsedEvidence) {
               completedEvidence.push(parsedEvidence);
               continue;
