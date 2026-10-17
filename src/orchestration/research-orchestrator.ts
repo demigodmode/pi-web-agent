@@ -222,6 +222,7 @@ export function createResearchOrchestrator({
       signal?: AbortSignal;
       budget?: import('./run-budget.js').ResearchRunBudget;
       onProgress?: (event: ResearchProgress) => void;
+      onPartial?: (result: ResearchWorkerResult) => void;
     }) => Promise<ResearchWorkerResult>;
   };
   fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
@@ -253,6 +254,7 @@ export function createResearchOrchestrator({
       const attemptedHeadlessUrls = new Set<string>();
       let headlessAttempts = 0;
       let lastPass: ResearchWorkerResult | undefined;
+      let partialWorkerPass: ResearchWorkerResult | undefined;
       let searchCoveragePartial = false;
       const fanoutProvidersSeen = new Set<SearchProviderName>();
       const fanoutSkippedSeen = new Set<SearchProviderName>();
@@ -465,15 +467,18 @@ export function createResearchOrchestrator({
         for (const plannedQuery of queries) {
           previousQueries.push(plannedQuery);
           throwIfAborted(signal);
+          partialWorkerPass = undefined;
           const workerWork = worker.run({
             query: plannedQuery,
             maxSearchRounds: 1,
             maxFetches: DEFAULT_MAX_FETCHES_PER_PASS,
             signal,
             budget,
-            onProgress
+            onProgress,
+            onPartial: (partial) => { partialWorkerPass = partial; }
           });
           const pass = await budget.wait(workerWork);
+          partialWorkerPass = undefined;
           throwIfAborted(signal);
 
           lastPass = pass;
@@ -679,7 +684,21 @@ export function createResearchOrchestrator({
       };
       } catch (error) {
         if (signal?.aborted) throw error;
-        if (budget.deadlineReached()) return partialBudgetResult();
+        if (budget.deadlineReached()) {
+          if (partialWorkerPass) {
+            const partial = partialWorkerPass;
+            lastPass = partial;
+            if (partial.searchAttempts) runAttempts.push(...partial.searchAttempts);
+            if (partial.fetchAttempts) runAttempts.push(...partial.fetchAttempts);
+            if (partial.searchCoveragePartial) searchCoveragePartial = true;
+            partial.fanoutProviders?.forEach((provider) => fanoutProvidersSeen.add(provider));
+            partial.fanoutSkipped?.forEach((provider) => fanoutSkippedSeen.add(provider));
+            allEvidence.push(...partial.evidence);
+            allGaps.push(...partial.gaps);
+            allLowValueOutcomes.push(...partial.lowValueOutcomes);
+          }
+          return partialBudgetResult();
+        }
         throw error;
       } finally {
         budget.dispose();

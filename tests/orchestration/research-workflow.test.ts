@@ -2,8 +2,42 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
+import type { WebFetchResponse } from '../../src/types.js';
 
 describe('research workflow composition', () => {
+  it('keeps completed pages from a concurrent pass when another fetch reaches the deadline', async () => {
+    vi.useFakeTimers();
+    const completedUrl = 'https://a.example.com/guide';
+    const pendingUrl = 'https://b.example.com/guide';
+    let resolvePending!: (response: WebFetchResponse) => void;
+    const fetchPage = vi.fn(({ url }: { url: string }) => url === completedUrl
+      ? Promise.resolve({ status: 'ok' as const, url, content: { title: 'Completed guide', text: 'Useful completed guide evidence.' }, metadata: { method: 'http' as const, cacheHit: false } })
+      : new Promise<WebFetchResponse>((resolve) => { resolvePending = resolve; }));
+    const workflow = createResearchWorkflow({
+      search: async () => ({ status: 'ok', results: [
+        { title: 'Completed guide', url: completedUrl, snippet: 'Useful guide' },
+        { title: 'Pending guide', url: pendingUrl, snippet: 'Useful guide' }
+      ], metadata: { backend: 'duckduckgo', cacheHit: false } }),
+      fetchPage,
+      headlessFetch: vi.fn()
+    });
+
+    try {
+      const run = createWebExploreTool({ explore: workflow })({ query: 'feature behavior' });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchPage).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.metadata?.budgetReason).toBe('deadline');
+      expect(result.findings).toContain('Useful completed guide evidence.');
+      expect(result.sources.map((source) => source.url)).toContain(completedUrl);
+    } finally {
+      resolvePending?.({ status: 'ok', url: pendingUrl, content: { title: 'Pending guide', text: 'Late evidence' }, metadata: { method: 'http', cacheHit: false } });
+      await workflow.close();
+      vi.useRealTimers();
+    }
+  });
+
   it('counts direct links and later searches in one fetch budget', async () => {
     let searchIndex = 0;
     const search = vi.fn(async () => {

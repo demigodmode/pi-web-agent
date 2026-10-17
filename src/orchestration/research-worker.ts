@@ -103,7 +103,8 @@ export function createResearchWorker({
       maxFetches,
       signal,
       budget,
-      onProgress
+      onProgress,
+      onPartial
     }: {
       query: string;
       maxSearchRounds: number;
@@ -111,6 +112,7 @@ export function createResearchWorker({
       signal?: AbortSignal;
       budget?: ResearchRunBudget;
       onProgress?: (event: ResearchProgress) => void;
+      onPartial?: (result: ResearchWorkerResult) => void;
     }): Promise<ResearchWorkerResult> {
       const activeSignal = budget?.signal ?? signal;
       const searchQueries = [query];
@@ -209,8 +211,58 @@ export function createResearchWorker({
         maxCandidates: maxFetches
       });
 
-      const fetchAttempts: Attempt[] = [];
       const outcomes: Array<WebFetchResponse | Error | undefined> = new Array(candidates.length);
+      const collectOutcomes = (): ResearchWorkerResult => {
+        const completedEvidence: ResearchEvidence[] = [];
+        const completedGaps: ResearchGap[] = [];
+        const completedLowValueOutcomes: ResearchLowValueOutcome[] = [];
+        const fetchAttempts: Attempt[] = [];
+        let completedHeadlessUrl: string | undefined;
+        for (const [index, candidate] of candidates.entries()) {
+          const fetched = outcomes[index];
+          if (!fetched) continue;
+          if (fetched instanceof Error) {
+            completedGaps.push({ kind: 'fetch-failed', message: `Fetch failed for ${candidate.url}: ${fetched.message}` });
+            continue;
+          }
+          if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
+
+          if (fetched.status === 'ok') {
+            const parsedEvidence = evidenceFromFetch(fetched, candidate.title, query);
+            if (parsedEvidence) {
+              completedEvidence.push(parsedEvidence);
+              continue;
+            }
+            const lowValueOutcome = lowValueOutcomeFromFetch(fetched);
+            if (lowValueOutcome) completedLowValueOutcomes.push(lowValueOutcome);
+            continue;
+          }
+
+          if (isTerminalFailure(failureOf(fetched))) {
+            completedGaps.push({ kind: 'fetch-failed', message: fetched.error?.message ?? `Fetch failed for ${candidate.url}` });
+            continue;
+          }
+          if (fetched.status === 'needs_headless') {
+            completedHeadlessUrl ??= fetched.url;
+            completedGaps.push({ kind: 'fetch-failed', message: `HTTP fetch was weak for ${fetched.url}` });
+            continue;
+          }
+          completedGaps.push({ kind: 'fetch-failed', message: fetched.error?.message ?? `Fetch failed for ${candidate.url}` });
+        }
+        return {
+          searchQueries,
+          evidence: completedEvidence,
+          gaps: completedGaps,
+          lowValueOutcomes: completedLowValueOutcomes,
+          suggestedHeadlessUrl: completedHeadlessUrl,
+          exhaustedBudget,
+          fanoutProviders,
+          fanoutSkipped,
+          searchCoveragePartial,
+          searchAttempts,
+          fetchAttempts
+        };
+      };
       const started = new Set<number>();
       const activeHosts = new Set<string>();
       const inFlight = new Map<number, Promise<void>>();
@@ -242,6 +294,9 @@ export function createResearchWorker({
           })().finally(() => {
             activeHosts.delete(hostname);
             inFlight.delete(index);
+            if (outcomes[index] && onPartial) {
+              try { onPartial(collectOutcomes()); } catch { /* Partial evidence is observational. */ }
+            }
           });
           request.catch(() => undefined);
           inFlight.set(index, request);
@@ -254,67 +309,8 @@ export function createResearchWorker({
         startAvailable();
       }
 
-      for (const [index, candidate] of candidates.entries()) {
-        const fetched = outcomes[index];
-        if (!fetched) continue;
-        if (fetched instanceof Error) {
-          gaps.push({ kind: 'fetch-failed', message: `Fetch failed for ${candidate.url}: ${fetched.message}` });
-          continue;
-        }
-        // Readers report a cancel as an error result; never record it as a gap.
-        throwIfAborted(activeSignal);
-        if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
-
-        if (fetched.status === 'ok') {
-          const parsedEvidence = evidenceFromFetch(fetched, candidate.title, query);
-          if (parsedEvidence) {
-            evidence.push(parsedEvidence);
-            continue;
-          }
-
-          const lowValueOutcome = lowValueOutcomeFromFetch(fetched);
-          if (lowValueOutcome) {
-            lowValueOutcomes.push(lowValueOutcome);
-          }
-          continue;
-        }
-
-        // guard_refused and friends are final; never hand them to headless.
-        if (isTerminalFailure(failureOf(fetched))) {
-          gaps.push({
-            kind: 'fetch-failed',
-            message: fetched.error?.message ?? `Fetch failed for ${candidate.url}`
-          });
-          continue;
-        }
-
-        if (fetched.status === 'needs_headless') {
-          if (!suggestedHeadlessUrl) {
-            suggestedHeadlessUrl = fetched.url;
-          }
-          gaps.push({ kind: 'fetch-failed', message: `HTTP fetch was weak for ${fetched.url}` });
-          continue;
-        }
-
-        gaps.push({
-          kind: 'fetch-failed',
-          message: fetched.error?.message ?? `Fetch failed for ${candidate.url}`
-        });
-      }
-
-      return {
-        searchQueries,
-        evidence,
-        gaps,
-        lowValueOutcomes,
-        suggestedHeadlessUrl,
-        exhaustedBudget,
-        fanoutProviders,
-        fanoutSkipped,
-        searchCoveragePartial,
-        searchAttempts,
-        fetchAttempts
-      };
+      throwIfAborted(activeSignal);
+      return collectOutcomes();
     }
   };
 }
