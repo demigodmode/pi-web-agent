@@ -54,6 +54,25 @@ describe('research orchestrator types', () => {
     expect(worker.run).toHaveBeenCalled();
   });
 
+  it('finishes a read request from a usable direct HTML page without searching', async () => {
+    const worker = { run: vi.fn() };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'ok' as const, url,
+        content: { title: 'Guide', text: 'A usable guide with the requested details.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Summarize https://example.com/guide' });
+
+    expect(worker.run).not.toHaveBeenCalled();
+    expect(result.evidence).toHaveLength(1);
+    expect(result.metadata?.searchPasses).toBe(0);
+  });
+
   it('keeps searching a named comparison until both targets have evidence', async () => {
     const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
     const vue = { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Vue details', supports: ['Vue details'] };

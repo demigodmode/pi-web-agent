@@ -388,7 +388,7 @@ export function createResearchOrchestrator({
         }
       }
 
-      if (intent.kind === 'read' && allEvidence.some((item) => isReaderMethod(item.method))) {
+      if (intent.kind === 'read' && allEvidence.some((item) => item.sourceKind !== 'package-page')) {
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
         const quality = analyzeEvidenceQuality({
           evidence: ranked,
