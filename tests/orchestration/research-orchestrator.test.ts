@@ -285,6 +285,53 @@ describe('research orchestrator types', () => {
     expect(result.metadata?.missingComparisonTargets).toEqual([]);
   });
 
+  it('keeps a redirected target in its requested project identity when checking alternatives', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: [],
+        evidence: [{ title: 'Other docs', url: 'https://example.com/other', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Other page from the same project.', supports: [] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const result = await createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async () => ({
+        status: 'ok' as const,
+        url: 'https://cdn.example.net/docs',
+        content: { title: 'Example docs', text: 'Readable documentation for the requested product.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Compare https://example.com/docs with alternatives' });
+
+    expect(result.metadata?.missingComparisonTargets).toEqual(['alternatives']);
+  });
+
+  it('counts a pinned typed repository as the comparison primary', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: [],
+        evidence: [{ title: 'Alternative', url: 'https://github.com/other/widget', sourceKind: 'official-docs' as const, method: 'github' as const, summary: 'Alternative project', supports: [] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const result = await createResearchOrchestrator({
+      worker,
+      researchRepo: vi.fn(async () => ({
+        ok: true as const,
+        response: {
+          status: 'ok' as const,
+          url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`,
+          content: { title: 'Widget', text: 'Repository source evidence.' },
+          metadata: { method: 'github' as const, cacheHit: false }
+        }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Compare https://github.com/acme/widget with alternatives' });
+
+    expect(result.metadata?.missingComparisonTargets).toEqual([]);
+  });
+
   it('uses a late query-relevant passage for direct and direct-headless evidence', async () => {
     const lateAnswer = 'Lunar archive transfer requires the signed manifest before upload.';
     const worker = {

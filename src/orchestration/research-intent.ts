@@ -36,17 +36,38 @@ function coversUrl(item: ResearchEvidence, target: string): boolean {
     .some((url) => url !== undefined && canonicalizeUrl(url) === requested);
 }
 
+function coversTarget(item: ResearchEvidence, target: string): boolean {
+  if (coversUrl(item, target)) return true;
+  const requestedRepo = parseRepoUrl(target);
+  const foundRepo = parseRepoUrl(item.url);
+  return requestedRepo !== undefined && !requestedRepo.refAndPath && foundRepo !== undefined && item.method === 'github' &&
+    requestedRepo.owner.toLowerCase() === foundRepo.owner.toLowerCase() && requestedRepo.repo.toLowerCase() === foundRepo.repo.toLowerCase();
+}
+
+function sameFinalResource(left: ResearchEvidence, right: ResearchEvidence): boolean {
+  const leftUrl = canonicalizeUrl(left.url);
+  return leftUrl !== undefined && leftUrl === canonicalizeUrl(right.url);
+}
+
+function identityUrl(item: ResearchEvidence): string {
+  return item.requestedUrl ?? item.url;
+}
+
 function representsDistinctSubject(left: ResearchEvidence, right: ResearchEvidence, preserveProjectIdentity: boolean): boolean {
-  const leftRepo = parseRepoUrl(left.url);
-  const rightRepo = parseRepoUrl(right.url);
+  if (sameFinalResource(left, right)) return false;
+
+  const leftIdentityUrl = identityUrl(left);
+  const rightIdentityUrl = identityUrl(right);
+  const leftRepo = parseRepoUrl(leftIdentityUrl);
+  const rightRepo = parseRepoUrl(rightIdentityUrl);
   if (leftRepo || rightRepo) {
     return leftRepo !== undefined && rightRepo !== undefined &&
       `${leftRepo.owner}/${leftRepo.repo}`.toLowerCase() !== `${rightRepo.owner}/${rightRepo.repo}`.toLowerCase();
   }
 
-  const leftHost = hostOf(left.url);
-  const rightHost = hostOf(right.url);
-  if (!leftHost || !rightHost) return left.url !== right.url;
+  const leftHost = hostOf(leftIdentityUrl);
+  const rightHost = hostOf(rightIdentityUrl);
+  if (!leftHost || !rightHost) return leftIdentityUrl !== rightIdentityUrl;
   if (leftHost !== rightHost) return true;
   if (preserveProjectIdentity && !isMultiSubjectHost(leftHost)) return false;
 
@@ -93,13 +114,7 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
   if (intent.kind !== 'compare') return [];
   const missing = intent.targets.filter((target) => {
     if (target.kind === 'url') {
-      const requestedRepo = parseRepoUrl(target.value);
-      return !evidence.some((item) => {
-        if (coversUrl(item, target.value)) return true;
-        const foundRepo = parseRepoUrl(item.url);
-        return requestedRepo && !requestedRepo.refAndPath && foundRepo && item.method === 'github' &&
-          requestedRepo.owner.toLowerCase() === foundRepo.owner.toLowerCase() && requestedRepo.repo.toLowerCase() === foundRepo.repo.toLowerCase();
-      });
+      return !evidence.some((item) => coversTarget(item, target.value));
     }
     const escaped = target.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
     const pattern = new RegExp(`\\b${escaped}\\b`, 'i');
@@ -107,7 +122,7 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
   }).map((target) => target.value);
   if (intent.requiresAlternative) {
     const requested = intent.targets.find((target): target is ResearchTarget & { kind: 'url' } => target.kind === 'url');
-    const primary = requested ? evidence.filter((item) => coversUrl(item, requested.value)) : evidence;
+    const primary = requested ? evidence.filter((item) => coversTarget(item, requested.value)) : evidence;
     if (!primary.some((item) => evidence.some((alternative) => alternative !== item && representsDistinctSubject(item, alternative, requested !== undefined)))) {
       missing.push('alternatives');
     }
