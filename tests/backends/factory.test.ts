@@ -664,9 +664,29 @@ describe('backend factory', () => {
       headers: new Headers()
     }));
 
-    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, offlineNetworkDeps());
+    const resolveGithubToken = vi.fn(async () => ({ token: 'factory-secret', source: 'env' as const }));
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, { ...offlineNetworkDeps(), resolveGithubToken });
     const res = await backends.fetchPage({ url: 'https://github.com/owner/repo/blob/main/does-not-exist-xyz.ts' });
     expect(res.metadata.method).toBe('github');
+    expect(resolveGithubToken).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    'https://api.github.com/repos/owner/repo/issues/1',
+    'https://raw.githubusercontent.com/owner/repo/main/file.ts'
+  ])('strips GitHub reader authorization on a cross-origin redirect from %s', async (source) => {
+    const baseFetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: 'https://outside.example/final' } }))
+      .mockResolvedValueOnce(new Response('content'));
+    vi.stubGlobal('fetch', baseFetch);
+    const backends = createBackendSet(DEFAULT_BACKEND_CONFIG, {
+      ...offlineNetworkDeps(),
+      resolveGithubToken: async () => ({ token: 'factory-secret', source: 'env' })
+    });
+    const target = source.includes('/issues/') ? 'https://github.com/owner/repo/issues/1' : 'https://github.com/owner/repo/blob/main/file.ts';
+    await backends.fetchPage({ url: target });
+    expect(new Headers(baseFetch.mock.calls[0][1].headers).get('authorization')).toBe('Bearer factory-secret');
+    expect(new Headers(baseFetch.mock.calls[1][1].headers).get('authorization')).toBeNull();
   });
 
   it('builds a fanout search when mode is on (offline, injected providers)', async () => {

@@ -31,6 +31,7 @@ export type FailureKind =
   | 'rate_limited'
   | 'quota_exhausted'
   | 'auth_failed'
+  | 'not_found_or_inaccessible'
   | 'not_configured'
   | 'transient'
   | 'blocked'
@@ -109,6 +110,8 @@ export type FetchMetadata = {
   fallbackReason?: string;
   contentType?: string;
   truncated?: boolean;
+  /** GitHub thread comments could not be completely read within the bounded reader request. */
+  partialComments?: boolean;
   browser?: 'configured' | 'chrome' | 'edge' | 'brave' | 'chromium';
   navigationMs?: number;
   /** Headless only: browser requests refused by the private-address guard (#53). */

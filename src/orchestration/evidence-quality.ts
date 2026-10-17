@@ -10,6 +10,7 @@ export type EvidenceCaveatReason =
   | 'possible-conflict'
   | 'bot-check'
   | 'partial-search-coverage'
+  | 'partial-thread-comments'
   | 'budget-exhausted';
 
 export type EvidenceQualityReport = {
@@ -98,6 +99,7 @@ export function analyzeEvidenceQuality({
   addReason(caveatReasons, 'possible-conflict', hasPossibleConflict);
   addReason(caveatReasons, 'bot-check', hasBotCheck);
   addReason(caveatReasons, 'partial-search-coverage', partialSearchCoverage);
+  addReason(caveatReasons, 'partial-thread-comments', evidence.some((item) => item.partialComments));
 
   return {
     counts: {

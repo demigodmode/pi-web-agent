@@ -86,11 +86,12 @@ export function createWebExploreTool({
     const reasons = (result.metadata?.caveatReasons ?? []) as EvidenceCaveatReason[];
     const decisionPartial = result.decision.action !== 'answer';
     const coveragePartial = reasons.includes('partial-search-coverage');
+    const threadCommentsPartial = reasons.includes('partial-thread-comments');
     const synthesized = synthesizeAnswer({
       evidence: selectedEvidence,
-      partial: decisionPartial || coveragePartial,
+      partial: decisionPartial || coveragePartial || threadCommentsPartial,
       // A confident answer with partial coverage mentions only the coverage, not unrelated quality notes.
-      caveatReasons: decisionPartial ? reasons : ['partial-search-coverage'],
+      caveatReasons: decisionPartial ? reasons : reasons.filter((reason) => reason === 'partial-search-coverage' || reason === 'partial-thread-comments'),
       missingComparisonTargets: result.metadata?.missingComparisonTargets
     });
 

@@ -47,6 +47,7 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
       ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
       ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
       truncated: fetched.metadata.truncated ?? false
+      , ...(fetched.metadata.partialComments ? { partialComments: true } : {})
     } satisfies ResearchEvidence;
   }
 
@@ -66,6 +67,7 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
     ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
     ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
     truncated: (fetched.metadata.truncated ?? false) || passages.truncated
+    , ...(fetched.metadata.partialComments ? { partialComments: true } : {})
   } satisfies ResearchEvidence;
 }
 

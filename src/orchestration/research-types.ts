@@ -25,6 +25,7 @@ export type ResearchEvidence = {
   sectionAnchor?: string;
   retrievedAt?: string;
   truncated?: boolean;
+  partialComments?: boolean;
 };
 
 export type ResearchGap = {

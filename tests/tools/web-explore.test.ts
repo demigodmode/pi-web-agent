@@ -3,6 +3,18 @@ import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { ResearchProgress } from '../../src/orchestration/progress.js';
 
 describe('web_explore tool', () => {
+  it('forces a model-facing caveat for incomplete GitHub thread comments even when answering', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence: [{ title: 'Issue', url: 'https://github.com/o/r/issues/1', sourceKind: 'issue-thread', method: 'github', summary: 'detail', supports: ['detail'], partialComments: true }],
+        workerPass: {},
+        metadata: { searchPasses: 1, fetchedPages: 1, headlessAttempts: 0, exhaustedBudget: false, caveatReasons: ['partial-thread-comments'] }
+      })
+    });
+    const result = await webExplore({ query: 'issue' });
+    expect(result.caveat).toContain('the GitHub thread comments were incomplete');
+  });
   it('pairs all five findings with their sources', async () => {
     const evidence = Array.from({ length: 6 }, (_, index) => ({
       title: `Source ${index + 1}`,

@@ -25,6 +25,8 @@ function sentenceForReason(reason: EvidenceCaveatReason): string {
       return 'some candidate sources showed bot-check or security verification pages';
     case 'partial-search-coverage':
       return 'some search backends were unavailable, so results may be incomplete';
+    case 'partial-thread-comments':
+      return 'the GitHub thread comments were incomplete';
     case 'budget-exhausted':
       return 'research reached its run limit';
   }

@@ -61,6 +61,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
       ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
       ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
       truncated: result.metadata.truncated ?? false
+      , ...(result.metadata.partialComments ? { partialComments: true } : {})
     };
   }
 
@@ -76,6 +77,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
     truncated: (result.metadata.truncated ?? false) || passages.truncated
+    , ...(result.metadata.partialComments ? { partialComments: true } : {})
   };
 }
 
