@@ -5,6 +5,10 @@ import { parseRepoUrl } from '../repo/repo-url.js';
 export type ResearchTarget = { kind: 'url' | 'name'; value: string };
 export type ResearchIntent = { kind: 'read' | 'compare' | 'research'; targets: ResearchTarget[]; requiresAlternative: boolean };
 
+function asksForExternalOpinions(query: string): boolean {
+  return /\b(?:opinions?|experiences?|user (?:reviews?|feedback)|community (?:feedback|opinions?|experiences?|reviews?)|what do (?:users|people|developers) think|(?:users|people|developers) (?:think|feel|say)|reddit|forum discussions?)\b/i.test(query);
+}
+
 export function classifyResearchIntent(query: string): ResearchIntent {
   const urls = extractDirectUrls(query);
   const urlTargets: ResearchTarget[] = urls.map((value) => ({ kind: 'url', value }));
@@ -26,7 +30,9 @@ export function classifyResearchIntent(query: string): ResearchIntent {
     !/\b(?:alternatives?|other sources?|research|find|compare|versus|vs\.?)\b/i.test(query)) {
     return { kind: 'read', targets: urlTargets, requiresAlternative: false };
   }
-  if (urls.length === 1 && parseRepoUrl(urls[0]) && !/\b(?:alternatives?|other sources?|research)\b/i.test(query)) {
+  if (urls.length === 1 && parseRepoUrl(urls[0]) &&
+    !/\b(?:alternatives?|other sources?|research)\b/i.test(query) &&
+    !asksForExternalOpinions(query)) {
     return { kind: 'read', targets: urlTargets, requiresAlternative: false };
   }
   return { kind: 'research', targets: [], requiresAlternative: false };
