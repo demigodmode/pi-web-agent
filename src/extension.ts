@@ -42,7 +42,7 @@ function serializeForModel(result: WebExploreResponse): string {
     return `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`;
   }
   if (result.findings.length === 0 && result.sources.length === 0) {
-    return 'No usable evidence found.';
+    return ['No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
   }
   const linked = (result.evidence?.length ?? 0) > 0;
   const findings = result.findings.map((finding, index) => {

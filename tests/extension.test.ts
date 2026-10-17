@@ -290,6 +290,29 @@ describe('Pi extension entrypoint', () => {
     expect(rendered).not.toContain('A concise finding.');
   }, 15000);
 
+  it('sends an unreadable direct-source caveat to the model when no evidence was usable', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'The direct URL could not be read.'
+      })
+    };
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const result = await webExplore.execute('tool-call-1', { query: 'https://example.com/unreadable' });
+
+    expect(result.content[0].text).toContain('The direct URL could not be read.');
+    expect(result.details.terminalText).toBe('web_explore result');
+  });
+
   it('sanitizes terminal and bidi formatting controls in persisted legacy presentation views', () => {
     const tools: any[] = [];
     const pi = {
