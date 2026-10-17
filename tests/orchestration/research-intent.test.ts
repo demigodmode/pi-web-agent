@@ -141,6 +141,15 @@ describe('classifyResearchIntent', () => {
     expect(missingComparisonTargets(intent, evidence)).toEqual([]);
   });
 
+  it('recognizes a project hosted under a multi-label public suffix', () => {
+    const intent = classifyResearchIntent('Compare https://github.com/acme/widget with alternatives');
+    const evidence = [
+      { title: 'Widget', url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`, sourceKind: 'unknown' as const, method: 'github' as const, summary: 'Widget code', supports: [] },
+      { title: 'Other Project', url: 'https://other.co.uk/docs', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Other project docs', supports: [] }
+    ];
+    expect(missingComparisonTargets(intent, evidence)).toEqual([]);
+  });
+
   it('does not count a repository project website as an alternative to itself', () => {
     const intent = classifyResearchIntent('Compare https://github.com/acme/widget with alternatives');
     const evidence = [

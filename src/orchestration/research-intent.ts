@@ -61,15 +61,13 @@ function siteSubject(item: ResearchEvidence, requireTitleMatch: boolean): string
     const terms = [...subjectTerms(item.title)];
     return terms.length ? normalizedName(terms.join('')) : undefined;
   }
-  const parts = host.split('.');
-  const name = normalizedName(parts.at(-2) ?? '');
-  const alias = name.endsWith('js') && name.length > 4 ? name.slice(0, -2) : name;
-  if (!alias || GENERIC_SITE_NAMES.has(alias)) return undefined;
-  if (requireTitleMatch) {
-    const title = normalizedName(item.title.split(/[|–—-]/, 1)[0] ?? '');
-    if (!title.startsWith(alias)) return undefined;
-  }
-  return alias;
+  const title = normalizedName(item.title.split(/[|–—-]/, 1)[0] ?? '');
+  const candidates = host.split('.').slice(0, -1).reverse()
+    .map(normalizedName)
+    .map((name) => name.endsWith('js') && name.length > 4 ? name.slice(0, -2) : name)
+    .filter((name) => name.length >= 3 && !GENERIC_SITE_NAMES.has(name));
+  const matched = candidates.find((name) => title.startsWith(name));
+  return matched ?? (requireTitleMatch ? undefined : candidates[0]);
 }
 
 function representsNamedTarget(item: ResearchEvidence, target: string): boolean {
