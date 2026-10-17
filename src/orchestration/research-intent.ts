@@ -10,6 +10,7 @@ const GENERIC_SUBJECT_WORDS = new Set([
   'about', 'api', 'article', 'docs', 'documentation', 'guide', 'guides', 'home', 'index',
   'introduction', 'learn', 'overview', 'reference', 'resources', 'tutorial', 'tutorials'
 ]);
+const GENERIC_SITE_NAMES = new Set(['blog', 'docs', 'forum', 'news', 'community', 'medium', 'dev']);
 
 function hostOf(url: string): string | undefined {
   try {
@@ -28,6 +29,63 @@ function subjectTerms(title: string): Set<string> {
   return new Set(
     subject.toLowerCase().match(/[a-z0-9]{3,}/g)?.filter((word) => !GENERIC_SUBJECT_WORDS.has(word)) ?? []
   );
+}
+
+function normalizedName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function catalogSubject(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if ((host === 'npmjs.com' && parts[0] === 'package') ||
+      (host === 'pypi.org' && parts[0] === 'project') ||
+      (host === 'crates.io' && parts[0] === 'crates')) {
+      return parts[1] ? normalizedName(decodeURIComponent(parts[1])) : undefined;
+    }
+  } catch { /* An invalid URL has no catalog identity. */ }
+  return undefined;
+}
+
+function siteSubject(item: ResearchEvidence, requireTitleMatch: boolean): string | undefined {
+  const url = identityUrl(item);
+  const catalog = catalogSubject(url);
+  if (catalog) return catalog;
+  const repo = parseRepoUrl(url);
+  if (repo) return normalizedName(repo.repo);
+  const host = hostOf(url);
+  if (!host) return undefined;
+  if (isMultiSubjectHost(host)) {
+    const terms = [...subjectTerms(item.title)];
+    return terms.length ? normalizedName(terms.join('')) : undefined;
+  }
+  const parts = host.split('.');
+  const name = normalizedName(parts.at(-2) ?? '');
+  const alias = name.endsWith('js') && name.length > 4 ? name.slice(0, -2) : name;
+  if (!alias || GENERIC_SITE_NAMES.has(alias)) return undefined;
+  if (requireTitleMatch) {
+    const title = normalizedName(item.title.split(/[|–—-]/, 1)[0] ?? '');
+    if (!title.startsWith(alias)) return undefined;
+  }
+  return alias;
+}
+
+function representsNamedTarget(item: ResearchEvidence, target: string): boolean {
+  const wanted = normalizedName(target);
+  if (!wanted) return false;
+  const url = identityUrl(item);
+  const catalog = catalogSubject(url);
+  if (catalog) return catalog === wanted;
+  const repo = parseRepoUrl(url);
+  if (repo) return normalizedName(repo.repo) === wanted;
+  const host = hostOf(url);
+  if (host && isMultiSubjectHost(host)) {
+    return subjectTerms(item.title).has(target.toLowerCase()) ||
+      new URL(url).pathname.split('/').some((part) => normalizedName(part) === wanted);
+  }
+  return siteSubject(item, false) === wanted;
 }
 
 function coversUrl(item: ResearchEvidence, target: string): boolean {
@@ -63,12 +121,19 @@ function representsDistinctSubject(left: ResearchEvidence, right: ResearchEviden
   if (leftRepo && rightRepo) {
     return `${leftRepo.owner}/${leftRepo.repo}`.toLowerCase() !== `${rightRepo.owner}/${rightRepo.repo}`.toLowerCase();
   }
-  if (leftRepo || rightRepo) return true;
 
   const leftHost = hostOf(leftIdentityUrl);
   const rightHost = hostOf(rightIdentityUrl);
   if (!leftHost || !rightHost) return leftIdentityUrl !== rightIdentityUrl;
-  if (leftHost !== rightHost) return true;
+  if (leftHost !== rightHost) {
+    if (!preserveProjectIdentity) return true;
+    const leftSubject = siteSubject(left, false);
+    const rightSubject = siteSubject(right, true);
+    return leftSubject !== undefined && rightSubject !== undefined && leftSubject !== rightSubject;
+  }
+  const leftCatalog = catalogSubject(leftIdentityUrl);
+  const rightCatalog = catalogSubject(rightIdentityUrl);
+  if (leftCatalog || rightCatalog) return leftCatalog !== undefined && rightCatalog !== undefined && leftCatalog !== rightCatalog;
   if (preserveProjectIdentity && !isMultiSubjectHost(leftHost)) return false;
 
   const leftTerms = subjectTerms(left.title);
@@ -116,9 +181,7 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
     if (target.kind === 'url') {
       return !evidence.some((item) => coversTarget(item, target.value));
     }
-    const escaped = target.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-    const pattern = new RegExp(`\\b${escaped}\\b`, 'i');
-    return !evidence.some((item) => pattern.test([item.url, item.title, item.summary, ...item.supports].join(' ')));
+    return !evidence.some((item) => representsNamedTarget(item, target.value));
   }).map((target) => target.value);
   if (intent.requiresAlternative) {
     const requested = intent.targets.find((target): target is ResearchTarget & { kind: 'url' } => target.kind === 'url');

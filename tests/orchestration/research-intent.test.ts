@@ -48,6 +48,15 @@ describe('classifyResearchIntent', () => {
     expect(missingComparisonTargets(intent, evidence)).toEqual(['Vue']);
   });
 
+  it('does not cover a named target merely because another source mentions it', () => {
+    const intent = classifyResearchIntent('Compare https://react.dev/guide with Vue');
+    const evidence = [
+      { title: 'React guide', url: 'https://react.dev/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React differs from Vue', supports: ['Vue uses a different model'] },
+      { title: 'React versus Vue', url: 'https://blog.example/react-vs-vue', sourceKind: 'community' as const, method: 'http' as const, summary: 'A comparison of React and Vue', supports: [] }
+    ];
+    expect(missingComparisonTargets(intent, evidence)).toEqual(['Vue']);
+  });
+
   it('leaves a generic API question as research', () => {
     expect(classifyResearchIntent('How does the React API work?')).toEqual({ kind: 'research', targets: [], requiresAlternative: false });
   });
@@ -84,6 +93,24 @@ describe('classifyResearchIntent', () => {
     expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
   });
 
+  it('does not count commentary about the original project as an alternative', () => {
+    const intent = classifyResearchIntent('Compare https://react.dev/learn with alternatives');
+    const evidence = [
+      { title: 'React learn', url: 'https://react.dev/learn', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React guide', supports: [] },
+      { title: 'React vs Vue', url: 'https://blog.example/react-vs-vue', sourceKind: 'community' as const, method: 'http' as const, summary: 'React and Vue compared', supports: [] }
+    ];
+    expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
+  });
+
+  it('does not mistake a blog branded article for a different project', () => {
+    const intent = classifyResearchIntent('Compare https://react.dev/learn with alternatives');
+    const evidence = [
+      { title: 'React learn', url: 'https://react.dev/learn', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React guide', supports: [] },
+      { title: 'Blog: React vs Vue', url: 'https://blog.example/react-vs-vue', sourceKind: 'community' as const, method: 'http' as const, summary: 'React and Vue compared', supports: [] }
+    ];
+    expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
+  });
+
   it('counts distinct subjects on the same documentation host as alternatives', () => {
     const intent = classifyResearchIntent('Compare https://developer.mozilla.org/en-US/docs/Web/JavaScript with alternatives');
     const evidence = [
@@ -111,6 +138,24 @@ describe('classifyResearchIntent', () => {
       { title: 'Other Project', url: 'https://otherproject.dev/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Alternative project documentation', supports: [] }
     ];
 
+    expect(missingComparisonTargets(intent, evidence)).toEqual([]);
+  });
+
+  it('does not count a repository project website as an alternative to itself', () => {
+    const intent = classifyResearchIntent('Compare https://github.com/acme/widget with alternatives');
+    const evidence = [
+      { title: 'Widget', url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`, sourceKind: 'unknown' as const, method: 'github' as const, summary: 'Widget code', supports: [] },
+      { title: 'Widget documentation', url: 'https://widget.dev/docs', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Widget docs', supports: [] }
+    ];
+    expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
+  });
+
+  it('distinguishes package identities on the same registry host', () => {
+    const intent = classifyResearchIntent('Compare https://www.npmjs.com/package/react with alternatives');
+    const evidence = [
+      { title: 'react - npm', url: 'https://www.npmjs.com/package/react', sourceKind: 'package-page' as const, method: 'http' as const, summary: 'React package', supports: [] },
+      { title: 'vue - npm', url: 'https://www.npmjs.com/package/vue', sourceKind: 'package-page' as const, method: 'http' as const, summary: 'Vue package', supports: [] }
+    ];
     expect(missingComparisonTargets(intent, evidence)).toEqual([]);
   });
 });
