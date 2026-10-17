@@ -1,19 +1,54 @@
 import { extractDirectUrls } from './direct-url.js';
 import type { ResearchEvidence } from './research-types.js';
 import { parseRepoUrl } from '../repo/repo-url.js';
+import { canonicalizeUrl } from './url.js';
 
 export type ResearchTarget = { kind: 'url' | 'name'; value: string };
 export type ResearchIntent = { kind: 'read' | 'compare' | 'research'; targets: ResearchTarget[]; requiresAlternative: boolean };
 
-function comparisonIdentity(url: string): string {
-  const repo = parseRepoUrl(url);
-  if (repo) return `github:${repo.owner.toLowerCase()}/${repo.repo.toLowerCase()}`;
+const GENERIC_SUBJECT_WORDS = new Set([
+  'about', 'api', 'article', 'docs', 'documentation', 'guide', 'guides', 'home', 'index',
+  'introduction', 'learn', 'overview', 'reference', 'resources', 'tutorial', 'tutorials'
+]);
 
+function hostOf(url: string): string | undefined {
   try {
-    return `host:${new URL(url).hostname.toLowerCase().replace(/^www\./, '')}`;
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
   } catch {
-    return `url:${url}`;
+    return undefined;
   }
+}
+
+function subjectTerms(title: string): Set<string> {
+  const subject = title.split(/[|–—-]/, 1)[0] ?? title;
+  return new Set(
+    subject.toLowerCase().match(/[a-z0-9]{3,}/g)?.filter((word) => !GENERIC_SUBJECT_WORDS.has(word)) ?? []
+  );
+}
+
+function coversUrl(item: ResearchEvidence, target: string): boolean {
+  const requested = canonicalizeUrl(target);
+  return requested !== undefined && [item.requestedUrl, item.url]
+    .some((url) => url !== undefined && canonicalizeUrl(url) === requested);
+}
+
+function representsDistinctSubject(left: ResearchEvidence, right: ResearchEvidence): boolean {
+  const leftRepo = parseRepoUrl(left.url);
+  const rightRepo = parseRepoUrl(right.url);
+  if (leftRepo || rightRepo) {
+    return leftRepo !== undefined && rightRepo !== undefined &&
+      `${leftRepo.owner}/${leftRepo.repo}`.toLowerCase() !== `${rightRepo.owner}/${rightRepo.repo}`.toLowerCase();
+  }
+
+  const leftHost = hostOf(left.url);
+  const rightHost = hostOf(right.url);
+  if (!leftHost || !rightHost) return left.url !== right.url;
+  if (leftHost !== rightHost) return true;
+
+  const leftTerms = subjectTerms(left.title);
+  const rightTerms = subjectTerms(right.title);
+  return leftTerms.size > 0 && rightTerms.size > 0 &&
+    ![...leftTerms].some((term) => rightTerms.has(term));
 }
 
 function asksForExternalOpinions(query: string): boolean {
@@ -55,7 +90,7 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
     if (target.kind === 'url') {
       const requestedRepo = parseRepoUrl(target.value);
       return !evidence.some((item) => {
-        if (extractDirectUrls(item.url)[0] === target.value) return true;
+        if (coversUrl(item, target.value)) return true;
         const foundRepo = parseRepoUrl(item.url);
         return requestedRepo && !requestedRepo.refAndPath && foundRepo && item.method === 'github' &&
           requestedRepo.owner.toLowerCase() === foundRepo.owner.toLowerCase() && requestedRepo.repo.toLowerCase() === foundRepo.repo.toLowerCase();
@@ -66,10 +101,11 @@ export function missingComparisonTargets(intent: ResearchIntent, evidence: Resea
     return !evidence.some((item) => pattern.test([item.url, item.title, item.summary, ...item.supports].join(' ')));
   }).map((target) => target.value);
   if (intent.requiresAlternative) {
-    const values = intent.targets.length > 0
-      ? evidence.map((item) => comparisonIdentity(item.url))
-      : evidence.map((item) => extractDirectUrls(item.url)[0] ?? item.url);
-    if (new Set(values).size < 2) missing.push('alternatives');
+    const requested = intent.targets.find((target): target is ResearchTarget & { kind: 'url' } => target.kind === 'url');
+    const primary = requested ? evidence.filter((item) => coversUrl(item, requested.value)) : evidence;
+    if (!primary.some((item) => evidence.some((alternative) => alternative !== item && representsDistinctSubject(item, alternative)))) {
+      missing.push('alternatives');
+    }
   }
   return missing;
 }

@@ -260,6 +260,31 @@ describe('research orchestrator types', () => {
     expect(result.evidence[0]?.url).toBe('https://example.com/thread');
   });
 
+  it('keeps a redirected direct comparison target associated with its requested URL', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: [],
+        evidence: [{ title: 'CSS | MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/CSS', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'CSS styling guide', supports: [] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async () => ({
+        status: 'ok' as const,
+        url: 'https://www.example.com/docs/',
+        content: { title: 'Example docs', text: 'Readable documentation for the requested product.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Compare https://example.com/docs with alternatives' });
+
+    expect(result.evidence.find((item) => item.url === 'https://www.example.com/docs/')?.requestedUrl).toBe('https://example.com/docs');
+    expect(result.metadata?.missingComparisonTargets).toEqual([]);
+  });
+
   it('uses a late query-relevant passage for direct and direct-headless evidence', async () => {
     const lateAnswer = 'Lunar archive transfer requires the signed manifest before upload.';
     const worker = {

@@ -16,6 +16,8 @@ export type ResearchMethod = 'search' | 'http' | 'headless' | 'firecrawl' | 'git
 export type ResearchEvidence = {
   title: string;
   url: string;
+  /** Original direct URL when this evidence came from a redirected request. */
+  requestedUrl?: string;
   sourceKind: ResearchSourceKind;
   method: Exclude<ResearchMethod, 'search'>;
   summary: string;

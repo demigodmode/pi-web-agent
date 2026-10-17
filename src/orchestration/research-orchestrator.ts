@@ -45,7 +45,7 @@ function isBotCheckContent({ title = '', text, botCheck }: { title?: string; tex
   return hasBotCheckContent(`${title}\n${text}`);
 }
 
-function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedContent = false }: { trustedContent?: boolean } = {}): ResearchEvidence | null {
+function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedContent = false, requestedUrl }: { trustedContent?: boolean; requestedUrl?: string } = {}): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (!trustedContent && isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
@@ -53,6 +53,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     return {
       title: result.content.title ?? result.url,
       url: result.url,
+      ...(requestedUrl ? { requestedUrl } : {}),
       sourceKind: classifyEvidenceUrl(result.url),
       method: result.metadata.method,
       summary: result.content.text,
@@ -67,6 +68,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
   return {
     title: result.content.title ?? result.url,
     url: result.url,
+    ...(requestedUrl ? { requestedUrl } : {}),
     sourceKind: classifyEvidenceUrl(result.url),
     method: result.metadata.method,
     summary: selectRelevantExcerpt(result.content.text, query, 180),
@@ -77,7 +79,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
   };
 }
 
-function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): ResearchEvidence | null {
+function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string, requestedUrl?: string): ResearchEvidence | null {
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
@@ -85,6 +87,7 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): 
   return {
     title: result.content.title ?? result.url,
     url: result.url,
+    ...(requestedUrl ? { requestedUrl } : {}),
     sourceKind: classifyEvidenceUrl(result.url),
     method: 'headless',
     summary: selectRelevantExcerpt(result.content.text, query, 180),
@@ -346,7 +349,7 @@ export function createResearchOrchestrator({
           const directResult = await budget.wait(directWork);
           throwIfAborted(signal);
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
-          const directEvidence = evidenceFromFetch(directResult, query);
+          const directEvidence = evidenceFromFetch(directResult, query, { requestedUrl: url });
           if (directEvidence) {
             allEvidence.push(directEvidence);
             continue;
@@ -370,7 +373,7 @@ export function createResearchOrchestrator({
               const headlessWork = headlessFetch({ url: directResult.url, query, signal: budget.signal });
               const headlessResult = await budget.wait(headlessWork);
               throwIfAborted(signal);
-              const headlessEvidence = evidenceFromHeadless(headlessResult, query);
+              const headlessEvidence = evidenceFromHeadless(headlessResult, query, url);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
               } else {

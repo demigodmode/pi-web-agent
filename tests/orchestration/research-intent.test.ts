@@ -74,6 +74,16 @@ describe('classifyResearchIntent', () => {
     expect(missingComparisonTargets(intent, evidence)).toEqual(['alternatives']);
   });
 
+  it('counts distinct subjects on the same documentation host as alternatives', () => {
+    const intent = classifyResearchIntent('Compare https://developer.mozilla.org/en-US/docs/Web/JavaScript with alternatives');
+    const evidence = [
+      { title: 'JavaScript | MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'JavaScript language guide', supports: [] },
+      { title: 'CSS | MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/CSS', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'CSS styling guide', supports: [] }
+    ];
+
+    expect(missingComparisonTargets(intent, evidence)).toEqual([]);
+  });
+
   it('counts different GitHub repositories as distinct alternatives', () => {
     const intent = classifyResearchIntent('Compare https://github.com/acme/widget with alternatives');
     const evidence = [
