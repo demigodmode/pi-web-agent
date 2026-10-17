@@ -98,6 +98,7 @@ export default function extension(pi: ExtensionAPI) {
   const activeRunSettlements = new Map<Workflow, Set<Promise<void>>>();
   const retiring = new Set<Workflow>();
   const closePromises = new Map<Workflow, Promise<void>>();
+  let sessionWorkflows = new Set<Workflow>();
 
   const closeWorkflowNow = (workflow: Workflow): Promise<void> => {
     const existing = closePromises.get(workflow);
@@ -154,6 +155,7 @@ export default function extension(pi: ExtensionAPI) {
       if (cachedWorkflow) retire(cachedWorkflow);
       cachedBackendKey = backendKey;
       cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache });
+      sessionWorkflows.add(cachedWorkflow);
       cachedWebExplore = createWebExploreTool({ explore: leased(cachedWorkflow) });
     }
 
@@ -161,17 +163,16 @@ export default function extension(pi: ExtensionAPI) {
   }
 
   pi.on('session_shutdown', async () => {
-    const workflow = cachedWorkflow;
+    const workflows = sessionWorkflows;
+    sessionWorkflows = new Set<Workflow>();
     cachedWorkflow = undefined;
     cachedWebExplore = undefined;
     cachedBackendKey = undefined;
     // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
     const oldCache = repoCache;
     repoCache = makeRepoCache();
-    if (workflow) {
-      await Promise.allSettled([...(activeRunSettlements.get(workflow) ?? [])]);
-      await closeWorkflowNow(workflow);
-    }
+    await Promise.allSettled([...workflows].flatMap((workflow) => [...(activeRunSettlements.get(workflow) ?? [])]));
+    await Promise.allSettled([...workflows].map(closeWorkflowNow));
     await oldCache.close();
   });
 

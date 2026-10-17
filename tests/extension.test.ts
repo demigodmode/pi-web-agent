@@ -481,6 +481,45 @@ describe('Pi extension entrypoint', () => {
     expect(closeCache).toHaveBeenCalledTimes(1);
   });
 
+  it('waits for a replaced workflow before closing its session repo cache', async () => {
+    vi.resetModules();
+    let releaseRun!: () => void;
+    const first = {
+      run: vi.fn(() => new Promise((resolve) => { releaseRun = () => resolve(answer); })),
+      close: vi.fn(async () => undefined)
+    };
+    const second = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    vi.doMock('../src/orchestration/index.js', () => ({
+      createResearchWorkflow: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
+    }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    let backend = 'duckduckgo';
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: backend }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const inFlight = webExplore.execute('call-1', { query: 'first' });
+    await vi.waitFor(() => expect(first.run).toHaveBeenCalledTimes(1));
+    backend = 'brave';
+    await webExplore.execute('call-2', { query: 'second' });
+
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    expect(first.close).not.toHaveBeenCalled();
+    expect(closeCache).not.toHaveBeenCalled();
+    releaseRun();
+    await inFlight;
+    await shutdown;
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(second.close).toHaveBeenCalledTimes(1);
+    expect(closeCache).toHaveBeenCalledTimes(1);
+  });
+
   it('owns the repo cache: shutdown awaits its close, and the next session gets a fresh one', async () => {
     vi.resetModules();
     const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
