@@ -119,4 +119,36 @@ describe('buildExplorePresentation', () => {
     const preview = presentation.views.preview as string;
     expect(preview).toContain('(fanout; skipped: brave, exa)');
   });
+
+  it('removes terminal control characters from source-controlled evidence fields', () => {
+    const control = '\u001b[31m';
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      findings: [`Finding ${control}from a page`],
+      sources: [{ title: `Title ${control}`, url: `https://example.com/${control}`, method: 'http' }],
+      findingSourceIds: [[`S${control}1`]],
+      evidence: [{
+        id: `S${control}1`,
+        title: `Evidence title ${control}`,
+        url: `https://evidence.example/${control}`,
+        method: 'http',
+        excerpts: [{ text: `Excerpt ${control}text`, anchor: `section${control}one` }],
+        truncated: false
+      }],
+      caveat: `Caveat ${control}text`,
+      metadata: {
+        searchPasses: 1,
+        fetchedPages: 1,
+        headlessAttempts: 0,
+        exhaustedBudget: false
+      }
+    });
+
+    for (const view of [presentation.views.preview, presentation.views.verbose]) {
+      expect(view).not.toMatch(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/);
+      expect(view).not.toContain('\u001b');
+    }
+    expect(presentation.sources).not.toContainEqual(expect.objectContaining({ title: expect.stringContaining('\u001b') }));
+    expect(presentation.sources).not.toContainEqual(expect.objectContaining({ url: expect.stringContaining('\u001b') }));
+  });
 });

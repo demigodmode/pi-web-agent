@@ -12,12 +12,16 @@ function internalReaderLabel(method?: FetchMethod) {
   return 'web_explore';
 }
 
+function terminalText(text: string): string {
+  return text.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+}
+
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   if (result.status === 'error') {
     return {
       mode: 'compact',
       views: {
-        compact: `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`
+        compact: `Research failed: ${terminalText(result.error?.message ?? 'Unknown research failure.')}`
       }
     };
   }
@@ -34,11 +38,12 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     : undefined;
   const hasEvidence = result.findings.length > 0 || result.sources.length > 0;
   const evidenceLines = hasEvidence
-    ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${finding}`)
+    ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${terminalText(finding)}`)
     : ['No usable evidence found.'];
   const verboseFindings = result.findings.map((finding, index) => {
     const ids = result.findingSourceIds?.[index] ?? [];
-    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${ids.length ? `[${ids.join(', ')}] ` : ''}${finding}`;
+    const sourceIds = ids.map(terminalText);
+    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${terminalText(finding)}`;
   });
   const preview = [
     ...evidenceLines,
@@ -51,17 +56,17 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
     'Sources',
-    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${source.title}: ${source.url}`),
+    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${terminalText(source.title)}: ${terminalText(source.url)}`),
     ...(result.evidence?.length ? [
       '',
       'Evidence',
       ...result.evidence.flatMap((item) => [
-        `- [${item.id}] ${item.title}: ${item.url}`,
-        ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${excerpt.anchor}: ` : ''}${excerpt.text}`)
+        `- [${terminalText(item.id)}] ${terminalText(item.title)}: ${terminalText(item.url)}`,
+        ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${terminalText(excerpt.anchor)}: ` : ''}${terminalText(excerpt.text)}`)
       ])
     ] : []),
     internalSummary ? `\nInternal tools\n${internalSummary}` : undefined,
-    result.caveat ? `\nCaveat\n${result.caveat}` : undefined,
+    result.caveat ? `\nCaveat\n${terminalText(result.caveat)}` : undefined,
     attemptLines(result.metadata?.attempts)
   ]
     .filter((line) => line !== undefined)
@@ -82,6 +87,10 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
       sourceCount: result.sources.length,
       resultCount: result.findings.length
     },
-    sources: result.sources
+    sources: result.sources.map((source) => ({
+      ...source,
+      title: terminalText(source.title),
+      url: terminalText(source.url)
+    }))
   };
 }
