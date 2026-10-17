@@ -366,6 +366,31 @@ describe('research workflow composition', () => {
     expect(result.caveat).toBeUndefined();
   });
 
+  it('keeps searching for documentary evidence when a technical request also asks for forum discussions', async () => {
+    const search = vi.fn(async () => ({
+      status: 'ok' as const,
+      results: [
+        { title: 'User discussion', url: 'https://reddit.com/r/react/comments/123', snippet: 'User experience' },
+        { title: 'Issue discussion', url: 'https://github.com/facebook/react/issues/456', snippet: 'User experience' }
+      ],
+      metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+    }));
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok', url,
+        content: { title: url, text: 'People described their practical experience with this API.' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: false }
+      }),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'Find docs and forum discussions about this API' });
+
+    expect(search.mock.calls.length).toBeGreaterThan(1);
+    expect(result.caveat).toContain('community');
+  });
+
   it('short-circuits a direct reader request while keeping source authority neutral', async () => {
     const fullPdfText =
       'This is a comprehensive technical document extracted from a PDF that contains detailed implementation guides and best practices. The document is very long with much more than 180 characters of content that needs to be preserved in full for accurate research results.';
