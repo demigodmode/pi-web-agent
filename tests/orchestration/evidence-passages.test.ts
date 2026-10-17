@@ -10,6 +10,23 @@ describe('selectEvidencePassages', () => {
     expect(result.truncated).toBe(true);
   });
 
+  it('does not score a query term inside a longer word', () => {
+    const text = [
+      'The capital city has a large population.',
+      'Capital projects require annual budget approval.',
+      'Capital letters are used at the start of sentences.',
+      'The API contract requires an Authorization header.'
+    ].join('\n\n');
+
+    const result = selectEvidencePassages(text, 'API');
+
+    expect(result.excerpts).toEqual([
+      'The capital city has a large population.',
+      'Capital projects require annual budget approval.',
+      'The API contract requires an Authorization header.'
+    ]);
+  });
+
   it('preserves line breaks in a relevant code block', () => {
     const code = '```ts\nconst coverage = {\n  provider: "v8"\n};\n```';
     const result = selectEvidencePassages(`Intro.\n\n${code}`, 'coverage provider');

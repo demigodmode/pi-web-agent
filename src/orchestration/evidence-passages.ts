@@ -39,13 +39,20 @@ function splitLongPart(part: string): string[] {
   return chunks;
 }
 
+function termsOf(text: string): Set<string> {
+  return new Set(
+    (text.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu) ?? [])
+      .filter((term) => [...term].length >= 3)
+  );
+}
+
 export function selectEvidencePassages(text: string, query: string) {
   const paragraphs = paragraphsOf(text);
   const parts = paragraphs.flatMap(splitLongPart);
-  const terms = [...new Set((query.toLowerCase().replace(/https?:\/\/\S+/g, '').match(/[\p{L}\p{N}]{3,}/gu) ?? []))];
+  const terms = termsOf(query.replace(/https?:\/\/\S+/g, ''));
   const ranked = parts.map((part, index) => {
-    const lower = part.toLowerCase();
-    return { part, index, score: terms.filter((term) => lower.includes(term)).length };
+    const partTerms = termsOf(part);
+    return { part, index, score: [...terms].filter((term) => partTerms.has(term)).length };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
   const selected = ranked.slice(0, MAX_PASSAGES).sort((a, b) => a.index - b.index);
   const excerpts = selected.map(({ part }) => part.slice(0, MAX_PASSAGE_CHARS));
