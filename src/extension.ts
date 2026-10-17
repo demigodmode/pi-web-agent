@@ -88,18 +88,25 @@ export default function extension(pi: ExtensionAPI) {
   // Clones live for the Pi session (#72): the extension owns the cache, not a backend set,
   // so a backend config change keeps them and session_shutdown removes them.
   const makeRepoCache = (pi as ExtensionAPI & { __repoCacheFactory?: () => RepoCache }).__repoCacheFactory ?? (() => createRepoCache());
-  let repoCache = makeRepoCache();
-
-  let cachedBackendKey: string | undefined;
-  let cachedWorkflow: Workflow | undefined;
-  let cachedWebExplore: ReturnType<typeof createWebExploreTool> | undefined;
+  type Session = {
+    repoCache: RepoCache;
+    cachedBackendKey?: string;
+    cachedWorkflow?: Workflow;
+    cachedWebExplore?: ReturnType<typeof createWebExploreTool>;
+    workflows: Set<Workflow>;
+    operations: Set<Promise<unknown>>;
+  };
+  const makeSession = (): Session => ({
+    repoCache: makeRepoCache(),
+    workflows: new Set<Workflow>(),
+    operations: new Set<Promise<unknown>>()
+  });
+  let session = makeSession();
   // Runs in flight per workflow, so a replaced workflow is never closed mid-run.
   const activeRuns = new Map<Workflow, number>();
   const activeRunSettlements = new Map<Workflow, Set<Promise<void>>>();
   const retiring = new Set<Workflow>();
   const closePromises = new Map<Workflow, Promise<void>>();
-  let sessionWorkflows = new Set<Workflow>();
-
   const closeWorkflowNow = (workflow: Workflow): Promise<void> => {
     const existing = closePromises.get(workflow);
     if (existing) return existing;
@@ -146,34 +153,30 @@ export default function extension(pi: ExtensionAPI) {
     }
   });
 
-  async function getConfiguredWebExplore() {
+  async function getConfiguredWebExplore(configuredSession = session) {
     if (injectedWebExplore) return injectedWebExplore;
 
     const backendConfig = await getEffectiveBackendConfig(pi);
     const backendKey = JSON.stringify(backendConfig);
-    if (!cachedWebExplore || cachedBackendKey !== backendKey) {
-      if (cachedWorkflow) retire(cachedWorkflow);
-      cachedBackendKey = backendKey;
-      cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache });
-      sessionWorkflows.add(cachedWorkflow);
-      cachedWebExplore = createWebExploreTool({ explore: leased(cachedWorkflow) });
+    if (!configuredSession.cachedWebExplore || configuredSession.cachedBackendKey !== backendKey) {
+      if (configuredSession.cachedWorkflow) retire(configuredSession.cachedWorkflow);
+      configuredSession.cachedBackendKey = backendKey;
+      configuredSession.cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache: configuredSession.repoCache });
+      configuredSession.workflows.add(configuredSession.cachedWorkflow);
+      configuredSession.cachedWebExplore = createWebExploreTool({ explore: leased(configuredSession.cachedWorkflow) });
     }
 
-    return cachedWebExplore;
+    return configuredSession.cachedWebExplore;
   }
 
   pi.on('session_shutdown', async () => {
-    const workflows = sessionWorkflows;
-    sessionWorkflows = new Set<Workflow>();
-    cachedWorkflow = undefined;
-    cachedWebExplore = undefined;
-    cachedBackendKey = undefined;
+    const shuttingDown = session;
+    session = makeSession();
     // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
-    const oldCache = repoCache;
-    repoCache = makeRepoCache();
-    await Promise.allSettled([...workflows].flatMap((workflow) => [...(activeRunSettlements.get(workflow) ?? [])]));
-    await Promise.allSettled([...workflows].map(closeWorkflowNow));
-    await oldCache.close();
+    await Promise.allSettled([...shuttingDown.operations]);
+    await Promise.allSettled([...shuttingDown.workflows].flatMap((workflow) => [...(activeRunSettlements.get(workflow) ?? [])]));
+    await Promise.allSettled([...shuttingDown.workflows].map(closeWorkflowNow));
+    await shuttingDown.repoCache.close();
   });
 
   pi.on('session_start', async (_event, ctx) => {
@@ -204,34 +207,43 @@ export default function extension(pi: ExtensionAPI) {
       query: Type.String({ description: 'Web research question to explore.' })
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
-      const webExplore = await getConfiguredWebExplore();
-      const result: WebExploreResponse = await webExplore({
-        query: params.query,
-        ...(signal ? { signal } : {}),
-        onProgress(progress) {
-          const terminalText = formatResearchProgress(progress);
-          try {
-            onUpdate?.({
-              content: [{ type: 'text', text: terminalText }],
-              details: { terminalText, terminalTextExpanded: terminalText }
-            });
-          } catch { /* A closed display must not fail research. */ }
-        }
-      });
+      const executionSession = session;
+      const operation = (async () => {
+        const webExplore = await getConfiguredWebExplore(executionSession);
+        const result: WebExploreResponse = await webExplore({
+          query: params.query,
+          ...(signal ? { signal } : {}),
+          onProgress(progress) {
+            const terminalText = formatResearchProgress(progress);
+            try {
+              onUpdate?.({
+                content: [{ type: 'text', text: terminalText }],
+                details: { terminalText, terminalTextExpanded: terminalText }
+              });
+            } catch { /* A closed display must not fail research. */ }
+          }
+        });
 
-      // Terminal display honors the user's presentation mode; the model gets the full findings.
-      // The fallback must stay terse: never fall back to serializeForModel here, or a missing
-      // presentation would dump the full findings into the terminal.
-      const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
-      const terseFallback = 'web_explore result';
-      const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
-      const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
+        // Terminal display honors the user's presentation mode; the model gets the full findings.
+        // The fallback must stay terse: never fall back to serializeForModel here, or a missing
+        // presentation would dump the full findings into the terminal.
+        const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
+        const terseFallback = 'web_explore result';
+        const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
+        const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
 
-      return {
-        content: [{ type: 'text', text: serializeForModel(result) }],
-        details: { ...result, terminalText, terminalTextExpanded },
-        isError: result.status === 'error'
-      };
+        return {
+          content: [{ type: 'text' as const, text: serializeForModel(result) }],
+          details: { ...result, terminalText, terminalTextExpanded },
+          isError: result.status === 'error'
+        };
+      })();
+      executionSession.operations.add(operation);
+      try {
+        return await operation;
+      } finally {
+        executionSession.operations.delete(operation);
+      }
     },
     renderResult(toolResult, options) {
       const details = toolResult.details as
