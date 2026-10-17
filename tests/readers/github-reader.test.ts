@@ -272,13 +272,27 @@ describe('createGithubReader', () => {
     resolveCredential({ source: 'none' });
   });
 
-  it('returns an error when the first comments page fails', async () => {
+  it('retains the thread body and marks comments partial when the first comments page fails', async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(ok(JSON.stringify({ title: 'Issue', body: 'body' }), 'application/json'))
       .mockResolvedValueOnce({ ok: false, status: 503, headers: new Headers(), text: async () => '' });
     const res = await createGithubReader({ fetchImpl }).read('https://github.com/o/r/issues/1');
-    expect(res.status).toBe('error');
-    expect(res.error?.failure).toMatchObject({ kind: 'transient', httpStatus: 503 });
+    expect(res.status).toBe('ok');
+    expect(res.content?.text).toContain('body');
+    expect(res.metadata.partialComments).toBe(true);
+  });
+
+  it('retains the thread body when the reader timeout interrupts the first comments page', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(ok(JSON.stringify({ title: 'Issue', body: 'body' }), 'application/json'))
+      .mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_, reject) => {
+        if (init.signal?.aborted) reject(new Error('reader timeout'));
+        else init.signal?.addEventListener('abort', () => reject(new Error('reader timeout')), { once: true });
+      }));
+    const res = await createGithubReader({ fetchImpl, timeoutMs: 1 }).read('https://github.com/o/r/issues/1');
+    expect(res.status).toBe('ok');
+    expect(res.content?.text).toContain('body');
+    expect(res.metadata.partialComments).toBe(true);
   });
 
   it('does not attach authorization to an unapproved README download host', async () => {

@@ -12,6 +12,8 @@ type GithubReaderDeps = {
   fetchImpl?: typeof fetch;
   resolveToken?: () => Promise<GithubToken>;
   now?: () => number;
+  /** Test seam for the reader-wide request timeout. */
+  timeoutMs?: number;
 };
 
 function parseGithub(url: string): URL | undefined {
@@ -119,7 +121,7 @@ function nextCommentPage(link: string | null, prefix: string): { next?: string; 
   } catch { return { rejected: true }; }
 }
 
-export function createGithubReader({ fetchImpl = fetch, resolveToken = () => resolveGithubToken(), now = Date.now }: GithubReaderDeps = {}): SpecialContentReader {
+export function createGithubReader({ fetchImpl = fetch, resolveToken = () => resolveGithubToken(), now = Date.now, timeoutMs = PAGE_FETCH_TIMEOUT_MS }: GithubReaderDeps = {}): SpecialContentReader {
   let cachedToken: { value: GithubToken; expiresAt: number } | undefined;
   let tokenLookup: Promise<GithubToken> | undefined;
 
@@ -158,7 +160,7 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
     return okResponse(url, `${owner}/${repo}/${path}`, text);
   }
 
-  async function readThread(url: string, owner: string, repo: string, kind: 'issues' | 'pulls', num: string, signal: AbortSignal, credential: GithubToken): Promise<WebFetchResponse> {
+  async function readThread(url: string, owner: string, repo: string, kind: 'issues' | 'pulls', num: string, signal: AbortSignal, callerSignal: AbortSignal | undefined, credential: GithubToken): Promise<WebFetchResponse> {
     const base = `https://api.github.com/repos/${owner}/${repo}/${kind}/${num}`;
     const item = (await getJson<{ title?: string; body?: string }>(base, signal, credential)).data;
     const commentsPrefix = `${base}/comments`;
@@ -175,7 +177,7 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
         if (page === MAX_COMMENT_PAGES - 1) { partial = true; break; }
         target = next;
       } catch (error) {
-        if (signal.aborted || page === 0) throw error;
+        if (callerSignal?.aborted) throw error;
         partial = true;
         break;
       }
@@ -204,7 +206,7 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
       const shape = classifyGithubShape(url);
       if (!shape) return fail(requestedUrl, 'Unsupported GitHub URL shape for the reader.');
       // One budget for the whole read: a thread is two API calls.
-      const readSignal = requestSignal(signal, PAGE_FETCH_TIMEOUT_MS);
+      const readSignal = requestSignal(signal, timeoutMs);
       let credential: GithubToken = { source: 'none' };
 
       try {
@@ -213,9 +215,9 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
           case 'blob':
             return await readBlob(requestedUrl, shape.owner, shape.repo, shape.ref!, shape.path!, readSignal, credential);
           case 'issue':
-            return await readThread(requestedUrl, shape.owner, shape.repo, 'issues', shape.num!, readSignal, credential);
+            return await readThread(requestedUrl, shape.owner, shape.repo, 'issues', shape.num!, readSignal, signal, credential);
           case 'pull':
-            return await readThread(requestedUrl, shape.owner, shape.repo, 'pulls', shape.num!, readSignal, credential);
+            return await readThread(requestedUrl, shape.owner, shape.repo, 'pulls', shape.num!, readSignal, signal, credential);
           case 'repo-root':
             return await readRepoRoot(requestedUrl, shape.owner, shape.repo, readSignal, credential);
         }
