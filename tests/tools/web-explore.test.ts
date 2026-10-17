@@ -2,6 +2,32 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 
 describe('web_explore tool', () => {
+  it('pairs all five findings with their sources', async () => {
+    const evidence = Array.from({ length: 6 }, (_, index) => ({
+      title: `Source ${index + 1}`,
+      url: `https://example.com/${index + 1}`,
+      sourceKind: 'official-docs' as const,
+      method: index === 4 ? 'headless' as const : 'http' as const,
+      summary: `Finding ${index + 1}`,
+      supports: [`Finding ${index + 1}`]
+    }));
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence,
+        workerPass: {}
+      })
+    });
+
+    const result = await webExplore({ query: 'Compare the six sources' });
+
+    expect(result.findings).toEqual(['Finding 1', 'Finding 2', 'Finding 3', 'Finding 4', 'Finding 5']);
+    expect(result.sources).toEqual(evidence.slice(0, 5).map(({ title, url, method }) => ({ title, url, method })));
+    expect(result.presentation?.views.preview).toContain('[web_fetch_headless] Finding 5');
+    expect(result.presentation?.views.verbose).toContain('Source 5: https://example.com/5');
+    expect(result.presentation?.views.verbose).not.toContain('Source 6: https://example.com/6');
+  });
+
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({

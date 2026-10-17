@@ -63,7 +63,8 @@ export function createWebExploreTool({
       return { ...failed, presentation: buildExplorePresentation(failed) };
     }
 
-    const sources = result.evidence.slice(0, 4).map((item) => ({
+    const selectedEvidence = result.evidence.slice(0, 5);
+    const sources = selectedEvidence.map((item) => ({
       title: item.title,
       url: item.url,
       method: item.method
@@ -72,7 +73,7 @@ export function createWebExploreTool({
     const decisionPartial = result.decision.action !== 'answer';
     const coveragePartial = reasons.includes('partial-search-coverage');
     const synthesized = synthesizeAnswer({
-      evidence: result.evidence,
+      evidence: selectedEvidence,
       partial: decisionPartial || coveragePartial,
       // A confident answer with partial coverage mentions only the coverage, not unrelated quality notes.
       caveatReasons: decisionPartial ? reasons : ['partial-search-coverage']
