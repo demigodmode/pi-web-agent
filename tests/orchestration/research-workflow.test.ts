@@ -4,6 +4,33 @@ import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 
 describe('research workflow composition', () => {
+  it('uses two readable supplied comparison sources without an extra search', async () => {
+    const search = vi.fn(async () => ({ status: 'ok' as const, results: [], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }));
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: async ({ url }) => ({ status: 'ok', url, content: { title: url, text: `Readable information from ${url}.` }, metadata: { method: 'pdf', cacheHit: false, truncated: false } }),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await workflow.run({ query: 'Compare https://example.com/a.pdf and https://example.com/b.pdf' });
+
+    expect(search).not.toHaveBeenCalled();
+    expect(result.evidence.map((item) => item.url)).toEqual(['https://example.com/a.pdf', 'https://example.com/b.pdf']);
+  });
+
+  it('names an uncovered comparison target in the public result', async () => {
+    const workflow = createResearchWorkflow({
+      search: async () => ({ status: 'ok', results: [
+        { title: 'React guide A', url: 'https://react.dev/a', snippet: 'React details' },
+        { title: 'React guide B', url: 'https://react.dev/b', snippet: 'React details' }
+      ], metadata: { backend: 'duckduckgo', cacheHit: false } }),
+      fetchPage: async ({ url }) => ({ status: 'ok', url, content: { title: 'React guide', text: 'React details.' }, metadata: { method: 'http', cacheHit: false, truncated: false } }),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await createWebExploreTool({ explore: workflow })({ query: 'Compare React and Vue' });
+    expect(result.caveat).toContain('Vue');
+  });
   it('can compose from backend config defaults', async () => {
     vi.resetModules();
     vi.doMock('../../src/backends/factory.js', () => ({

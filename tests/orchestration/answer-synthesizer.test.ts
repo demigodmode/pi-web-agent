@@ -12,6 +12,10 @@ const evidence = (sourceKind: ResearchEvidence['sourceKind'], summary: string): 
 });
 
 describe('synthesizeAnswer', () => {
+  it('names the comparison target that lacks evidence', () => {
+    const result = synthesizeAnswer({ evidence: [], partial: true, caveatReasons: ['missing-comparison-target'], missingComparisonTargets: ['Vue'] });
+    expect(result.caveat).toContain('Vue');
+  });
   it('explains when source authority was not established', () => {
     const result = synthesizeAnswer({ evidence: [], partial: true, caveatReasons: ['unknown-authority'] });
     expect(result.caveat).toContain('source authority could not be confirmed');

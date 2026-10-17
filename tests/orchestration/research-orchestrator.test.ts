@@ -9,6 +9,82 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it('reads a supplied PDF directly but researches alternatives for a comparison', async () => {
+    const worker = { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'ok' as const, url, content: { title: 'Source PDF', text: 'Long readable PDF source content.' },
+        metadata: { method: 'pdf' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    await orchestrator.run({ query: 'Read https://example.com/file.pdf' });
+    expect(worker.run).not.toHaveBeenCalled();
+
+    await orchestrator.run({ query: 'Please summarize https://example.com/file.pdf' });
+    expect(worker.run).not.toHaveBeenCalled();
+
+    await orchestrator.run({ query: 'Compare https://example.com/file.pdf with alternatives' });
+    expect(worker.run).toHaveBeenCalled();
+  });
+
+  it('keeps searching a named comparison until both targets have evidence', async () => {
+    const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
+    const vue = { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Vue details', supports: ['Vue details'] };
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [react('https://react.dev/a'), react('https://react.dev/b')], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [vue], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch: vi.fn() });
+
+    const result = await orchestrator.run({ query: 'Compare React and Vue' });
+
+    expect(worker.run).toHaveBeenCalledTimes(2);
+    expect(worker.run.mock.calls[1]?.[0].query).toContain('Vue comparison evidence');
+    expect(result.evidence.some((item) => item.title === 'Vue guide')).toBe(true);
+  });
+
+  it('reports the uncovered comparison target when the search budget ends', async () => {
+    const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
+    const worker = { run: vi.fn(async () => ({ searchQueries: [], evidence: [react('https://react.dev/a'), react('https://react.dev/b')], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Compare React and Vue' });
+
+    expect(result.metadata?.caveatReasons).toContain('missing-comparison-target');
+    expect(result.metadata?.missingComparisonTargets).toEqual(['Vue']);
+    expect(result.metadata?.exhaustedBudget).toBe(true);
+    expect(result.decision.action).toBe('research-again');
+  });
+
+  it('plans a version-specific follow-up when the first evidence has no version', async () => {
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [
+        { title: 'Feature overview', url: 'https://example.com/overview', sourceKind: 'unknown', method: 'http', summary: 'Feature details without compatibility information', supports: [] }
+      ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [
+        { title: 'Release notes', url: 'https://example.org/releases', sourceKind: 'unknown', method: 'http', summary: 'Feature is supported since 2.0', supports: [] }
+      ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Which versions support the feature?' });
+    expect(worker.run.mock.calls[1]?.[0].query).toContain('supported version release notes');
+  });
+
+  it('continues searching after a useful headless result leaves the comparison incomplete', async () => {
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], suggestedHeadlessUrl: 'https://react.dev/guide', exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [
+        { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown', method: 'http', summary: 'Vue details', supports: ['Vue details'] }
+      ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    const headlessFetch = vi.fn(async ({ url }) => ({
+      status: 'ok' as const, url, content: { title: 'React guide', text: 'React details available from rendered page.' },
+      metadata: { method: 'headless' as const, cacheHit: false }
+    }));
+
+    const result = await createResearchOrchestrator({ worker, headlessFetch }).run({ query: 'Compare React and Vue' });
+
+    expect(headlessFetch).toHaveBeenCalledTimes(1);
+    expect(worker.run.mock.calls.length).toBeGreaterThan(1);
+    expect(result.evidence.some((item) => item.title === 'Vue guide')).toBe(true);
+  });
   it('exports a runtime module for orchestration types', () => {
     expect(researchTypes).toBeTypeOf('object');
   });

@@ -174,6 +174,7 @@ export type WebExploreResponse = {
     headlessAttempts: number;
     exhaustedBudget: boolean;
     caveatReasons?: string[];
+    missingComparisonTargets?: string[];
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];
     attempts?: Attempt[];

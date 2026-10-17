@@ -3,6 +3,7 @@ import type { ResearchEvidence, ResearchGap, ResearchLowValueOutcome } from './r
 export type EvidenceCaveatReason =
   | 'community-only'
   | 'unknown-authority'
+  | 'missing-comparison-target'
   | 'low-diversity'
   | 'unreadable-direct-source'
   | 'unreadable-thread-source'
@@ -60,13 +61,15 @@ export function analyzeEvidenceQuality({
   gaps,
   lowValueOutcomes,
   partialSearchCoverage = false,
-  opinionQuestion = false
+  opinionQuestion = false,
+  missingComparisonTargets = []
 }: {
   evidence: ResearchEvidence[];
   gaps: ResearchGap[];
   lowValueOutcomes: ResearchLowValueOutcome[];
   partialSearchCoverage?: boolean;
   opinionQuestion?: boolean;
+  missingComparisonTargets?: string[];
 }): EvidenceQualityReport {
   const official = evidence.filter((item) => item.sourceKind === 'official-docs' || item.sourceKind === 'official-api').length;
   const community = evidence.filter((item) => item.sourceKind === 'community').length;
@@ -87,6 +90,7 @@ export function analyzeEvidenceQuality({
   const caveatReasons: EvidenceCaveatReason[] = [];
   addReason(caveatReasons, 'community-only', hasOnlyCommunityEvidence && !opinionQuestion);
   addReason(caveatReasons, 'unknown-authority', unknown > 0 && !hasOfficialEvidence);
+  addReason(caveatReasons, 'missing-comparison-target', missingComparisonTargets.length > 0);
   addReason(caveatReasons, 'low-diversity', hasLowDiversity);
   addReason(caveatReasons, 'unreadable-direct-source', hasUnreadableDirectSource);
   addReason(caveatReasons, 'unreadable-thread-source', hasUnreadableThreadSource);

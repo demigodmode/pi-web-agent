@@ -78,7 +78,8 @@ export function createWebExploreTool({
       evidence: selectedEvidence,
       partial: decisionPartial || coveragePartial,
       // A confident answer with partial coverage mentions only the coverage, not unrelated quality notes.
-      caveatReasons: decisionPartial ? reasons : ['partial-search-coverage']
+      caveatReasons: decisionPartial ? reasons : ['partial-search-coverage'],
+      missingComparisonTargets: result.metadata?.missingComparisonTargets
     });
 
     const shaped: WebExploreResponse = {
