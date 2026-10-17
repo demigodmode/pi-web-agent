@@ -174,6 +174,8 @@ export type WebExploreResponse = {
     headlessAttempts: number;
     exhaustedBudget: boolean;
     caveatReasons?: string[];
+    budgetReason?: 'deadline' | 'search-limit' | 'fetch-limit' | 'headless-limit';
+    budget?: { searches: number; fetches: number; headless: number; limitReason?: 'deadline' | 'search-limit' | 'fetch-limit' | 'headless-limit' };
     missingComparisonTargets?: string[];
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];

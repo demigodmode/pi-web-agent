@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
+import type { ResearchProgress } from '../../src/orchestration/progress.js';
 
 describe('web_explore tool', () => {
   it('pairs all five findings with their sources', async () => {
@@ -54,6 +55,19 @@ describe('web_explore tool', () => {
     expect(result.findingSourceIds?.every((ids, index) => ids[0] === result.evidence?.[index]?.id)).toBe(true);
   });
 
+  it('passes progress events from the workflow to its caller', async () => {
+    const onProgress = vi.fn();
+    const explore = vi.fn(async ({ onProgress: emit }: { onProgress?: (event: ResearchProgress) => void }) => {
+      emit?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+    });
+    const webExplore = createWebExploreTool({ explore });
+
+    await webExplore({ query: 'example', onProgress });
+
+    expect(onProgress).toHaveBeenCalledWith({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete' }));
+  });
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({

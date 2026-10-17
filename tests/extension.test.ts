@@ -2,6 +2,33 @@ import { describe, expect, it, vi } from 'vitest';
 import extension from '../src/extension.js';
 
 describe('Pi extension entrypoint', () => {
+  it('sends short progress updates through Pi without exposing evidence text', async () => {
+    const updates = vi.fn();
+    const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      onProgress?.({ phase: 'fetch', searches: 1, fetches: 2, headless: 0 });
+      return { status: 'ok' as const, findings: ['Secret extracted evidence'], sources: [] };
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(updates.mock.calls)).toContain('Searching');
+    expect(JSON.stringify(updates.mock.calls)).not.toContain('Secret extracted evidence');
+  });
+
+  it('keeps researching when the Pi progress callback throws', async () => {
+    const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { status: 'ok' as const, findings: [], sources: [] };
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+
+    await expect(tools[0].execute('call-1', { query: 'example' }, undefined, () => { throw new Error('display gone'); })).resolves.toMatchObject({ isError: false });
+  });
   it('reuses the configured web_explore workflow while backend config is unchanged', async () => {
     vi.resetModules();
     const createResearchWorkflow = vi.fn().mockReturnValue({
@@ -424,6 +451,34 @@ describe('Pi extension entrypoint', () => {
     await handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
 
     await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+  });
+
+  it('waits for detached workflow work before closing the session repo cache', async () => {
+    vi.resetModules();
+    let releaseClose!: () => void;
+    const workflow = {
+      run: vi.fn().mockResolvedValue(answer),
+      close: vi.fn(() => new Promise<void>((resolve) => { releaseClose = resolve; }))
+    };
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow: vi.fn(() => workflow) }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+    await tools[0].execute('call-1', { query: 'x' });
+
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+    expect(closeCache).not.toHaveBeenCalled();
+    releaseClose();
+    await shutdown;
+    expect(closeCache).toHaveBeenCalledTimes(1);
   });
 
   it('owns the repo cache: shutdown awaits its close, and the next session gets a fresh one', async () => {

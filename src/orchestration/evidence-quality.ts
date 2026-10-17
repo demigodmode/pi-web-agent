@@ -9,7 +9,8 @@ export type EvidenceCaveatReason =
   | 'unreadable-thread-source'
   | 'possible-conflict'
   | 'bot-check'
-  | 'partial-search-coverage';
+  | 'partial-search-coverage'
+  | 'budget-exhausted';
 
 export type EvidenceQualityReport = {
   counts: {

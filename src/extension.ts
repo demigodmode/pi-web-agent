@@ -14,6 +14,7 @@ import type { WebExploreResponse } from './types.js';
 import { getUpdateChangelogNotice } from './changelog-notice.js';
 import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
+import { formatResearchProgress } from './orchestration/progress.js';
 
 /**
  * What the model receives as the tool result: the actual synthesized findings (which for a
@@ -94,11 +95,17 @@ export default function extension(pi: ExtensionAPI) {
   let cachedWebExplore: ReturnType<typeof createWebExploreTool> | undefined;
   // Runs in flight per workflow, so a replaced workflow is never closed mid-run.
   const activeRuns = new Map<Workflow, number>();
+  const activeRunSettlements = new Map<Workflow, Set<Promise<void>>>();
   const retiring = new Set<Workflow>();
+  const closePromises = new Map<Workflow, Promise<void>>();
 
   const closeWorkflowNow = (workflow: Workflow): Promise<void> => {
+    const existing = closePromises.get(workflow);
+    if (existing) return existing;
     retiring.delete(workflow);
-    return Promise.resolve((workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+    const closing = Promise.resolve().then(() => (workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+    closePromises.set(workflow, closing);
+    return closing;
   };
 
   const closeWorkflow = (workflow: Workflow) => {
@@ -115,6 +122,11 @@ export default function extension(pi: ExtensionAPI) {
 
   const leased = (workflow: Workflow) => ({
     run: async (input: Parameters<Workflow['run']>[0]) => {
+      let finish!: () => void;
+      const settled = new Promise<void>((resolve) => { finish = resolve; });
+      const settlements = activeRunSettlements.get(workflow) ?? new Set<Promise<void>>();
+      settlements.add(settled);
+      activeRunSettlements.set(workflow, settlements);
       activeRuns.set(workflow, (activeRuns.get(workflow) ?? 0) + 1);
       try {
         return await workflow.run(input);
@@ -126,6 +138,9 @@ export default function extension(pi: ExtensionAPI) {
           activeRuns.delete(workflow);
           if (retiring.has(workflow)) closeWorkflow(workflow);
         }
+        settlements.delete(settled);
+        if (settlements.size === 0) activeRunSettlements.delete(workflow);
+        finish();
       }
     }
   });
@@ -153,13 +168,11 @@ export default function extension(pi: ExtensionAPI) {
     // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
     const oldCache = repoCache;
     repoCache = makeRepoCache();
-    const closing: Array<Promise<unknown>> = [oldCache.close()];
     if (workflow) {
-      // An idle workflow is closed and awaited now; a running one closes when its run settles.
-      if ((activeRuns.get(workflow) ?? 0) === 0) closing.push(closeWorkflowNow(workflow));
-      else retiring.add(workflow);
+      await Promise.allSettled([...(activeRunSettlements.get(workflow) ?? [])]);
+      await closeWorkflowNow(workflow);
     }
-    await Promise.allSettled(closing);
+    await oldCache.close();
   });
 
   pi.on('session_start', async (_event, ctx) => {
@@ -189,9 +202,21 @@ export default function extension(pi: ExtensionAPI) {
     parameters: Type.Object({
       query: Type.String({ description: 'Web research question to explore.' })
     }),
-    async execute(_toolCallId, params, signal) {
+    async execute(_toolCallId, params, signal, onUpdate) {
       const webExplore = await getConfiguredWebExplore();
-      const result: WebExploreResponse = await webExplore({ query: params.query, ...(signal ? { signal } : {}) });
+      const result: WebExploreResponse = await webExplore({
+        query: params.query,
+        ...(signal ? { signal } : {}),
+        onProgress(progress) {
+          const terminalText = formatResearchProgress(progress);
+          try {
+            onUpdate?.({
+              content: [{ type: 'text', text: terminalText }],
+              details: { terminalText, terminalTextExpanded: terminalText }
+            });
+          } catch { /* A closed display must not fail research. */ }
+        }
+      });
 
       // Terminal display honors the user's presentation mode; the model gets the full findings.
       // The fallback must stay terse: never fall back to serializeForModel here, or a missing

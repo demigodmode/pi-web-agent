@@ -1,4 +1,5 @@
 import type { Attempt, SearchProviderName } from '../types.js';
+import type { ResearchBudgetReason, ResearchBudgetSnapshot } from './run-budget.js';
 
 export type ResearchSourceKind =
   | 'official-docs'
@@ -59,6 +60,8 @@ export type ResearchRunMetadata = {
   fanoutSkipped?: SearchProviderName[];
   searchCoveragePartial?: boolean;
   terminalFailure?: { code: string; message: string };
+  budgetReason?: ResearchBudgetReason;
+  budget?: ResearchBudgetSnapshot;
 };
 
 export type ResearchOrchestratorDecision =

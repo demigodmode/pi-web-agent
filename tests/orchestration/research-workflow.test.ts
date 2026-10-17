@@ -4,6 +4,30 @@ import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
 
 describe('research workflow composition', () => {
+  it('counts direct links and later searches in one fetch budget', async () => {
+    let searchIndex = 0;
+    const search = vi.fn(async () => {
+      const index = searchIndex++;
+      return {
+        status: 'ok' as const,
+        results: Array.from({ length: 4 }, (_, page) => ({ title: `Result ${index}-${page}`, url: `https://host-${index}-${page}.example/page`, snippet: 'Details' })),
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      };
+    });
+    const fetchPage = vi.fn(async ({ url }) => ({
+      status: 'error' as const, url,
+      metadata: { method: 'http' as const, cacheHit: false },
+      error: { code: 'FETCH_FAILED', message: 'Could not read page', failure: { kind: 'transient' as const } }
+    }));
+    const workflow = createResearchWorkflow({ search, fetchPage, headlessFetch: vi.fn() });
+
+    const result = await workflow.run({ query: 'Find docs at https://a.example/direct https://b.example/direct https://c.example/direct' });
+
+    expect(search).toHaveBeenCalledTimes(4);
+    expect(fetchPage).toHaveBeenCalledTimes(19);
+    expect(result.metadata.budget).toMatchObject({ searches: 4, fetches: 19 });
+    await workflow.close();
+  });
   it('uses two readable supplied comparison sources without an extra search', async () => {
     const search = vi.fn(async () => ({ status: 'ok' as const, results: [], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }));
     const workflow = createResearchWorkflow({
@@ -119,10 +143,10 @@ describe('research workflow composition', () => {
 
     const result = await workflow.run({ query: 'Read https://example.com/post?utm_source=x' });
 
-    expect(fetchPage).toHaveBeenCalledWith({
+    expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://example.com/post',
       query: 'Read https://example.com/post?utm_source=x'
-    });
+    }));
     expect(result.evidence[0]?.url).toBe('https://example.com/post');
   });
 
@@ -408,5 +432,38 @@ describe('research workflow ownership', () => {
     await workflow.close();
 
     expect(createBackendSet).not.toHaveBeenCalled();
+  });
+
+  it('waits for a detached backend operation before closing owned backends', async () => {
+    vi.useFakeTimers();
+    let resolveSearch!: (value: { status: 'ok'; results: []; metadata: { backend: 'duckduckgo'; cacheHit: false } }) => void;
+    const close = vi.fn(async () => undefined);
+    vi.resetModules();
+    vi.doMock('../../src/backends/factory.js', () => ({
+      createBackendSet: vi.fn(() => ({
+        search: vi.fn(() => new Promise((resolve) => { resolveSearch = resolve; })),
+        fetchPage: vi.fn(),
+        headlessFetch: vi.fn(),
+        close
+      }))
+    }));
+    const { createResearchWorkflow: createWorkflow } = await import('../../src/orchestration/index.js');
+    const workflow = createWorkflow({});
+
+    try {
+      const run = workflow.run({ query: 'pending search' });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(120_000);
+      await run;
+      const closing = workflow.close();
+      await Promise.resolve();
+      expect(close).not.toHaveBeenCalled();
+
+      resolveSearch({ status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false } });
+      await closing;
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

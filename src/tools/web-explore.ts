@@ -6,13 +6,14 @@ import type { EvidenceCaveatReason } from '../orchestration/evidence-quality.js'
 import type { WebExploreResponse } from '../types.js';
 import { raceAbort, throwIfAborted } from '../abort.js';
 import { buildEvidenceRecords } from './evidence-records.js';
+import type { ResearchProgress } from '../orchestration/progress.js';
 
 export function createWebExploreTool({
   explore = createResearchWorkflow()
 }: {
   explore?:
     | {
-        run: (input: { query: string; signal?: AbortSignal }) => Promise<{
+        run: (input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
           decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
           evidence: ResearchEvidence[];
           workerPass: unknown;
@@ -20,7 +21,7 @@ export function createWebExploreTool({
           terminalFailure?: { code: string; message: string };
         }>;
       }
-    | ((input: { query: string; signal?: AbortSignal }) => Promise<{
+    | ((input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
         decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
         evidence: ResearchEvidence[];
         workerPass: unknown;
@@ -30,7 +31,7 @@ export function createWebExploreTool({
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
 
-  return async function webExplore({ query, signal }: { query: string; signal?: AbortSignal }) {
+  return async function webExplore({ query, signal, onProgress }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) {
     throwIfAborted(signal);
     const normalizedQuery = query.trim();
 
@@ -48,11 +49,22 @@ export function createWebExploreTool({
       };
     }
 
-    const run = runExplore({ query: normalizedQuery, ...(signal ? { signal } : {}) });
+    const safeProgress = onProgress ? (event: ResearchProgress) => {
+      try { onProgress(event); } catch { /* Display callbacks must not fail research. */ }
+    } : undefined;
+    const run = runExplore({ query: normalizedQuery, ...(signal ? { signal } : {}), ...(safeProgress ? { onProgress: safeProgress } : {}) });
     // Backstop: Pi waits for this promise, so answer the cancel right away even if
     // some layer underneath is slow to stop. The run itself keeps its lease in
     // extension.ts until it really settles.
     const result = signal ? await raceAbort(run, signal) : await run;
+    if (!result.terminalFailure) {
+      const counts = result.metadata?.budget ?? {
+        searches: result.metadata?.searchPasses ?? 0,
+        fetches: result.metadata?.fetchedPages ?? 0,
+        headless: result.metadata?.headlessAttempts ?? 0
+      };
+      safeProgress?.({ phase: 'complete', searches: counts.searches, fetches: counts.fetches, headless: counts.headless });
+    }
     if (result.terminalFailure) {
       const failed: WebExploreResponse = {
         status: 'error',

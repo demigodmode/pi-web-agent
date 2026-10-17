@@ -21,6 +21,8 @@ import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
 import { parseRepoUrl } from '../repo/repo-url.js';
 import { classifyResearchIntent, missingComparisonTargets } from './research-intent.js';
+import { createResearchRunBudget, type ResearchBudgetReason, type ResearchBudgetSnapshot } from './run-budget.js';
+import type { ResearchProgress } from './progress.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -139,7 +141,9 @@ function buildMetadata({
   missingComparisonTargets = [],
   fanoutProviders,
   fanoutSkipped,
-  attempts
+  attempts,
+  budgetReason,
+  budget
 }: {
   previousQueries: string[];
   allEvidence: ResearchEvidence[];
@@ -152,6 +156,8 @@ function buildMetadata({
   fanoutProviders?: SearchProviderName[];
   fanoutSkipped?: SearchProviderName[];
   attempts?: Attempt[];
+  budgetReason?: ResearchBudgetReason;
+  budget?: ResearchBudgetSnapshot;
 }) {
   return {
     searchPasses: previousQueries.length,
@@ -162,6 +168,8 @@ function buildMetadata({
     missingComparisonTargets,
     fanoutProviders,
     fanoutSkipped,
+    budgetReason,
+    budget,
     ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
 }
@@ -212,6 +220,8 @@ export function createResearchOrchestrator({
       maxSearchRounds: number;
       maxFetches: number;
       signal?: AbortSignal;
+      budget?: import('./run-budget.js').ResearchRunBudget;
+      onProgress?: (event: ResearchProgress) => void;
     }) => Promise<ResearchWorkerResult>;
   };
   fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
@@ -219,8 +229,20 @@ export function createResearchOrchestrator({
   /** Typed GitHub repo URLs (#72). Without it, they go through fetchDirect like any page. */
   researchRepo?: (input: RepoResearchInput) => Promise<RepoResearchResult>;
 }) {
+  const pending = new Set<Promise<unknown>>();
+  const track = (promise: Promise<unknown>) => {
+    pending.add(promise);
+    void promise.finally(() => pending.delete(promise)).catch(() => undefined);
+  };
+
   return {
-    async run({ query, signal }: { query: string; signal?: AbortSignal }): Promise<ResearchOrchestratorResult> {
+    async run({ query, signal, onProgress }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }): Promise<ResearchOrchestratorResult> {
+      const budget = createResearchRunBudget({ signal, track });
+      const emit = (phase: ResearchProgress['phase']) => {
+        if (!onProgress) return;
+        const { searches, fetches, headless } = budget.snapshot();
+        try { onProgress({ phase, searches, fetches, headless }); } catch { /* Progress is observational. */ }
+      };
       const intent = classifyResearchIntent(query);
       const opinionQuestion = isOpinionQuestion(query);
       const allEvidence: ResearchEvidence[] = [];
@@ -237,10 +259,41 @@ export function createResearchOrchestrator({
       // Search and fetch attempts from every pass and direct URL, for verbose provenance.
       const runAttempts: Attempt[] = [];
 
+      const partialBudgetResult = (): ResearchOrchestratorResult => {
+        const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+        const missingTargets = missingComparisonTargets(intent, ranked);
+        const quality = analyzeEvidenceQuality({
+          evidence: ranked,
+          gaps: allGaps,
+          lowValueOutcomes: allLowValueOutcomes,
+          partialSearchCoverage: searchCoveragePartial,
+          opinionQuestion,
+          missingComparisonTargets: missingTargets
+        });
+        const snapshot = budget.snapshot();
+        return {
+          decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: true }),
+          evidence: ranked,
+          workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: true }),
+          metadata: buildMetadata({
+            previousQueries,
+            allEvidence,
+            allGaps,
+            allLowValueOutcomes,
+            headlessAttempts,
+            exhaustedBudget: true,
+            caveatReasons: [...quality.caveatReasons, 'budget-exhausted'],
+            missingComparisonTargets: missingTargets,
+            budgetReason: snapshot.limitReason,
+            ...fanoutSnapshot()
+          })
+        };
+      };
+
       function fanoutSnapshot() {
         const providers = fanoutProvidersSeen.size ? [...fanoutProvidersSeen] : undefined;
         const skipped = [...fanoutSkippedSeen].filter((p) => !fanoutProvidersSeen.has(p));
-        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts] };
+        return { fanoutProviders: providers, fanoutSkipped: skipped.length ? skipped : undefined, attempts: [...runAttempts], budget: budget.snapshot() };
       }
 
       const terminal = (terminalFailure: { code: string; message: string }) => ({
@@ -251,7 +304,8 @@ export function createResearchOrchestrator({
         terminalFailure
       });
 
-      // Typed repo links are sorted out before the page budget, so none is ever skipped (#72).
+      try {
+      // Typed repo links are researched directly and consume the same bounded fetch allowance.
       const typedUrls = extractDirectUrls(query);
       const repoUrls = researchRepo ? typedUrls.filter((url) => parseRepoUrl(url) !== undefined) : [];
       const pageUrls = typedUrls.filter((url) => !repoUrls.includes(url));
@@ -269,7 +323,10 @@ export function createResearchOrchestrator({
       }
       for (const url of uniqueRepoUrls) {
         throwIfAborted(signal);
-        const researched = await researchRepo!({ url, query, signal });
+        if (!budget.claimFetch(url)) return partialBudgetResult();
+        emit('fetch');
+        const repoWork = researchRepo!({ url, query, signal: budget.signal });
+        const researched = await budget.wait(repoWork);
         throwIfAborted(signal);
         // A typed repo that can't be researched ends the run: the README reader must not stand in for the code.
         if (!researched.ok) return terminal({ code: researched.error.code, message: researched.error.message });
@@ -281,7 +338,10 @@ export function createResearchOrchestrator({
       if (fetchDirect) {
         for (const url of pageUrls.slice(0, 3)) {
           throwIfAborted(signal);
-          const directResult = await fetchDirect({ url, query, signal });
+          if (!budget.claimFetch(url)) return partialBudgetResult();
+          emit('fetch');
+          const directWork = fetchDirect({ url, query, signal: budget.signal });
+          const directResult = await budget.wait(directWork);
           throwIfAborted(signal);
           if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
           const directEvidence = evidenceFromFetch(directResult, query);
@@ -300,10 +360,13 @@ export function createResearchOrchestrator({
 
           if (shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (headlessAttempts < DEFAULT_MAX_HEADLESS_ATTEMPTS) {
+              if (!budget.claimHeadless()) return partialBudgetResult();
+              emit('headless');
               headlessAttempts++;
               attemptedHeadlessUrls.add(directResult.url);
               throwIfAborted(signal);
-              const headlessResult = await headlessFetch({ url: directResult.url, query, signal });
+              const headlessWork = headlessFetch({ url: directResult.url, query, signal: budget.signal });
+              const headlessResult = await budget.wait(headlessWork);
               throwIfAborted(signal);
               const headlessEvidence = evidenceFromHeadless(headlessResult, query);
               if (headlessEvidence) {
@@ -402,12 +465,15 @@ export function createResearchOrchestrator({
         for (const plannedQuery of queries) {
           previousQueries.push(plannedQuery);
           throwIfAborted(signal);
-          const pass = await worker.run({
+          const workerWork = worker.run({
             query: plannedQuery,
             maxSearchRounds: 1,
             maxFetches: DEFAULT_MAX_FETCHES_PER_PASS,
-            signal
+            signal,
+            budget,
+            onProgress
           });
+          const pass = await budget.wait(workerWork);
           throwIfAborted(signal);
 
           lastPass = pass;
@@ -429,6 +495,7 @@ export function createResearchOrchestrator({
           allGaps.push(...pass.gaps);
           allLowValueOutcomes.push(...pass.lowValueOutcomes);
           if (pass.suggestedHeadlessUrl) suggestedHeadlessUrls.push(pass.suggestedHeadlessUrl);
+          if (pass.exhaustedBudget) return partialBudgetResult();
 
           const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
           const missingTargets = missingComparisonTargets(intent, ranked);
@@ -452,10 +519,13 @@ export function createResearchOrchestrator({
           });
 
           if (decision.action === 'headless') {
+            if (!budget.claimHeadless()) return partialBudgetResult();
+            emit('headless');
             headlessAttempts++;
             attemptedHeadlessUrls.add(decision.url);
             throwIfAborted(signal);
-            const headlessResult = await headlessFetch({ url: decision.url, query, signal });
+            const headlessWork = headlessFetch({ url: decision.url, query, signal: budget.signal });
+            const headlessResult = await budget.wait(headlessWork);
             throwIfAborted(signal);
             const headlessEvidence = evidenceFromHeadless(headlessResult, query);
             if (headlessEvidence) {
@@ -607,6 +677,18 @@ export function createResearchOrchestrator({
           ...fanoutSnapshot()
         })
       };
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (budget.deadlineReached()) return partialBudgetResult();
+        throw error;
+      } finally {
+        budget.dispose();
+      }
+    },
+    async drain() {
+      while (pending.size > 0) {
+        await Promise.allSettled([...pending]);
+      }
     }
   };
 }

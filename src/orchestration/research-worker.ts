@@ -6,6 +6,8 @@ import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import { selectEvidencePassages } from './evidence-passages.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import type { ResearchRunBudget } from './run-budget.js';
+import type { ResearchProgress } from './progress.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -99,18 +101,29 @@ export function createResearchWorker({
       query,
       maxSearchRounds,
       maxFetches,
-      signal
+      signal,
+      budget,
+      onProgress
     }: {
       query: string;
       maxSearchRounds: number;
       maxFetches: number;
       signal?: AbortSignal;
+      budget?: ResearchRunBudget;
+      onProgress?: (event: ResearchProgress) => void;
     }): Promise<ResearchWorkerResult> {
+      const activeSignal = budget?.signal ?? signal;
       const searchQueries = [query];
       const evidence: ResearchEvidence[] = [];
       const gaps: ResearchGap[] = [];
       const lowValueOutcomes: ResearchLowValueOutcome[] = [];
       let suggestedHeadlessUrl: string | undefined;
+      let exhaustedBudget = false;
+      const emit = (phase: ResearchProgress['phase']) => {
+        if (!onProgress) return;
+        const { searches, fetches, headless } = budget?.snapshot() ?? { searches: 0, fetches: 0, headless: 0 };
+        try { onProgress({ phase, searches, fetches, headless }); } catch { /* Progress is observational. */ }
+      };
 
       if (maxSearchRounds <= 0 || maxFetches <= 0) {
         return {
@@ -123,9 +136,14 @@ export function createResearchWorker({
         };
       }
 
-      throwIfAborted(signal);
-      const searchResult = await search({ query, signal });
-      throwIfAborted(signal);
+      throwIfAborted(activeSignal);
+      if (budget && !budget.claimSearch()) {
+        return { searchQueries: [], evidence, gaps, lowValueOutcomes, exhaustedBudget: true };
+      }
+      emit('search');
+      const searchWork = search({ query, signal: activeSignal });
+      const searchResult = budget ? await budget.wait(searchWork) : await searchWork;
+      throwIfAborted(activeSignal);
       const searchCoveragePartial = searchResult.metadata.coverage?.partial === true;
       const searchAttempts = searchResult.metadata.attempts;
       if (isTerminalFailure(failureOf(searchResult))) {
@@ -187,16 +205,64 @@ export function createResearchWorker({
       const candidates = selectCandidates({
         query,
         results: searchResult.results,
-        seenUrls: new Set(evidence.map((item) => item.url)),
+        seenUrls: budget?.visitedUrls ?? new Set(evidence.map((item) => item.url)),
         maxCandidates: maxFetches
       });
 
       const fetchAttempts: Attempt[] = [];
-      for (const candidate of candidates) {
-        throwIfAborted(signal);
-        const fetched = await fetchPage({ url: candidate.url, query, signal });
+      const outcomes: Array<WebFetchResponse | Error | undefined> = new Array(candidates.length);
+      const started = new Set<number>();
+      const activeHosts = new Set<string>();
+      const inFlight = new Map<number, Promise<void>>();
+      const host = (url: string) => {
+        try { return new URL(url).hostname.toLowerCase(); } catch { return url; }
+      };
+      const startAvailable = () => {
+        while (inFlight.size < 3) {
+          const index = candidates.findIndex((candidate, position) => !started.has(position) && !activeHosts.has(host(candidate.url)));
+          if (index < 0) break;
+          const candidate = candidates[index];
+          const hostname = host(candidate.url);
+          started.add(index);
+          if (budget && !budget.claimFetch(candidate.url)) {
+            if (budget.snapshot().limitReason === 'fetch-limit') exhaustedBudget = true;
+            continue;
+          }
+          emit('fetch');
+          activeHosts.add(hostname);
+          const request = (async () => {
+            try {
+              throwIfAborted(activeSignal);
+              const fetchWork = fetchPage({ url: candidate.url, query, signal: activeSignal });
+              outcomes[index] = budget ? await budget.wait(fetchWork) : await fetchWork;
+            } catch (error) {
+              throwIfAborted(activeSignal);
+              outcomes[index] = error instanceof Error ? error : new Error(String(error));
+            }
+          })().finally(() => {
+            activeHosts.delete(hostname);
+            inFlight.delete(index);
+          });
+          request.catch(() => undefined);
+          inFlight.set(index, request);
+        }
+      };
+      startAvailable();
+      while (inFlight.size > 0) {
+        await Promise.race(inFlight.values());
+        throwIfAborted(activeSignal);
+        startAvailable();
+      }
+
+      for (const [index, candidate] of candidates.entries()) {
+        const fetched = outcomes[index];
+        if (!fetched) continue;
+        if (fetched instanceof Error) {
+          gaps.push({ kind: 'fetch-failed', message: `Fetch failed for ${candidate.url}: ${fetched.message}` });
+          continue;
+        }
         // Readers report a cancel as an error result; never record it as a gap.
-        throwIfAborted(signal);
+        throwIfAborted(activeSignal);
         if (fetched.metadata.attempts) fetchAttempts.push(...fetched.metadata.attempts);
 
         if (fetched.status === 'ok') {
@@ -242,7 +308,7 @@ export function createResearchWorker({
         gaps,
         lowValueOutcomes,
         suggestedHeadlessUrl,
-        exhaustedBudget: false,
+        exhaustedBudget,
         fanoutProviders,
         fanoutSkipped,
         searchCoveragePartial,

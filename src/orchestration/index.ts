@@ -37,6 +37,7 @@ export function createResearchWorkflow({
   return Object.assign(orchestrator, {
     /** Releases the backend set this workflow created. Injected capabilities and the repo cache are left alone. */
     async close() {
+      await orchestrator.drain();
       await backends?.close?.();
     }
   });

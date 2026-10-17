@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createResearchWorker } from '../../src/orchestration/research-worker.js';
+import { createResearchRunBudget } from '../../src/orchestration/run-budget.js';
+import type { WebFetchResponse } from '../../src/types.js';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('research worker', () => {
@@ -39,6 +41,112 @@ describe('research worker', () => {
 
     const result = await worker.run({ query: 'cached guide', maxSearchRounds: 1, maxFetches: 1 });
     expect(result.evidence[0]?.retrievedAt).toBeUndefined();
+  });
+  it('reports search and fetch counts without page content', async () => {
+    const url = 'https://example.com/guide';
+    const events: Array<{ phase: string; searches: number; fetches: number; headless: number }> = [];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: [{ title: 'Guide', url, snippet: 'Guide' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage: vi.fn(async () => ({ status: 'ok' as const, url, content: { title: 'Guide', text: 'Secret page content' }, metadata: { method: 'http' as const, cacheHit: false } }))
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    await worker.run({ query: 'guide', maxSearchRounds: 1, maxFetches: 1, budget, onProgress: (event) => events.push(event) });
+    expect(events.map((event) => event.phase)).toEqual(['search', 'fetch']);
+    expect(events.at(-1)).toMatchObject({ searches: 1, fetches: 1, headless: 0 });
+    expect(JSON.stringify(events)).not.toContain('Secret page content');
+    budget.dispose();
+  });
+  it('fetches up to three distinct hosts concurrently and keeps candidate order', async () => {
+    const waiting = new Map<string, (value: WebFetchResponse) => void>();
+    const fetchPage = vi.fn(({ url }: { url: string }) => new Promise<WebFetchResponse>((resolve) => waiting.set(url, resolve)));
+    const urls = ['https://a.example.com/one', 'https://b.example.com/two', 'https://c.example.com/three', 'https://a.example.com/four'];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'Details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    const resultPromise = worker.run({ query: 'distinct hosts', maxSearchRounds: 1, maxFetches: 4, budget });
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(3));
+    expect(waiting.has(urls[3])).toBe(false);
+
+    const response = (url: string) => ({ status: 'ok' as const, url, content: { title: url, text: `Useful details from ${url}` }, metadata: { method: 'http' as const, cacheHit: false } });
+    waiting.get(urls[2])!(response(urls[2]));
+    await Promise.resolve();
+    expect(waiting.has(urls[3])).toBe(false);
+    waiting.get(urls[0])!(response(urls[0]));
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(4));
+    waiting.get(urls[3])!(response(urls[3]));
+    waiting.get(urls[1])!(response(urls[1]));
+    const result = await resultPromise;
+    expect(result.evidence.map((item) => item.url)).toEqual(urls);
+    budget.dispose();
+  });
+
+  it('does not fetch a URL already visited in an earlier worker pass', async () => {
+    const url = 'https://example.com/guide';
+    const fetchPage = vi.fn(async () => ({ status: 'ok' as const, url, content: { title: 'Guide', text: 'Useful guide details' }, metadata: { method: 'http' as const, cacheHit: false } }));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: [{ title: 'Guide', url, snippet: 'Guide' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    await worker.run({ query: 'first', maxSearchRounds: 1, maxFetches: 4, budget });
+    const second = await worker.run({ query: 'second', maxSearchRounds: 1, maxFetches: 4, budget });
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(second.evidence).toEqual([]);
+    budget.dispose();
+  });
+
+  it('stops at a shared fetch cap after direct URLs have spent slots', async () => {
+    const budget = createResearchRunBudget({ timeoutMs: 120_000, maxFetches: 4 });
+    for (const name of ['a', 'b', 'c']) expect(budget.claimFetch(`https://${name}.example/direct`)).toBe(true);
+    const urls = Array.from({ length: 4 }, (_, index) => `https://result-${index}.example/page`);
+    const fetchPage = vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'Page', text: 'Useful page details' }, metadata: { method: 'http' as const, cacheHit: false } }));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: 'Page', url, snippet: 'Details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+
+    const result = await worker.run({ query: 'pages', maxSearchRounds: 1, maxFetches: 4, budget });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.exhaustedBudget).toBe(true);
+    expect(budget.snapshot()).toMatchObject({ fetches: 4, limitReason: 'fetch-limit' });
+    budget.dispose();
+  });
+
+  it('keeps evidence from another host when one candidate throws', async () => {
+    const urls = ['https://a.example.com/failed', 'https://b.example.com/good'];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'Details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage: vi.fn(async ({ url }) => {
+        if (url === urls[0]) throw new Error('connection reset');
+        return { status: 'ok' as const, url, content: { title: 'Good', text: 'Useful details' }, metadata: { method: 'http' as const, cacheHit: false } };
+      })
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    const result = await worker.run({ query: 'two hosts', maxSearchRounds: 1, maxFetches: 2, budget });
+    expect(result.evidence.map((item) => item.url)).toEqual([urls[1]]);
+    expect(result.gaps[0]?.message).toContain('connection reset');
+    budget.dispose();
+  });
+
+  it('stops in-flight fetch work when the caller cancels', async () => {
+    const controller = new AbortController();
+    const url = 'https://example.com/pending';
+    const fetchPage = vi.fn(() => new Promise<WebFetchResponse>(() => undefined));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: [{ title: 'Pending', url, snippet: 'Pending' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+    const budget = createResearchRunBudget({ signal: controller.signal, timeoutMs: 120_000 });
+    const run = worker.run({ query: 'pending', maxSearchRounds: 1, maxFetches: 1, signal: controller.signal, budget });
+    const rejected = expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(1));
+    controller.abort();
+    await rejected;
+    budget.dispose();
   });
   it('runs one bounded search/fetch pass and summarizes evidence', async () => {
     const worker = createResearchWorker({

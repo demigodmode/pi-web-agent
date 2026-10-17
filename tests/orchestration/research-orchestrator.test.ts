@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as researchTypes from '../../src/orchestration/research-types.js';
+import type { ResearchProgress } from '../../src/orchestration/progress.js';
 import { createResearchOrchestrator } from '../../src/orchestration/research-orchestrator.js';
 import type {
   ResearchWorkerResult,
@@ -9,6 +10,29 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it('reports direct fetch and headless progress with shared counts', async () => {
+    const phases: string[] = [];
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'PDF', text: 'Readable PDF content' }, metadata: { method: 'headless' as const, cacheHit: false } }))
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://example.com/file.pdf', onProgress: (event) => phases.push(`${event.phase}:${event.fetches}:${event.headless}`) });
+
+    expect(phases).toEqual(['fetch:1:0', 'headless:1:1']);
+    expect(result.metadata.budget).toMatchObject({ searches: 0, fetches: 1, headless: 1 });
+  });
+
+  it('forwards worker progress to callers', async () => {
+    const phases: string[] = [];
+    const worker = { run: vi.fn(async ({ onProgress }: { onProgress?: (event: ResearchProgress) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false };
+    }) };
+    await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'plain research', onProgress: (event) => phases.push(event.phase) });
+    expect(phases).toContain('search');
+  });
   it('reads a supplied PDF directly but researches alternatives for a comparison', async () => {
     const worker = { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) };
     const orchestrator = createResearchOrchestrator({
@@ -176,10 +200,10 @@ describe('research orchestrator types', () => {
     const result = await orchestrator.run({ query: 'Read https://example.com/thread?utm_source=x' });
 
     expect(calls[0]).toBe('direct:https://example.com/thread');
-    expect(fetchDirect).toHaveBeenCalledWith({
+    expect(fetchDirect).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://example.com/thread',
       query: 'Read https://example.com/thread?utm_source=x'
-    });
+    }));
     expect(result.evidence[0]?.url).toBe('https://example.com/thread');
   });
 
@@ -264,10 +288,10 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'Read https://example.com/comment' });
 
-    expect(headlessFetch).toHaveBeenCalledWith({
+    expect(headlessFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://example.com/comment',
       query: 'Read https://example.com/comment'
-    });
+    }));
     expect(result.evidence[0]?.method).toBe('headless');
   });
 
@@ -295,10 +319,10 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/' });
 
-    expect(headlessFetch).toHaveBeenCalledWith({
+    expect(headlessFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://www.reddit.com/r/selfhosted/comments/abc/example',
       query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/'
-    });
+    }));
     expect(result.workerPass.gaps).toContainEqual({
       kind: 'fetch-failed',
       message: 'Thread source could not be read reliably: https://www.reddit.com/r/selfhosted/comments/abc/example'
@@ -566,7 +590,7 @@ describe('research orchestrator types', () => {
 
     expect(result.decision.action).toBe('research-again');
     expect(result.evidence).toHaveLength(1);
-    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app', query: 'dynamic app' });
+    expect(headlessFetch).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/app', query: 'dynamic app' }));
   });
 
   it('answers once two strong sources exist and one is official', async () => {
@@ -892,5 +916,36 @@ describe('orchestrator cancellation', () => {
     const worker = { run: vi.fn(async () => ({ ...weakPass, suggestedHeadlessUrl: undefined })) };
     await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'q', signal: controller.signal });
     expect(worker.run).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+  });
+});
+
+describe('orchestrator run budget', () => {
+  it('returns accumulated evidence at the deadline while an uncooperative worker remains pending', async () => {
+    vi.useFakeTimers();
+    let resolveWorker!: (value: ResearchWorkerResult) => void;
+    const firstEvidence = { title: 'Initial guide', url: 'https://example.com/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Useful initial evidence', supports: ['Useful initial evidence'] };
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: ['initial'], evidence: [firstEvidence], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })
+      .mockImplementationOnce(() => new Promise<ResearchWorkerResult>((resolve) => { resolveWorker = resolve; })) };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      headlessFetch: vi.fn()
+    });
+
+    try {
+      const run = orchestrator.run({ query: 'pending search' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+
+      expect(worker.run).toHaveBeenCalledTimes(2);
+      expect(result.metadata.exhaustedBudget).toBe(true);
+      expect(result.metadata.budgetReason).toBe('deadline');
+      expect(result.evidence).toContainEqual(firstEvidence);
+
+      resolveWorker({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false });
+      await orchestrator.drain();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

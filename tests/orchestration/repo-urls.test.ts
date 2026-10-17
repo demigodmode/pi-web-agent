@@ -44,7 +44,7 @@ describe('typed repo URLs', () => {
     await orchestrator.run({
       query: 'compare https://a.example/1 https://b.example/2 https://c.example/3 with https://github.com/acme/widget'
     });
-    expect(researchRepo).toHaveBeenCalledWith({ url: 'https://github.com/acme/widget', query: expect.any(String), signal: undefined });
+    expect(researchRepo).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://github.com/acme/widget', query: expect.any(String), signal: expect.any(AbortSignal) }));
     expect(fetchDirect).toHaveBeenCalledTimes(3);
   });
 
