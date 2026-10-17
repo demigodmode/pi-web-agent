@@ -290,7 +290,7 @@ describe('Pi extension entrypoint', () => {
     expect(rendered).not.toContain('A concise finding.');
   }, 15000);
 
-  it('sanitizes persisted legacy presentation views before rendering them in the terminal', () => {
+  it('sanitizes terminal and bidi formatting controls in persisted legacy presentation views', () => {
     const tools: any[] = [];
     const pi = {
       registerTool: (tool: any) => tools.push(tool),
@@ -298,6 +298,7 @@ describe('Pi extension entrypoint', () => {
       on: vi.fn()
     };
     const osc = '\u001b]8;;https://example.com\u0007linked\u001b]8;;\u0007';
+    const bidi = '\u202d\u202e\u2066\u2069';
 
     extension(pi as never);
 
@@ -306,8 +307,8 @@ describe('Pi extension entrypoint', () => {
       details: {
         presentation: {
           views: {
-            compact: `Legacy \u001b[31mcompact ${osc}`,
-            verbose: `Legacy first line\r\nLegacy second line ${osc}`
+            compact: `Legacy \u001b[31mcompact ${bidi}${osc}`,
+            verbose: `Legacy first line\r\nLegacy second line ${bidi}${osc}`
           }
         }
       }
@@ -322,7 +323,7 @@ describe('Pi extension entrypoint', () => {
     const verbose = verboseLines.join('\n');
 
     for (const output of [compact, verbose]) {
-      expect(output).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+      expect(output).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
       expect(output).not.toContain('\u001b');
     }
     expect(verboseLines.map((line: string) => line.trimEnd())).toEqual([

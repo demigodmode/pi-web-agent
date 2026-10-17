@@ -120,19 +120,20 @@ describe('buildExplorePresentation', () => {
     expect(preview).toContain('(fanout; skipped: brave, exa)');
   });
 
-  it('removes terminal control characters from source-controlled evidence fields', () => {
+  it('removes terminal and bidi formatting controls from source-controlled evidence fields', () => {
     const control = '\u001b[31m';
+    const bidi = '\u202d\u202e\u2066\u2069';
     const presentation = buildExplorePresentation({
       status: 'ok',
       findings: [`Finding ${control}from a page`],
-      sources: [{ title: `Title ${control}`, url: `https://example.com/${control}`, method: 'http' }],
+      sources: [{ title: `Title ${control}${bidi} café`, url: `https://example.com/${control}${bidi}path`, method: 'http' }],
       findingSourceIds: [[`S${control}1`]],
       evidence: [{
         id: `S${control}1`,
-        title: `Evidence title ${control}`,
-        url: `https://evidence.example/${control}`,
+        title: `Evidence title ${control}${bidi}`,
+        url: `https://evidence.example/${control}${bidi}`,
         method: 'http',
-        excerpts: [{ text: `First excerpt line\nSecond excerpt\tline\r${control}text`, anchor: `section${control}one` }],
+        excerpts: [{ text: `First excerpt line\nSecond excerpt\tline\r${control}${bidi}text`, anchor: `section${control}one` }],
         truncated: false
       }],
       caveat: `Caveat ${control}text`,
@@ -145,11 +146,14 @@ describe('buildExplorePresentation', () => {
     });
 
     for (const view of [presentation.views.preview, presentation.views.verbose]) {
-      expect(view).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+      expect(view).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
       expect(view).not.toContain('\u001b');
     }
     expect(presentation.views.verbose).toContain('First excerpt line\nSecond excerpt    line[31mtext');
+    expect(presentation.views.verbose).toContain('Title [31m café: https://example.com/[31mpath');
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ title: expect.stringContaining('\u001b') }));
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ url: expect.stringContaining('\u001b') }));
+    expect(presentation.sources?.[0]?.title).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+    expect(presentation.sources?.[0]?.url).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
   });
 });
