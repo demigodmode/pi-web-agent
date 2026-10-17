@@ -132,7 +132,7 @@ describe('buildExplorePresentation', () => {
         title: `Evidence title ${control}`,
         url: `https://evidence.example/${control}`,
         method: 'http',
-        excerpts: [{ text: `Excerpt ${control}text`, anchor: `section${control}one` }],
+        excerpts: [{ text: `First excerpt line\nSecond excerpt\tline\r${control}text`, anchor: `section${control}one` }],
         truncated: false
       }],
       caveat: `Caveat ${control}text`,
@@ -145,9 +145,10 @@ describe('buildExplorePresentation', () => {
     });
 
     for (const view of [presentation.views.preview, presentation.views.verbose]) {
-      expect(view).not.toMatch(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/);
+      expect(view).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
       expect(view).not.toContain('\u001b');
     }
+    expect(presentation.views.verbose).toContain('First excerpt line\nSecond excerpt    line[31mtext');
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ title: expect.stringContaining('\u001b') }));
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ url: expect.stringContaining('\u001b') }));
   });

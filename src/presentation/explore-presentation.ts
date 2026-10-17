@@ -13,7 +13,11 @@ function internalReaderLabel(method?: FetchMethod) {
 }
 
 function terminalText(text: string): string {
-  return text.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '')
+    .replace(/\t/g, '    ')
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
 }
 
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
