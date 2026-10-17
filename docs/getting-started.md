@@ -40,13 +40,13 @@ Another example:
 
 > Find two or three current sources on DuckDuckGo HTML scraping in Node.js and tell me what the common parsing pitfalls are.
 
-That should still go through `web_explore`. If the first pass is thin, Pi can call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
+Prefer `web_explore` for that research. If the first pass is thin, Pi can call it again with a narrower query; Pi can also use tools the user requests for the task.
 
 You can also include direct links in the prompt. `web_explore` reads HTTP/HTTPS links first, strips common tracking params, and then searches if it still needs more evidence.
 
-For GitHub, PDF, and YouTube links, `web_explore` fetches the real content automatically instead of scraping the page. GitHub files, issues, PRs, and repo READMEs come from the raw/API endpoints; PDFs are extracted to text; YouTube links return the transcript. All keyless. Set `GITHUB_TOKEN` in the environment if you want a higher GitHub rate limit, but it works without one. Scanned PDFs and videos without captions are noted rather than failing. Pasting a link and asking to summarize returns the extracted content (long transcripts or PDFs capped around 24k characters), so it's a reliable way to get summaries of videos, PDFs, or repo files.
+For GitHub, PDF, and YouTube links, `web_explore` fetches the real content automatically instead of scraping the page. GitHub files, issues, PRs, and repo READMEs come from the raw/API endpoints; PDFs are extracted to text; YouTube links return the transcript. Public GitHub reads can be anonymous; private reads use `GITHUB_TOKEN` or `gh auth login`. Scanned PDFs and videos without captions are noted rather than failing. Pasting a link and asking to summarize returns the extracted content (long transcripts or PDFs capped around 24k characters), so it's a reliable way to get summaries of videos, PDFs, or repo files.
 
-If you paste a link to a whole GitHub repo (or a folder inside one), `web_explore` clones that exact commit and answers from the code, with citations that point at the commit it read. That needs `git` 2.32 or newer; private repos need `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read, it says why. Press Esc if a run is taking too long; it stops everything underneath.
+If you paste a link to a whole GitHub repo (or a folder inside one), `web_explore` clones that exact commit and answers from the code, with citations that point at the commit it read. That needs `git` 2.32 or newer; public repositories can be read anonymously, while private repositories use `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read, it says why. Press Esc if a run is taking too long; it stops everything underneath.
 
 ## Presentation defaults
 

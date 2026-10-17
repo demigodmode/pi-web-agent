@@ -212,19 +212,13 @@ export default function extension(pi: ExtensionAPI) {
     }
   });
 
-  pi.on('before_agent_start', async (event) => ({
-    systemPrompt:
-      `${event.systemPrompt}\n\n` +
-      'For web research questions that require finding and comparing sources, use web_explore. ' +
-      'web_explore handles search, fetch, source ranking, and headless escalation internally. ' +
-      'If more web evidence is needed after web_explore, call web_explore again with a narrower query; do not use shell/network commands such as curl, Invoke-WebRequest, npm view/search/pack, or direct HTTP URLs for web research.'
-  }));
-
   pi.registerTool({
     name: 'web_explore',
     label: 'Web Explore',
     description:
-      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Use this for web research, current docs/discussion lookups, and recommendation summaries.',
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
+      'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.',
     parameters: Type.Object({
       query: Type.String({ description: 'Web research question to explore.' })
     }),

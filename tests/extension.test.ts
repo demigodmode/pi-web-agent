@@ -196,10 +196,13 @@ describe('Pi extension entrypoint', () => {
     expect(Object.keys(webExplore.parameters.properties)).toEqual(['query']);
   });
 
-  it('adds a short research hint that web_explore handles research internally', async () => {
+  it('does not restrict Pi tools', () => {
     const handlers = new Map<string, Function>();
+    const registeredTools: any[] = [];
     const pi = {
-      registerTool: vi.fn(),
+      registerTool: vi.fn((tool) => {
+        registeredTools.push(tool);
+      }),
       registerCommand: vi.fn(),
       on: vi.fn((eventName: string, handler: Function) => {
         handlers.set(eventName, handler);
@@ -208,22 +211,16 @@ describe('Pi extension entrypoint', () => {
 
     extension(pi as never);
 
-    const beforeAgentStart = handlers.get('before_agent_start');
-    expect(beforeAgentStart).toBeDefined();
-
-    const result = await beforeAgentStart!(
-      {
-        prompt: 'Find current Vitest coverage docs and summarize V8 setup.',
-        images: [],
-        systemPrompt: 'Base system prompt'
-      },
-      {}
+    expect(handlers.has('before_agent_start')).toBe(false);
+    const tool = registeredTools.find((item) => item.name === 'web_explore');
+    expect(tool.description).toBe(
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
+      'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.'
     );
-
-    expect(result.systemPrompt).toContain('use web_explore');
-    expect(result.systemPrompt).toContain('handles search, fetch, source ranking, and headless escalation internally');
-    expect(result.systemPrompt).toContain('call web_explore again with a narrower query');
-    expect(result.systemPrompt).toContain('do not use shell/network commands');
+    expect(tool.description).toContain('Prefer this for ordinary web research');
+    expect(tool.description).toContain('git and gh');
+    expect(tool.description).not.toContain('do not use shell/network commands');
   });
 
   it('does not register a context hook that injects reminder text into the visible session', () => {
