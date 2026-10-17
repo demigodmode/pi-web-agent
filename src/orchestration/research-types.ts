@@ -19,6 +19,9 @@ export type ResearchEvidence = {
   method: Exclude<ResearchMethod, 'search'>;
   summary: string;
   supports: string[];
+  sectionAnchor?: string;
+  retrievedAt?: string;
+  truncated?: boolean;
 };
 
 export type ResearchGap = {

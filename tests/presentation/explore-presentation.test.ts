@@ -10,6 +10,11 @@ describe('buildExplorePresentation', () => {
         { title: 'Browsers | Playwright', url: 'https://playwright.dev/docs/browsers', method: 'http' },
         { title: 'BrowserType | Playwright', url: 'https://playwright.dev/docs/api/class-browsertype', method: 'headless' }
       ],
+      findingSourceIds: [['S1'], ['S2']],
+      evidence: [
+        { id: 'S1', title: 'Browsers | Playwright', url: 'https://playwright.dev/docs/browsers', method: 'http', excerpts: [{ text: 'Use the branded browser channel.' }], truncated: false },
+        { id: 'S2', title: 'BrowserType | Playwright', url: 'https://playwright.dev/docs/api/class-browsertype', method: 'headless', excerpts: [{ text: 'The executable path is risky.', anchor: 'executablepath' }], truncated: false }
+      ],
       caveat: undefined,
       metadata: {
         searchPasses: 2,
@@ -24,6 +29,8 @@ describe('buildExplorePresentation', () => {
     expect(presentation.views.preview).toContain('- [web_fetch_headless] Treat executablePath as fallback');
     expect(presentation.views.preview).toContain('Internal research: web_search ×2');
     expect(presentation.views.verbose).toContain('Sources');
+    expect(presentation.views.verbose).toContain('[S2] Treat executablePath as fallback');
+    expect(presentation.views.verbose).toContain('The executable path is risky.');
     expect(presentation.views.verbose).toContain('- [web_fetch_headless] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
     expect(presentation.views.verbose).toContain('Internal tools');
   });

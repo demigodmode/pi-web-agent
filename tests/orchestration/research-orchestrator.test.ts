@@ -115,14 +115,17 @@ describe('research orchestrator types', () => {
     const fetchDirect = vi.fn(async ({ url }) => ({
       status: 'ok' as const,
       url,
-      content: { title: 'Archive guide', text: `${'General archive background. '.repeat(12)}\n\n${lateAnswer}` },
+      content: { title: 'Archive guide', text: `${'General archive background. '.repeat(12)}\n\n${lateAnswer}`, sectionAnchor: 'transfer' },
       metadata: { method: 'http' as const, cacheHit: false }
     }));
     const direct = createResearchOrchestrator({ worker, fetchDirect, headlessFetch: vi.fn() });
     const directResult = await direct.run({ query: 'Read https://example.com/archive lunar archive transfer' });
 
     expect(directResult.evidence[0]?.summary).toContain(lateAnswer);
-    expect(directResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+    expect(directResult.evidence[0]?.supports).toContain(lateAnswer);
+    expect(directResult.evidence[0]?.supports.length).toBeGreaterThan(1);
+    expect(directResult.evidence[0]?.sectionAnchor).toBe('transfer');
+    expect(directResult.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
     const headlessFetch = vi.fn(async ({ url }) => ({
       status: 'ok' as const,
@@ -143,7 +146,8 @@ describe('research orchestrator types', () => {
     const headlessResult = await headless.run({ query: 'Read https://example.com/archive lunar archive transfer' });
 
     expect(headlessResult.evidence[0]?.summary).toContain(lateAnswer);
-    expect(headlessResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+    expect(headlessResult.evidence[0]?.supports).toContain(lateAnswer);
+    expect(headlessResult.evidence[0]?.supports.length).toBeGreaterThan(1);
 
     const searchHeadless = createResearchOrchestrator({
       worker: {
@@ -157,7 +161,7 @@ describe('research orchestrator types', () => {
     const searchHeadlessResult = await searchHeadless.run({ query: 'lunar archive transfer' });
 
     expect(searchHeadlessResult.evidence[0]?.summary).toContain(lateAnswer);
-    expect(searchHeadlessResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+    expect(searchHeadlessResult.evidence[0]?.supports).toContain(lateAnswer);
   });
 
   it('uses headless fallback when a direct url has weak http extraction', async () => {

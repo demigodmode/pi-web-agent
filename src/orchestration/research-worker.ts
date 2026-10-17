@@ -4,6 +4,7 @@ import type { Attempt, ResearchFetchInput, SearchInput, WebFetchResponse, WebSea
 import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { selectEvidencePassages } from './evidence-passages.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import type {
   ResearchEvidence,
@@ -40,7 +41,10 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
       sourceKind: classifySource(fetched.url),
       method: fetched.metadata.method,
       summary: content.text,
-      supports: [content.text]
+      supports: [content.text],
+      ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
+      ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+      truncated: fetched.metadata.truncated ?? false
     } satisfies ResearchEvidence;
   }
 
@@ -49,13 +53,17 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
     return null;
   }
 
+  const passages = selectEvidencePassages(content.text, query);
   return {
     title: content.title ?? fallbackTitle,
     url: fetched.url,
     sourceKind,
     method: fetched.metadata.method,
     summary: selectRelevantExcerpt(content.text, query, 180),
-    supports: [selectRelevantExcerpt(content.text, query, 120)]
+    supports: passages.excerpts,
+    ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
+    ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    truncated: (fetched.metadata.truncated ?? false) || passages.truncated
   } satisfies ResearchEvidence;
 }
 

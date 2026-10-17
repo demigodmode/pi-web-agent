@@ -227,6 +227,8 @@ describe('Pi extension entrypoint', () => {
         status: 'ok',
         findings: ['A concise finding.'],
         sources: [{ title: 'Source', url: 'https://example.com', method: 'http' }],
+        findingSourceIds: [['S1']],
+        evidence: [{ id: 'S1', title: 'Source', url: 'https://example.com', method: 'http', excerpts: [{ text: 'The source passage that supports the finding.', anchor: 'details' }], truncated: false }],
         presentation: {
           mode: 'compact',
           views: {
@@ -246,6 +248,9 @@ describe('Pi extension entrypoint', () => {
 
     // The model receives the actual findings, not the compact count line.
     expect(result.content[0].text).toContain('A concise finding.');
+    expect(result.content[0].text).toContain('[S1] A concise finding.');
+    expect(result.content[0].text).toContain('The source passage that supports the finding.');
+    expect(result.content[0].text).toContain('[S1] Source: https://example.com');
     expect(result.content[0].text).not.toContain('Reviewed');
     // The compact terminal view is carried separately for the renderer.
     expect(result.details.terminalText).toBe('Reviewed 1 sources · synthesized answer with 1 findings');

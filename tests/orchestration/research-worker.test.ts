@@ -3,6 +3,43 @@ import { createResearchWorker } from '../../src/orchestration/research-worker.js
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('research worker', () => {
+  it('retains several source passages and extraction metadata from an ordinary page', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Coverage guide', url: 'https://example.com/coverage', snippet: 'Coverage' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://example.com/coverage',
+        content: { title: 'Coverage guide', text: 'First coverage paragraph.\n\nSecond coverage paragraph.\n\nThird coverage paragraph.', sectionAnchor: 'coverage' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: true }
+      })
+    });
+
+    const result = await worker.run({ query: 'coverage', maxSearchRounds: 1, maxFetches: 1 });
+    expect(result.evidence[0]?.supports).toEqual(['First coverage paragraph.', 'Second coverage paragraph.', 'Third coverage paragraph.']);
+    expect(result.evidence[0]?.sectionAnchor).toBe('coverage');
+    expect(result.evidence[0]?.truncated).toBe(true);
+    expect(result.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('does not assign a fresh retrieval time to cached source text', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok', results: [{ title: 'Cached guide', url: 'https://example.com/cached', snippet: 'Guide' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://example.com/cached',
+        content: { title: 'Cached guide', text: 'Cached guide content.' },
+        metadata: { method: 'http', cacheHit: true, truncated: false }
+      })
+    });
+
+    const result = await worker.run({ query: 'cached guide', maxSearchRounds: 1, maxFetches: 1 });
+    expect(result.evidence[0]?.retrievedAt).toBeUndefined();
+  });
   it('runs one bounded search/fetch pass and summarizes evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
@@ -75,7 +112,7 @@ describe('research worker', () => {
     const result = await worker.run({ query: 'lunar archive transfer', maxSearchRounds: 1, maxFetches: 1 });
 
     expect(result.evidence[0]?.summary).toContain('Lunar archive transfer requires the signed manifest');
-    expect(result.evidence[0]?.supports[0]).toContain('Lunar archive transfer requires the signed manifest');
+    expect(result.evidence[0]?.supports).toContain('Lunar archive transfer requires the signed manifest before upload.');
   });
 
   it('keeps a Firecrawl bot wall omitted by query selection out of evidence', async () => {

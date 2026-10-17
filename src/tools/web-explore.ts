@@ -5,6 +5,7 @@ import { buildExplorePresentation } from '../presentation/explore-presentation.j
 import type { EvidenceCaveatReason } from '../orchestration/evidence-quality.js';
 import type { WebExploreResponse } from '../types.js';
 import { raceAbort, throwIfAborted } from '../abort.js';
+import { buildEvidenceRecords } from './evidence-records.js';
 
 export function createWebExploreTool({
   explore = createResearchWorkflow()
@@ -64,6 +65,7 @@ export function createWebExploreTool({
     }
 
     const selectedEvidence = result.evidence.slice(0, 5);
+    const evidence = buildEvidenceRecords(selectedEvidence);
     const sources = selectedEvidence.map((item) => ({
       title: item.title,
       url: item.url,
@@ -83,6 +85,8 @@ export function createWebExploreTool({
       status: 'ok',
       findings: synthesized.findings,
       sources,
+      evidence,
+      findingSourceIds: evidence.map((item) => [item.id]),
       caveat: synthesized.caveat,
       metadata: result.metadata
     };

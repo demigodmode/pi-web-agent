@@ -28,9 +28,19 @@ function serializeForModel(result: WebExploreResponse): string {
   if (result.findings.length === 0 && result.sources.length === 0) {
     return 'No usable evidence found.';
   }
+  const linked = (result.evidence?.length ?? 0) > 0;
+  const findings = result.findings.map((finding, index) => {
+    const ids = result.findingSourceIds?.[index] ?? [];
+    return ids.length ? `[${ids.join(', ')}] ${finding}` : finding;
+  });
+  const evidence = result.evidence?.map((item) => [
+    `[${item.id}] ${item.title}: ${item.url}`,
+    ...item.excerpts.map((excerpt) => `  - ${excerpt.anchor ? `#${excerpt.anchor}: ` : ''}${excerpt.text}`),
+    item.truncated ? '  (source excerpt truncated)' : undefined
+  ].filter(Boolean).join('\n')).join('\n');
   return [
-    result.findings.join('\n\n'),
-    result.sources.length
+    findings.join('\n\n'),
+    linked ? `Evidence:\n${evidence}` : result.sources.length
       ? `Sources:\n${result.sources.map((source) => `- ${source.title}: ${source.url}`).join('\n')}`
       : undefined,
     result.caveat

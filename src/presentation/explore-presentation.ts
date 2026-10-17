@@ -36,6 +36,10 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
   const evidenceLines = hasEvidence
     ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${finding}`)
     : ['No usable evidence found.'];
+  const verboseFindings = result.findings.map((finding, index) => {
+    const ids = result.findingSourceIds?.[index] ?? [];
+    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${ids.length ? `[${ids.join(', ')}] ` : ''}${finding}`;
+  });
   const preview = [
     ...evidenceLines,
     internalSummary ? `\n${internalSummary}` : undefined
@@ -44,10 +48,18 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     .join('\n');
   const verbose = [
     'Findings',
-    ...evidenceLines,
+    ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
     'Sources',
     ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${source.title}: ${source.url}`),
+    ...(result.evidence?.length ? [
+      '',
+      'Evidence',
+      ...result.evidence.flatMap((item) => [
+        `- [${item.id}] ${item.title}: ${item.url}`,
+        ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${excerpt.anchor}: ` : ''}${excerpt.text}`)
+      ])
+    ] : []),
     internalSummary ? `\nInternal tools\n${internalSummary}` : undefined,
     result.caveat ? `\nCaveat\n${result.caveat}` : undefined,
     attemptLines(result.metadata?.attempts)

@@ -156,6 +156,17 @@ export type WebExploreResponse = {
   status: 'ok' | 'error';
   findings: string[];
   sources: Array<{ title: string; url: string; method?: FetchMethod }>;
+  /** Source IDs for each finding, in finding order. */
+  findingSourceIds?: string[][];
+  evidence?: Array<{
+    id: string;
+    url: string;
+    title: string;
+    method?: FetchMethod;
+    excerpts: Array<{ text: string; anchor?: string }>;
+    retrievedAt?: string;
+    truncated: boolean;
+  }>;
   caveat?: string;
   metadata?: {
     searchPasses: number;

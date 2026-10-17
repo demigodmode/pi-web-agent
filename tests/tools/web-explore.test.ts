@@ -23,9 +23,35 @@ describe('web_explore tool', () => {
 
     expect(result.findings).toEqual(['Finding 1', 'Finding 2', 'Finding 3', 'Finding 4', 'Finding 5']);
     expect(result.sources).toEqual(evidence.slice(0, 5).map(({ title, url, method }) => ({ title, url, method })));
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3'], ['S4'], ['S5']]);
+    expect(result.evidence?.map((item) => item.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
     expect(result.presentation?.views.preview).toContain('[web_fetch_headless] Finding 5');
     expect(result.presentation?.views.verbose).toContain('Source 5: https://example.com/5');
     expect(result.presentation?.views.verbose).not.toContain('Source 6: https://example.com/6');
+  });
+
+  it('returns bounded excerpts with available source metadata', async () => {
+    const supports = Array.from({ length: 3 }, (_, index) => `passage ${index}: ${'x'.repeat(1000)}`);
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence: Array.from({ length: 5 }, (_, index) => ({
+          title: `Source ${index}`, url: `https://example.com/${index}`, sourceKind: 'official-docs', method: 'http',
+          summary: `Finding ${index}`, supports, sectionAnchor: 'relevant', retrievedAt: '2026-10-17T00:00:00.000Z', truncated: false
+        })),
+        workerPass: {}
+      })
+    });
+
+    const result = await webExplore({ query: 'question' });
+
+    expect(result.evidence).toHaveLength(5);
+    expect(result.evidence?.[0]?.excerpts[0]).toEqual({ text: supports[0].slice(0, 900), anchor: 'relevant' });
+    expect(result.evidence?.[0]?.retrievedAt).toBe('2026-10-17T00:00:00.000Z');
+    expect(result.evidence?.[0]?.truncated).toBe(true);
+    expect(result.evidence?.flatMap((item) => item.excerpts).reduce((sum, item) => sum + item.text.length, 0)).toBeLessThanOrEqual(10000);
+    expect(result.evidence?.[4]?.excerpts.length).toBeGreaterThan(0);
+    expect(result.findingSourceIds?.every((ids, index) => ids[0] === result.evidence?.[index]?.id)).toBe(true);
   });
 
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {

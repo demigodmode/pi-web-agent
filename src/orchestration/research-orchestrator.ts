@@ -15,6 +15,7 @@ import type {
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
+import { selectEvidencePassages } from './evidence-passages.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
@@ -52,17 +53,24 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
       sourceKind: classifyEvidenceUrl(result.url),
       method: result.metadata.method,
       summary: result.content.text,
-      supports: [result.content.text]
+      supports: [result.content.text],
+      ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
+      ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+      truncated: result.metadata.truncated ?? false
     };
   }
 
+  const passages = selectEvidencePassages(result.content.text, query);
   return {
     title: result.content.title ?? result.url,
     url: result.url,
     sourceKind: classifyEvidenceUrl(result.url),
     method: result.metadata.method,
     summary: selectRelevantExcerpt(result.content.text, query, 180),
-    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
+    supports: passages.excerpts,
+    ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
+    ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    truncated: (result.metadata.truncated ?? false) || passages.truncated
   };
 }
 
@@ -70,13 +78,17 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string): 
   if (result.status !== 'ok' || !result.content?.text.trim()) return null;
   if (isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
+  const passages = selectEvidencePassages(result.content.text, query);
   return {
     title: result.content.title ?? result.url,
     url: result.url,
     sourceKind: classifyEvidenceUrl(result.url),
     method: 'headless',
     summary: selectRelevantExcerpt(result.content.text, query, 180),
-    supports: [selectRelevantExcerpt(result.content.text, query, 120)]
+    supports: passages.excerpts,
+    ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
+    ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    truncated: (result.metadata.truncated ?? false) || passages.truncated
   };
 }
 
