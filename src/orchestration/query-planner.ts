@@ -17,20 +17,37 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+// One pattern for parsing and removal, so they can't drift. Groups: wrapper, minus, host, closing wrapper.
+// The lookbehind rejects operators glued to a word (website:, mysite:) or a colon.
+const SITE_OPERATOR = /(?<![\w.:-])(["([]?)(-?)site:([^\s()"',;[\]]+)(["')\]]?)/gi;
+
+function cleanHost(raw: string) {
+  return raw.replace(/[.!?:]+$/, '');
+}
+
+function removeSiteOperators(text: string) {
+  let next = text.replace(SITE_OPERATOR, ' ');
+  let previous: string;
+  do {
+    previous = next;
+    next = next.replace(/\(\s*\)|\[\s*\]|""/g, ' ');
+  } while (next !== previous);
+  return next;
+}
+
 function extractImportantWords(query: string) {
-  return normalizeWhitespace(query)
-    .replace(/https?:\/\/\S+/gi, ' ')
-    .replace(/(?:^|\s)-?site:\S+/gi, ' ')
+  return removeSiteOperators(normalizeWhitespace(query).replace(/https?:\/\/\S+/gi, ' '))
     .replace(/\b(find|current|tell|me|how|to|the|and|with|for|in|a|an)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function siteScope(query: string): SiteScope {
-  const positive = query.match(/(?:^|\s)site:(\S+)/i)?.[1];
-  const exclusions = [...query.matchAll(/(?:^|\s)-site:(\S+)/gi)].map((match) => match[1]!);
+  const operators = [...query.matchAll(SITE_OPERATOR)];
+  const positive = operators.find((match) => !match[2]);
+  const exclusions = operators.filter((match) => match[2]).map((match) => cleanHost(match[3]!));
   return {
-    positive: positive ? `site:${positive}` : undefined,
+    positive: positive ? `site:${cleanHost(positive[3]!)}` : undefined,
     negatives: exclusions.map((host) => `-site:${host}`),
     excludedHosts: exclusions.map((host) => host.toLowerCase())
   };
@@ -69,7 +86,7 @@ function gapQueries(input: QueryPlanInput): string[] {
 }
 
 // Edge product words only: "edge cases", "cutting edge", "edge runtime" and "edge network" must not route to Microsoft.
-const MICROSOFT_EDGE_PATTERN = /\bmicrosoft edge\b|\bmsedge\b|\bedge\s+(?:browsers?|extensions?|add-?ons?|(?:group\s+)?polic(?:y|ies)|devtools|webview2?|enterprise|kiosk|sidebar|profiles?|sync)\b/i;
+const MICROSOFT_EDGE_PATTERN = /\bmicrosoft edge\b|\bmsedge(?:driver)?\b|\bedge\s+(?:browsers?|extensions?|add-?ons?|(?:group\s+)?polic(?:y|ies)|devtools|webview2?|webdriver|driver|updates?|insider|for\s+business|enterprise|kiosk|sidebar|profiles?|sync)\b/i;
 
 function officialSiteQuery(query: string) {
   const lower = query.toLowerCase();

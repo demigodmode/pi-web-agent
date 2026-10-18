@@ -203,3 +203,75 @@ describe('Microsoft Edge routing', () => {
     expect(queries.join('\n')).not.toContain('learn.microsoft.com');
   });
 });
+
+describe('planSearchQueries operators inside punctuation', () => {
+  const cases: Array<{ originalQuery: string; positive?: string; excluded: string[] }> = [
+    { originalQuery: 'React API (site:react.dev)', positive: 'site:react.dev', excluded: [] },
+    { originalQuery: 'React API (-site:github.com)', excluded: ['github.com'] },
+    { originalQuery: '"site:vitest.dev" coverage', positive: 'site:vitest.dev', excluded: [] },
+    { originalQuery: 'coverage [site:vitest.dev]', positive: 'site:vitest.dev', excluded: [] },
+    { originalQuery: 'docs,site:vitest.dev coverage', positive: 'site:vitest.dev', excluded: [] },
+    { originalQuery: 'Vitest coverage (-site:GitHub.com)', excluded: ['GitHub.com'] }
+  ];
+  const gaps = [
+    'Need supported version details.',
+    'Need exact API behavior.',
+    'Sources disagree about the recommendation.',
+    'Need user experience.',
+    'Need official docs.',
+    'Need implementation references.',
+    'Need comparison evidence for target: Vue'
+  ];
+
+  for (const { originalQuery, positive, excluded } of cases) {
+    it(`keeps the operators of "${originalQuery}" as clean tokens on every follow-up`, () => {
+      for (const passIndex of [1, 2]) {
+        for (const gap of gaps) {
+          const queries = planSearchQueries({ originalQuery, passIndex, previousQueries: [], gaps: [gap] });
+          expect(queries.length, `${passIndex} ${gap}`).toBeGreaterThan(0);
+          for (const query of queries) {
+            const parts = query.split(' ').map((token) => token.toLowerCase());
+            expect(query, query).not.toMatch(/\(\s*\)|\[\s*\]|""|[()[\]"]/);
+            const positives = parts.filter((token) => /^site:/.test(token));
+            expect(positives.length, query).toBeLessThanOrEqual(1);
+            if (positive) expect(positives, query).toEqual([positive.toLowerCase()]);
+            for (const host of excluded) {
+              expect(parts.filter((token) => token === `-site:${host.toLowerCase()}`), query).toHaveLength(1);
+              expect(parts, query).not.toContain(`site:${host.toLowerCase()}`);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  it('does not read website: or mysite: as operators', () => {
+    for (const originalQuery of ['website:foo.com coverage', 'mysite:foo.com coverage']) {
+      const queries = planSearchQueries({ originalQuery, passIndex: 2, previousQueries: [], gaps: ['Need official docs.'] });
+      for (const query of queries) expect(query.split(' ').some((token) => /^-?site:/i.test(token)), query).toBe(false);
+    }
+  });
+});
+
+describe('Microsoft Edge driver and update routing', () => {
+  it.each([
+    'Edge WebDriver version mismatch',
+    'edge driver path on Linux',
+    'msedgedriver not found',
+    'Edge updates blocked by policy',
+    'Edge update channels',
+    'Edge Insider builds',
+    'Edge for Business licensing'
+  ])('routes "%s" to learn.microsoft.com', (originalQuery) => {
+    const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toMatch(/^site:learn\.microsoft\.com /);
+  });
+
+  it.each(['edge cases in vitest', 'cutting edge tooling for Node', 'edge-to-edge layout', 'knowledge base for the team', 'Vercel edge functions timeouts', 'edge runtime limits', 'edge network latency'])(
+    'still does not route "%s" to learn.microsoft.com',
+    (originalQuery) => {
+      const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+      expect(queries.join('\n')).not.toContain('learn.microsoft.com');
+    }
+  );
+});
