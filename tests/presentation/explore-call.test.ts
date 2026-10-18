@@ -67,7 +67,9 @@ describe('web_explore call heading', () => {
 
   it.each([
     ['terminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret\x9cx', 'example.com/x'],
-    ['unterminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret', 'example.com/']
+    ['unterminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret', 'example.com/'],
+    ['parameterized and terminated', 'https://example.com/\x9d8;id=foo;https://alice:secret@example.com/private?token=secret\x9cx', 'example.com/x'],
+    ['parameterized and unterminated', 'https://example.com/\x9d8;id=foo;https://alice:secret@example.com/private?token=secret', 'example.com/']
   ])('removes a %s C1 OSC 8 hyperlink before parsing a URL', (_kind, value, expected) => {
     expect(safeDisplayUrl(value)).toBe(expected);
   });
