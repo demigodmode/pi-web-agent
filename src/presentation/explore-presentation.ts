@@ -15,10 +15,20 @@ function internalReaderLabel(method?: FetchMethod) {
 
 export { sanitizeTerminalText } from './explore-display-text.js';
 
+/** One line per distinct unavailable provider, using the provider's own message. */
+export function searchUnavailableNotices(result: Pick<WebExploreResponse, 'searchUnavailable'>, clean: (text: string) => string = (text) => text): string[] {
+  const lines = (result.searchUnavailable ?? []).map((item) => {
+    const message = item.message.replace(/\.*$/, '.');
+    return clean(`Search unavailable (${item.provider}): ${message} Run /web-agent doctor to check backend settings.`);
+  });
+  return [...new Set(lines)];
+}
+
 function buildLegacyExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   const notices = (result.requiredSourceFailures ?? []).map((failure) =>
     sanitizeTerminalText(`Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`)
   );
+  const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
   if (result.status === 'error') {
     const successful = result.sources.length
       ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
@@ -26,7 +36,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     return {
       mode: 'compact',
       views: {
-        compact: [...successful, ...notices, `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n')
+        compact: [...searchNotices, ...successful, ...notices, `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n')
       }
     };
   }
@@ -51,6 +61,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
   });
   const preview = [
+    ...searchNotices,
     ...notices,
     ...evidenceLines,
     internalSummary ? `\n${internalSummary}` : undefined
@@ -58,6 +69,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     .filter((line) => line !== undefined)
     .join('\n');
   const verbose = [
+    ...searchNotices,
     ...notices,
     'Findings',
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
@@ -79,7 +91,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     .filter((line) => line !== undefined)
     .join('\n');
 
-  const compact = notices.length
+  const compactBody = notices.length
     ? notices.join('\n')
     : hasEvidence
     ? `Reviewed ${result.sources.length} sources · synthesized answer with ${result.findings.length} findings`
@@ -88,7 +100,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   return {
     mode: 'compact',
     views: {
-      compact,
+      compact: [...searchNotices, compactBody].join('\n'),
       preview,
       verbose
     },
@@ -155,13 +167,15 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     ? `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`
     : undefined;
   const limitation = !error && result.caveat ? sanitizeTerminalText(result.caveat) : undefined;
-  const compact = [summary, ...compactNotices, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
+  const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
+  const compact = [summary, ...searchNotices, ...compactNotices, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
   const previewFindings = result.findings.slice(0, 3).map((finding) =>
     `- ${clipTerminalText(sanitizeTerminalText(finding), 240)}`
   );
   const displayQueries = stats.executedQueries.map((query) => safeDisplayQuery(query)).filter(Boolean);
   const preview = [
     summary,
+    ...searchNotices,
     ...failureNotices,
     error ?? (noEvidence ? 'No usable evidence found.' : limitation),
     !error && previewFindings.length ? '\nFindings\n' + previewFindings.join('\n') : undefined
@@ -175,6 +189,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     .map(([method, count]) => `${methodLabels[method]}: ${count}`);
   const verbose = [
     summary,
+    ...searchNotices,
     ...failureNotices,
     error,
     noEvidence ? 'No usable evidence found.' : undefined,

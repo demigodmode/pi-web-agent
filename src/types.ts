@@ -156,6 +156,13 @@ export type WebFetchHeadlessResponse = {
   error?: ToolError;
 };
 
+/** A search provider that could not run for a reason the user can fix (missing key, bad key, quota). */
+export type SearchUnavailable = {
+  provider: string;
+  kind: 'not_configured' | 'auth_failed' | 'quota_exhausted';
+  message: string;
+};
+
 export type WebExploreResponse = {
   status: 'ok' | 'error';
   /** Monotonic wall time for this individual exploration invocation. */
@@ -175,6 +182,7 @@ export type WebExploreResponse = {
     truncated: boolean;
   }>;
   caveat?: string;
+  searchUnavailable?: SearchUnavailable[];
   requiredSourceFailures?: Array<{
     url: string;
     code: string;

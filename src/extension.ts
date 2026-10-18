@@ -9,6 +9,7 @@ import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
 import { sanitizeTerminalText } from './presentation/explore-display-text.js';
+import { searchUnavailableNotices } from './presentation/explore-presentation.js';
 import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
@@ -39,6 +40,7 @@ async function waitWithin<T>(work: Promise<T>, timeoutMs: number): Promise<T | u
  * gets the substance regardless of the user's compact/preview/verbose presentation setting.
  */
 function serializeForModel(result: WebExploreResponse): string {
+  const searchNotices = searchUnavailableNotices(result);
   const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
     `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
   );
@@ -47,8 +49,8 @@ function serializeForModel(result: WebExploreResponse): string {
     : undefined;
   if (result.findings.length === 0 && result.sources.length === 0) {
     return terminalError
-      ? [...requiredNotices, terminalError].filter(Boolean).join('\n\n')
-      : [...requiredNotices, 'No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
+      ? [...searchNotices, ...requiredNotices, terminalError].filter(Boolean).join('\n\n')
+      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
   }
   const linked = (result.evidence?.length ?? 0) > 0;
   const findings = result.findings.map((finding, index) => {
@@ -61,6 +63,7 @@ function serializeForModel(result: WebExploreResponse): string {
     item.truncated ? '  (source excerpt truncated)' : undefined
   ].filter(Boolean).join('\n')).join('\n');
   return [
+    ...searchNotices,
     ...requiredNotices,
     findings.join('\n\n'),
     linked ? `Evidence:\n${evidence}` : result.sources.length
@@ -227,9 +230,10 @@ export default function extension(pi: ExtensionAPI) {
     description:
       'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
       'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Include every link the user supplied, unchanged, in the query: links in the query are read directly (GitHub issues and pull requests through the API, GitHub repositories cloned and searched), and reported if they cannot be read. ' +
       'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.',
     parameters: Type.Object({
-      query: Type.String({ description: 'Web research question to explore.' })
+      query: Type.String({ description: 'Web research question. Include any links the user gave, unchanged.' })
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const executionSession = session;

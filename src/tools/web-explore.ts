@@ -34,6 +34,7 @@ function withRedactedUrls(response: WebExploreResponse): WebExploreResponse {
     ...(response.caveat ? { caveat: redactUrlsInText(response.caveat) } : {}),
     ...(response.error ? { error: redactStrings(response.error) } : {}),
     ...(response.requiredSourceFailures ? { requiredSourceFailures: redactStrings(response.requiredSourceFailures) } : {}),
+    ...(response.searchUnavailable ? { searchUnavailable: redactStrings(response.searchUnavailable) } : {}),
     ...(response.metadata ? { metadata: redactStrings(response.metadata) } : {})
   };
 }
@@ -57,6 +58,7 @@ export function createWebExploreTool({
           terminalFailure?: { code: string; message: string };
           requiredSourceEvidence?: ResearchEvidence[];
           requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
+          searchUnavailable?: WebExploreResponse['searchUnavailable'];
         }>;
       }
     | ((input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
@@ -67,6 +69,7 @@ export function createWebExploreTool({
         terminalFailure?: { code: string; message: string };
         requiredSourceEvidence?: ResearchEvidence[];
         requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
+        searchUnavailable?: WebExploreResponse['searchUnavailable'];
       }>);
   now?: () => number;
 } = {}) {
@@ -117,7 +120,8 @@ export function createWebExploreTool({
         findingSourceIds: required.map((_, index) => [evidence[index]!.id]),
         error: result.terminalFailure,
         metadata: result.metadata,
-        requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures
+        requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures,
+        ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {})
       };
       return toPublicResponse(failed);
     }
@@ -156,7 +160,8 @@ export function createWebExploreTool({
       findingSourceIds: selectedEvidence.map((item) => [evidence[publicEvidence.indexOf(item)]!.id]),
       caveat: synthesized.caveat,
       metadata: result.metadata,
-      requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures
+      requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures,
+      ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {})
     };
 
     return toPublicResponse(shaped);

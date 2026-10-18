@@ -348,10 +348,13 @@ describe('Pi extension entrypoint', () => {
     expect(tool.description).toBe(
       'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
       'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Include every link the user supplied, unchanged, in the query: links in the query are read directly (GitHub issues and pull requests through the API, GitHub repositories cloned and searched), and reported if they cannot be read. ' +
       'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.'
     );
     expect(tool.description).toContain('Prefer this for ordinary web research');
+    expect(tool.description).toContain('Include every link the user supplied, unchanged, in the query');
     expect(tool.description).toContain('git and gh');
+    expect(tool.parameters.properties.query.description).toBe('Web research question. Include any links the user gave, unchanged.');
     expect(tool.description).not.toContain('do not use shell/network commands');
   });
 

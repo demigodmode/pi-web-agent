@@ -323,3 +323,25 @@ describe('buildExplorePresentation', () => {
     expect(presentation.sources?.[0]?.url).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
   });
 });
+
+describe('search unavailable notices in the legacy views', () => {
+  it('puts the provider notice once at the top of each view', () => {
+    const notice = 'Search unavailable (brave): Brave search requires PI_WEB_AGENT_BRAVE_API_KEY. Run /web-agent doctor to check backend settings.';
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      findings: [],
+      sources: [],
+      caveat: 'No usable sources were found.',
+      searchUnavailable: [
+        { provider: 'brave', kind: 'not_configured', message: 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.' },
+        { provider: 'brave', kind: 'not_configured', message: 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.' }
+      ]
+    });
+
+    for (const view of ['compact', 'preview', 'verbose'] as const) {
+      const text = presentation.views[view] ?? '';
+      expect(text.startsWith(notice)).toBe(true);
+      expect(text.split(notice).length - 1).toBe(1);
+    }
+  });
+});
