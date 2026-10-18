@@ -29,6 +29,23 @@ describe('web_explore tool', () => {
     await expect(webExplore({ query: 'example' })).resolves.toMatchObject({ durationMs: 10 });
   });
 
+  it('records duration on terminal workflow errors and invalid queries', async () => {
+    let time = 10;
+    const terminal = createWebExploreTool({
+      now: () => time,
+      explore: vi.fn().mockImplementation(async () => {
+        time = 40;
+        return { decision: { action: 'research-again' }, evidence: [], workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'stopped' } };
+      })
+    });
+    await expect(terminal({ query: 'example', startedAt: 10 })).resolves.toMatchObject({ status: 'error', durationMs: 30 });
+
+    time = 60;
+    const invalid = createWebExploreTool({ now: () => time });
+    time = 65;
+    await expect(invalid({ query: ' ', startedAt: 60 })).resolves.toMatchObject({ status: 'error', durationMs: 5 });
+  });
+
   it('keeps all successful required sources public while findings use the first five', async () => {
     const required = Array.from({ length: 8 }, (_, index) => ({
       title: `Required ${index + 1}`, url: `https://required.example/${index + 1}`, requestedUrl: `https://query.example/${index + 1}`,

@@ -14,7 +14,8 @@ export type ResearchProgress = {
 export function formatResearchProgress(progress: ResearchProgress): string {
   const activity = (label: string, target: string | undefined, formatTarget: (value: string) => string | undefined) => {
     const display = target === undefined ? undefined : formatTarget(target);
-    return display ? `${label}: ${clipTerminalText(display, 120)}` : label;
+    const prefix = `${label}: `;
+    return display ? `${prefix}${clipTerminalText(display, Math.max(0, 120 - Array.from(prefix).length))}` : label;
   };
   switch (progress.phase) {
     case 'search': return activity('Searching', progress.target, (target) => safeDisplayQuery(target, 120));

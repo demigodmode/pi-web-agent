@@ -23,7 +23,7 @@ describe('formatResearchProgress', () => {
 
   it('clips activity labels to 120 visible characters', () => {
     const text = formatResearchProgress({ phase: 'search', state: 'started', target: 'x'.repeat(200), searches: 1, fetches: 0, headless: 0 });
-    expect(Array.from(text.slice('Searching: '.length))).toHaveLength(120);
+    expect(Array.from(text)).toHaveLength(120);
     expect(text.endsWith('…')).toBe(true);
   });
 });

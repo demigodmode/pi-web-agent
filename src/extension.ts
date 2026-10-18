@@ -264,7 +264,7 @@ export default function extension(pi: ExtensionAPI) {
               update(formatResearchProgress(progress));
             }
           });
-          update('Research complete.', true);
+          update('Research complete.');
 
           // Terminal display honors the user's presentation mode; the model gets the full findings.
           // The fallback must stay terse: never fall back to serializeForModel here, or a missing

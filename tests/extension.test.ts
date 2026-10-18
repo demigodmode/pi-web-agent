@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Text } from '@earendil-works/pi-tui';
 import extension from '../src/extension.js';
+import { createWebExploreTool } from '../src/tools/web-explore.js';
 
 describe('Pi extension entrypoint', () => {
   it('renders a call heading with active theme colors', () => {
@@ -70,6 +71,18 @@ describe('Pi extension entrypoint', () => {
     extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
 
     await expect(tools[0].execute('call-1', { query: 'example' }, undefined, () => { throw new Error('display gone'); })).resolves.toMatchObject({ isError: false });
+  });
+  it('shows the complete prompt once through the normal web_explore tool path', async () => {
+    const updates = vi.fn();
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [], workerPass: {} })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates.mock.calls.map(([update]) => update.content[0].text).filter((text: string) => text === 'Research complete.')).toHaveLength(1);
   });
   it('coalesces repeated live activity and ignores worker updates after caller cancellation', async () => {
     let emit: ((event: { phase: 'search'; state: 'started'; target: string; searches: number; fetches: number; headless: number }) => void) | undefined;
@@ -330,6 +343,7 @@ describe('Pi extension entrypoint', () => {
       },
       __webExploreTool: vi.fn().mockResolvedValue({
         status: 'ok',
+        durationMs: 550,
         findings: ['A concise finding.'],
         sources: [{ title: 'Source', url: 'https://example.com', method: 'http' }],
         findingSourceIds: [['S1']],
@@ -357,6 +371,7 @@ describe('Pi extension entrypoint', () => {
     expect(result.content[0].text).toContain('The source passage that supports the finding.');
     expect(result.content[0].text).toContain('[S1] Source: https://example.com');
     expect(result.content[0].text).not.toContain('Reviewed');
+    expect(result.content[0].text).not.toContain('550');
     // The compact terminal view is carried separately for the renderer.
     expect(result.details.terminalText).toBe('Reviewed 1 sources · synthesized answer with 1 findings');
     // renderResult (terminal) shows the compact view, not the full findings.
