@@ -15,9 +15,21 @@ describe('web_explore call heading', () => {
     expect(formatExploreCall('  say "hi"\u001b[31m\\now\t ', true)).toBe('web_explore ("say \\"hi\\"\\\\now")');
   });
 
+  it('removes bidi formatting controls from the heading', () => {
+    const heading = formatExploreCall('left\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069right', true);
+    expect(heading).toBe('web_explore ("leftright")');
+    expect(heading).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+  });
+
   it('redacts credentials and tracking from HTTP URLs', () => {
     const heading = formatExploreCall('https://alice:secret@example.com/docs?q=secret#secret', true);
     expect(heading).toBe('web_explore ("https://example.com/docs")');
+    expect(heading).not.toContain('secret');
+  });
+
+  it('redacts credentials from HTTP URLs embedded in a query', () => {
+    const heading = formatExploreCall('Review https://alice:secret@example.com/docs?token=secret#secret now', true);
+    expect(heading).toBe('web_explore ("Review https://example.com/docs now")');
     expect(heading).not.toContain('secret');
   });
 
@@ -27,6 +39,15 @@ describe('web_explore call heading', () => {
     expect(safeDisplayQuery(query)?.endsWith('…')).toBe(true);
     expect(clipTerminalText(query, 120)).toHaveLength(120);
     expect(clipTerminalText(query, 120).endsWith('…')).toBe(true);
+  });
+
+  it('clips after JSON escaping while retaining a closed quoted heading', () => {
+    const heading = formatExploreCall('"\\'.repeat(100), true);
+    const querySegment = heading.slice('web_explore ('.length, -1);
+    expect(Array.from(querySegment).length).toBeLessThanOrEqual(96);
+    expect(querySegment.startsWith('"')).toBe(true);
+    expect(querySegment.endsWith('"')).toBe(true);
+    expect(() => JSON.parse(querySegment)).not.toThrow();
   });
 
   it('uses a neutral link label for malformed URL-looking input', () => {

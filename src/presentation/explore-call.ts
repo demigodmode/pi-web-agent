@@ -5,7 +5,7 @@ const HEADING_QUERY_LIMIT = 96;
 function sanitizeTerminalText(value: string): string {
   return value
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/gu, '')
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200e-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .replace(/\s+/gu, ' ')
     .trim();
 }
@@ -30,18 +30,39 @@ export function safeDisplayUrl(value: string): string {
   }
 }
 
-/** Produces the readable, terminal-safe query shown in a call heading. */
-export function safeDisplayQuery(query: unknown, maxVisibleChars = HEADING_QUERY_LIMIT): string | undefined {
+function redactUrls(value: string): string {
+  return value.replace(/https?:\/\/[^\s]+/giu, (url) => safeDisplayUrl(url));
+}
+
+function displayQuery(query: unknown): string | undefined {
   if (typeof query !== 'string') return undefined;
   const sanitized = sanitizeTerminalText(query);
-  if (!sanitized) return undefined;
-  const display = /^https?:/iu.test(sanitized) ? safeDisplayUrl(sanitized) : sanitized;
+  return sanitized ? redactUrls(sanitized) : undefined;
+}
+
+/** Produces the readable, terminal-safe query shown in a call heading. */
+export function safeDisplayQuery(query: unknown, maxVisibleChars = HEADING_QUERY_LIMIT): string | undefined {
+  const display = displayQuery(query);
+  if (!display) return undefined;
   return clipTerminalText(display, maxVisibleChars);
 }
 
+function quoteAndClip(value: string, maxVisibleChars: number): string {
+  const quoted = JSON.stringify(value);
+  if (Array.from(quoted).length <= maxVisibleChars) return quoted;
+
+  let prefix = '';
+  for (const character of Array.from(value)) {
+    const candidate = JSON.stringify(`${prefix}${character}…`);
+    if (Array.from(candidate).length > maxVisibleChars) break;
+    prefix += character;
+  }
+  return JSON.stringify(`${prefix}…`);
+}
+
 export function formatExploreCall(query: unknown, argsComplete: boolean): string {
-  const display = argsComplete ? safeDisplayQuery(query) : undefined;
-  return display ? `web_explore (${JSON.stringify(display)})` : 'web_explore (…)';
+  const display = argsComplete ? displayQuery(query) : undefined;
+  return display ? `web_explore (${quoteAndClip(display, HEADING_QUERY_LIMIT)})` : 'web_explore (…)';
 }
 
 type ExploreCallTheme = {

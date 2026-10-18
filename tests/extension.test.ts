@@ -30,6 +30,20 @@ describe('Pi extension entrypoint', () => {
     expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore (…)');
   });
 
+  it('renders the same call heading without any live workflow state', () => {
+    const registerTool = vi.fn();
+    extension({ registerTool, registerCommand: vi.fn(), on: vi.fn() } as never);
+
+    const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
+    const heading = webExplore.renderCall(
+      { query: 'Review https://alice:secret@example.com/docs?token=secret now' },
+      { fg: (_color: string, text: string) => text },
+      { argsComplete: true, lastComponent: undefined }
+    ) as Text;
+
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore ("Review https://example.com/docs now")');
+  });
+
   it('sends short progress updates through Pi without exposing evidence text', async () => {
     const updates = vi.fn();
     const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
