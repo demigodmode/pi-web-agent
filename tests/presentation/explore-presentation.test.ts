@@ -117,6 +117,31 @@ describe('buildExplorePresentation', () => {
     }
   });
 
+  it('does not group required source failures with different reasons', () => {
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      durationMs: 1_000,
+      findings: [],
+      sources: [],
+      requiredSourceFailures: [
+        { url: 'https://example.com/read-failed', code: 'READ_FAILED', message: 'Source was not read.', reason: 'read-failed' },
+        { url: 'https://example.com/limited', code: 'LIMIT', message: 'Source was not read.', reason: 'limit' }
+      ],
+      metadata: {
+        searchPasses: 0,
+        fetchedPages: 0,
+        headlessAttempts: 0,
+        exhaustedBudget: true,
+        presentationStats: { searches: 0, executedQueries: [], pagesRead: 0, failedReads: 2, methods: {} }
+      }
+    });
+
+    const compactLines = presentation.views.compact.split('\n').filter((line) => line.startsWith('Required sources not read:'));
+    expect(compactLines).toHaveLength(2);
+    expect(compactLines[0]).toContain('https://example.com/read-failed');
+    expect(compactLines[1]).toContain('https://example.com/limited');
+  });
+
   it('labels github/pdf/youtube sources with their reader name', () => {
     const presentation = buildExplorePresentation({
       status: 'ok',

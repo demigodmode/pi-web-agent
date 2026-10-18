@@ -122,12 +122,15 @@ function requiredNotices(result: WebExploreResponse, compact = false) {
   if (!compact) return failures.map((failure) => sanitizeTerminalText(
     `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
   ));
-  const grouped = new Map<string, string[]>();
+  const grouped = new Map<string, { message: string; urls: string[] }>();
   for (const failure of failures) {
-    const key = sanitizeTerminalText(failure.message);
-    grouped.set(key, [...(grouped.get(key) ?? []), sanitizeTerminalText(failure.url)]);
+    const message = sanitizeTerminalText(failure.message);
+    const key = `${failure.reason}\u0000${message}`;
+    const group = grouped.get(key) ?? { message, urls: [] };
+    group.urls.push(sanitizeTerminalText(failure.url));
+    grouped.set(key, group);
   }
-  return [...grouped].map(([message, urls]) =>
+  return [...grouped.values()].map(({ message, urls }) =>
     `Required sources not read: ${urls.join(', ')}. ${message} The requirements were not checked for these sources.`
   );
 }
