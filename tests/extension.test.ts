@@ -1,7 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Text } from '@earendil-works/pi-tui';
 import extension from '../src/extension.js';
 
 describe('Pi extension entrypoint', () => {
+  it('renders a call heading with active theme colors', () => {
+    const registerTool = vi.fn();
+    extension({ registerTool, registerCommand: vi.fn(), on: vi.fn() } as never);
+
+    const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
+    const fg = vi.fn((_color: string, text: string) => text);
+    const heading = webExplore.renderCall(
+      { query: ' Vitest\ncoverage ' },
+      { fg },
+      { argsComplete: true }
+    ) as Text;
+
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore ("Vitest coverage")');
+    expect(fg).toHaveBeenCalledWith('toolTitle', 'web_explore');
+    expect(fg).toHaveBeenCalledWith('muted', ' ("Vitest coverage")');
+  });
+
+  it('renders a readable fallback call heading while arguments stream', () => {
+    const registerTool = vi.fn();
+    extension({ registerTool, registerCommand: vi.fn(), on: vi.fn() } as never);
+
+    const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
+    const heading = webExplore.renderCall({}, { fg: (_color: string, text: string) => text }, { argsComplete: false }) as Text;
+
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore (…)');
+  });
+
   it('sends short progress updates through Pi without exposing evidence text', async () => {
     const updates = vi.fn();
     const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {

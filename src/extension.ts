@@ -9,6 +9,7 @@ import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
 import { sanitizeTerminalText } from './presentation/explore-presentation.js';
+import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
 import type { WebExploreResponse } from './types.js';
@@ -267,6 +268,9 @@ export default function extension(pi: ExtensionAPI) {
       } finally {
         executionSession.operations.delete(operation);
       }
+    },
+    renderCall(args, theme, context) {
+      return renderExploreCall(args?.query, context.argsComplete, theme);
     },
     renderResult(toolResult, options) {
       const details = toolResult.details as
