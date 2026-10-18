@@ -12,6 +12,27 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it('reports the first successful direct read in its settled progress snapshot', async () => {
+    const events: ResearchProgress[] = [];
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { text: 'Readable direct source.' }, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Read https://example.com/source', onProgress: (event) => events.push(event) });
+    expect(events.find((event) => event.phase === 'fetch' && event.state === 'settled')).toMatchObject({ pagesRead: 1, failedReads: 0 });
+    expect(result.metadata.presentationStats?.pagesRead).toBe(1);
+  });
+
+  it('reports the first successful typed repo read in its settled progress snapshot', async () => {
+    const events: ResearchProgress[] = [];
+    await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      researchRepo: vi.fn(async ({ url }) => ({ ok: true as const, response: { status: 'ok' as const, url, content: { text: 'Readable repository source.' }, metadata: { method: 'github' as const, cacheHit: false } } })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Read https://github.com/acme/widget', onProgress: (event) => events.push(event) });
+    expect(events.find((event) => event.phase === 'fetch' && event.state === 'settled')).toMatchObject({ pagesRead: 1, failedReads: 0 });
+  });
+
   it('reports direct fetch and headless progress with shared counts', async () => {
     const phases: string[] = [];
     const orchestrator = createResearchOrchestrator({

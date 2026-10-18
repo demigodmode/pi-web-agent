@@ -396,7 +396,11 @@ export function createResearchOrchestrator({
           }
           emit('fetch', 'started', url);
           let researched: RepoResearchResult;
-          try { researched = await budget.wait(researchRepo!({ url, query, signal: budget.signal })); }
+          try {
+            researched = await budget.wait(researchRepo!({ url, query, signal: budget.signal }));
+            if (researched.ok) presentationStats.recordRead(researched.response, 'repo', url);
+            else presentationStats.recordFailure(url);
+          }
           catch (error) {
             if (signal?.aborted) throw error;
             presentationStats.recordFailure(url);
@@ -406,8 +410,7 @@ export function createResearchOrchestrator({
             emit('fetch', 'settled', url);
           }
           throwIfAborted(signal);
-          if (!researched.ok) { presentationStats.recordFailure(url); requiredFailure(url, 'read-failed', researched.error.code, researched.error.message, researched.error.failure); continue; }
-          presentationStats.recordRead(researched.response, 'repo', url);
+          if (!researched.ok) { requiredFailure(url, 'read-failed', researched.error.code, researched.error.message, researched.error.failure); continue; }
           const repoEvidence = evidenceFromFetch(researched.response, query, { trustedContent: true, requestedUrl: url });
           if (repoEvidence) { allEvidence.push(repoEvidence); requiredSourceEvidence.push(repoEvidence); }
           else requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', `Direct URL could not be read reliably: ${url}`);
@@ -424,7 +427,10 @@ export function createResearchOrchestrator({
         }
         emit('fetch', 'started', url);
         let directResult: WebFetchResponse;
-        try { directResult = await budget.wait(fetchDirect({ url, query, signal: budget.signal })); }
+        try {
+          directResult = await budget.wait(fetchDirect({ url, query, signal: budget.signal }));
+          presentationStats.recordRead(directResult, undefined, url);
+        }
         catch (error) {
           if (signal?.aborted) throw error;
           presentationStats.recordFailure(url);
@@ -434,7 +440,6 @@ export function createResearchOrchestrator({
           emit('fetch', 'settled', url);
         }
         throwIfAborted(signal);
-        presentationStats.recordRead(directResult, undefined, url);
         if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
         const directEvidence = evidenceFromFetch(directResult, query, { requestedUrl: url });
           if (directEvidence) {
@@ -452,6 +457,7 @@ export function createResearchOrchestrator({
               try {
                 const headlessWork = headlessFetch({ url: directResult.url, query, signal: budget.signal });
                 headlessResult = await budget.wait(headlessWork);
+                presentationStats.recordRead(headlessResult, undefined, directResult.url);
               } catch (error) {
                 if (signal?.aborted) throw error;
                 presentationStats.recordFailure(directResult.url);
@@ -461,7 +467,6 @@ export function createResearchOrchestrator({
                 emit('headless', 'settled', directResult.url);
               }
               throwIfAborted(signal);
-              presentationStats.recordRead(headlessResult, undefined, directResult.url);
               const headlessEvidence = evidenceFromHeadless(headlessResult, query, url);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
