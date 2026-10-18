@@ -8,7 +8,7 @@ import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presenta
 import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
-import { sanitizeTerminalText } from './presentation/explore-presentation.js';
+import { sanitizeTerminalText } from './presentation/explore-display-text.js';
 import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';

@@ -23,13 +23,13 @@ describe('web_explore call heading', () => {
 
   it('redacts credentials and tracking from HTTP URLs', () => {
     const heading = formatExploreCall('https://alice:secret@example.com/docs?q=secret#secret', true);
-    expect(heading).toBe('web_explore ("https://example.com/docs")');
+    expect(heading).toBe('web_explore ("example.com/docs")');
     expect(heading).not.toContain('secret');
   });
 
   it('redacts credentials from HTTP URLs embedded in a query', () => {
     const heading = formatExploreCall('Review https://alice:secret@example.com/docs?token=secret#secret now', true);
-    expect(heading).toBe('web_explore ("Review https://example.com/docs now")');
+    expect(heading).toBe('web_explore ("Review example.com/docs now")');
     expect(heading).not.toContain('secret');
   });
 
@@ -52,5 +52,14 @@ describe('web_explore call heading', () => {
 
   it('uses a neutral link label for malformed URL-looking input', () => {
     expect(safeDisplayUrl('https://[bad')).toBe('[link]');
+  });
+
+  it.each([
+    ['BEL', '\u0007'],
+    ['ST', '\x1b\\']
+  ])('strips OSC hyperlinks terminated by %s', (_terminator, terminator) => {
+    const open = `\x1b]8;;https://alice:secret@example.com/docs?token=secret${terminator}`;
+    const close = `\x1b]8;;${terminator}`;
+    expect(formatExploreCall(`q ${open}link${close}`, true)).toBe('web_explore ("q link")');
   });
 });

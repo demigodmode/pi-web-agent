@@ -204,7 +204,7 @@ describe('buildExplorePresentation', () => {
       }
     });
 
-    expect(presentation.views.verbose).toContain('read https://example.test/doc');
+    expect(presentation.views.verbose).toContain('read example.test/doc');
     expect(presentation.views.verbose).not.toContain('alice:secret');
     expect(presentation.views.verbose).not.toContain('token=secret');
     expect(presentation.views.verbose).not.toContain('#private');
@@ -315,8 +315,8 @@ describe('buildExplorePresentation', () => {
       expect(view).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
       expect(view).not.toContain('\u001b');
     }
-    expect(presentation.views.verbose).toContain('First excerpt line\nSecond excerpt    line[31mtext');
-    expect(presentation.views.verbose).toContain('Title [31m café: https://example.com/[31mpath');
+    expect(presentation.views.verbose).toContain('First excerpt line\nSecond excerpt    linetext');
+    expect(presentation.views.verbose).toContain('Title  café: https://example.com/path');
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ title: expect.stringContaining('\u001b') }));
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ url: expect.stringContaining('\u001b') }));
     expect(presentation.sources?.[0]?.title).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);

@@ -1,7 +1,7 @@
 import type { FetchMethod, WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
-import { clipTerminalText, safeDisplayQuery } from './explore-call.js';
+import { clipTerminalText, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
 
 function internalReaderLabel(method?: FetchMethod) {
   if (method === 'headless') return 'web_fetch_headless';
@@ -13,13 +13,7 @@ function internalReaderLabel(method?: FetchMethod) {
   return 'web_explore';
 }
 
-export function sanitizeTerminalText(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '')
-    .replace(/\t/g, '    ')
-    .replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/g, '');
-}
+export { sanitizeTerminalText } from './explore-display-text.js';
 
 function buildLegacyExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   const notices = (result.requiredSourceFailures ?? []).map((failure) =>

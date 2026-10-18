@@ -42,7 +42,7 @@ describe('Pi extension entrypoint', () => {
       { argsComplete: true, lastComponent: undefined }
     ) as Text;
 
-    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore ("Review https://example.com/docs now")');
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore ("Review example.com/docs now")');
   });
 
   it('sends short progress updates through Pi without exposing evidence text', async () => {
@@ -97,7 +97,7 @@ describe('Pi extension entrypoint', () => {
 
     await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
 
-    expect(updates.mock.calls.map(([update]) => update.content[0].text)).toContain('Reading: https://example.com/guide · 2 reads started');
+    expect(updates.mock.calls.map(([update]) => update.content[0].text)).toContain('Reading: example.com/guide · 2 reads started');
   });
   it('replaces out-of-order settled fetch targets with aggregate readable documents', async () => {
     const updates = vi.fn();
@@ -539,7 +539,7 @@ describe('Pi extension entrypoint', () => {
     }
     expect(verboseLines.map((line: string) => line.trimEnd())).toEqual([
       'Legacy first line',
-      'Legacy second line ]8;;https://example.comlinked]8;;'
+      'Legacy second line linked'
     ]);
   });
 

@@ -1,4 +1,4 @@
-import { clipTerminalText, safeDisplayQuery, safeDisplayUrl } from '../presentation/explore-call.js';
+import { clipTerminalText, safeDisplayQuery, safeDisplayUrl } from '../presentation/explore-display-text.js';
 
 export type ResearchProgress = {
   phase: 'search' | 'fetch' | 'headless' | 'complete';
