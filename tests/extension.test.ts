@@ -99,6 +99,28 @@ describe('Pi extension entrypoint', () => {
 
     expect(updates.mock.calls.map(([update]) => update.content[0].text)).toContain('Reading: https://example.com/guide · 2 reads started');
   });
+  it('replaces out-of-order settled fetch targets with aggregate readable documents', async () => {
+    const updates = vi.fn();
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn(async ({ onProgress }) => {
+        for (const [index, target] of ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'].entries()) {
+          onProgress?.({ phase: 'fetch', state: 'started', target, searches: 1, fetches: index + 1, headless: 0, pagesRead: 0 });
+        }
+        for (const [pagesRead, target] of ['https://example.com/c', 'https://example.com/a', 'https://example.com/b'].entries()) {
+          onProgress?.({ phase: 'fetch', state: 'settled', target, searches: 1, fetches: 3, headless: 0, pagesRead: pagesRead + 1 });
+        }
+        return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+      })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    const settled = updates.mock.calls.map(([update]) => update.content[0].text).filter((text: string) => /pages? read/u.test(text));
+    expect(settled).toEqual(['1 page read · 3 reads started', '2 pages read · 3 reads started', '3 pages read · 3 reads started']);
+    expect(settled.join('\n')).not.toContain('example.com');
+  });
   it('coalesces repeated live activity and ignores worker updates after caller cancellation', async () => {
     let emit: ((event: { phase: 'search'; state: 'started'; target: string; searches: number; fetches: number; headless: number }) => void) | undefined;
     const injected = vi.fn(({ onProgress, signal }: { onProgress?: typeof emit; signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {

@@ -21,6 +21,14 @@ describe('formatResearchProgress', () => {
     expect(formatResearchProgress({ phase: 'fetch', state: 'settled', searches: 1, fetches: 2, headless: 0 })).toBe('2 reads started');
   });
 
+  it('replaces a settled fetch target with aggregate readable documents', () => {
+    expect(formatResearchProgress({
+      phase: 'fetch', state: 'settled', target: 'https://alice:secret@example.com/finished?token=secret',
+      searches: 1, fetches: 3, headless: 0, pagesRead: 2
+    })).toBe('2 pages read · 3 reads started');
+    expect(formatResearchProgress({ phase: 'fetch', state: 'settled', target: 'https://example.com/one', searches: 1, fetches: 1, headless: 0, pagesRead: 1 })).toBe('1 page read · 1 read started');
+  });
+
   it('clips activity labels to 120 visible characters', () => {
     const text = formatResearchProgress({ phase: 'search', state: 'started', target: 'x'.repeat(200), searches: 1, fetches: 0, headless: 0 });
     expect(Array.from(text)).toHaveLength(120);

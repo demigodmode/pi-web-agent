@@ -21,6 +21,10 @@ export function formatResearchProgress(progress: ResearchProgress): string {
     case 'search': return activity('Searching', progress.target, (target) => safeDisplayQuery(target, 120));
     case 'fetch': {
       const reads = `${progress.fetches} ${progress.fetches === 1 ? 'read' : 'reads'} started`;
+      if (progress.state === 'settled') {
+        if (progress.pagesRead === undefined) return reads;
+        return `${progress.pagesRead} ${progress.pagesRead === 1 ? 'page' : 'pages'} read · ${reads}`;
+      }
       return progress.target
         ? activity('Reading', progress.target, (target) => safeDisplayUrl(String(target)), ` · ${reads}`)
         : reads;
