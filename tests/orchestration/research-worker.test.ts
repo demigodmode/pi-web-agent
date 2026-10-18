@@ -129,6 +129,30 @@ describe('research worker', () => {
     expect(stats.snapshot()).toMatchObject({ searches: 1, pagesRead: 3, failedReads: 0, methods: { http: 3 } });
   });
 
+  it.each([
+    ['a synchronous throw', () => { throw new Error('sync failure'); }, 1],
+    ['a rejected fetch promise', () => Promise.reject(new Error('async failure')), 1],
+    ['a deadline cancellation', ({ signal }: { signal?: AbortSignal }) => new Promise<WebFetchResponse>((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))), 0]
+  ])('settles fetch progress once for %s', async (_name, fetchPage, failedReads) => {
+    const url = 'https://example.test/page';
+    const stats = createPresentationStats();
+    const events: Array<{ phase: string; state?: string }> = [];
+    const budget = createResearchRunBudget({ timeoutMs: failedReads === 0 ? 1 : 120_000 });
+    const worker = createResearchWorker({
+      search: async () => ({ status: 'ok' as const, results: [{ title: 'Page', url, snippet: 'details' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage
+    });
+    try {
+      if (failedReads === 0) await expect(worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) })).rejects.toThrow();
+      else await worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) });
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'started')).toHaveLength(1);
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'settled')).toHaveLength(1);
+      expect(stats.snapshot().failedReads).toBe(failedReads);
+    } finally {
+      budget.dispose();
+    }
+  });
+
   it('does not fetch a URL already visited in an earlier worker pass', async () => {
     const url = 'https://example.com/guide';
     const fetchPage = vi.fn(async () => ({ status: 'ok' as const, url, content: { title: 'Guide', text: 'Useful guide details' }, metadata: { method: 'http' as const, cacheHit: false } }));

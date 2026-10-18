@@ -3,6 +3,7 @@ import * as researchTypes from '../../src/orchestration/research-types.js';
 import type { ResearchProgress } from '../../src/orchestration/progress.js';
 import { createResearchOrchestrator } from '../../src/orchestration/research-orchestrator.js';
 import type { WebFetchHeadlessResponse } from '../../src/types.js';
+import type { PresentationStatsCollector } from '../../src/orchestration/presentation-stats.js';
 import type {
   ResearchWorkerResult,
   ResearchEvidence,
@@ -37,7 +38,7 @@ describe('research orchestrator types', () => {
 
   it('deduplicates a direct redirect with the same worker candidate in presentation stats', async () => {
     const finalUrl = 'https://example.test/final';
-    const worker = { run: vi.fn(async ({ presentationStats }: { presentationStats?: ReturnType<typeof import('../../src/orchestration/presentation-stats.js').createPresentationStats> }) => {
+    const worker = { run: vi.fn(async ({ presentationStats }: { presentationStats?: PresentationStatsCollector }) => {
       presentationStats?.recordRead({ status: 'ok', url: finalUrl, content: { text: 'worker evidence' }, metadata: { method: 'http', cacheHit: false } }, undefined, 'https://example.test/candidate');
       return { searchQueries: ['q'], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false };
     }) };

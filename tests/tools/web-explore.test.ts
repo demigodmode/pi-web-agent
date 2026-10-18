@@ -97,9 +97,11 @@ describe('web_explore tool', () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({ decision: { action: 'research-again' }, evidence: [], workerPass: {}, terminalFailure: { code: 'SEARCH_FAILED', message: 'failed' }, metadata: { searchPasses: 1, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false, presentationStats } })
     });
-    const result = await webExplore({ query: 'q' });
+    const onProgress = vi.fn();
+    const result = await webExplore({ query: 'q', onProgress });
     expect(result.status).toBe('error');
     expect(result.metadata?.presentationStats).toBe(presentationStats);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete', state: 'settled' }));
   });
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
     const webExplore = createWebExploreTool({
