@@ -2,6 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { buildExplorePresentation } from '../../src/presentation/explore-presentation.js';
 
 describe('buildExplorePresentation', () => {
+  it('pluralizes measured search and page counts independently', () => {
+    const build = (searches: number, pagesRead: number) => buildExplorePresentation({
+      status: 'ok',
+      durationMs: 1_000,
+      findings: [],
+      sources: [],
+      metadata: {
+        searchPasses: searches,
+        fetchedPages: pagesRead,
+        headlessAttempts: 0,
+        exhaustedBudget: false,
+        presentationStats: { searches, executedQueries: [], pagesRead, failedReads: 0, methods: {} }
+      }
+    }).views.compact.split('\n')[0];
+
+    expect(build(0, 1)).toBe('0 searches · 1 page read · 1s');
+    expect(build(1, 0)).toBe('1 search · 0 pages read · 1s');
+    expect(build(2, 3)).toBe('2 searches · 3 pages read · 1s');
+  });
+
   it('builds compact, preview, and verbose views from measured run facts', () => {
     const presentation = buildExplorePresentation({
       status: 'ok',

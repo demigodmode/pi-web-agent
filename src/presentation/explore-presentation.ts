@@ -114,7 +114,9 @@ function summaryLine(result: WebExploreResponse) {
   const stats = result.metadata?.presentationStats;
   if (!stats || result.durationMs === undefined) return undefined;
   const elapsed = result.durationMs < 1_000 ? '<1s' : `${Math.floor(result.durationMs / 1_000)}s`;
-  return `${stats.searches} searches · ${stats.pagesRead} pages read · ${elapsed}`;
+  const searchLabel = stats.searches === 1 ? 'search' : 'searches';
+  const pageLabel = stats.pagesRead === 1 ? 'page' : 'pages';
+  return `${stats.searches} ${searchLabel} · ${stats.pagesRead} ${pageLabel} read · ${elapsed}`;
 }
 
 function requiredNotices(result: WebExploreResponse, compact = false) {
