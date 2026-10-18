@@ -276,7 +276,7 @@ export default function extension(pi: ExtensionAPI) {
 
           return {
             content: [{ type: 'text' as const, text: serializeForModel(result) }],
-            details: { ...result, terminalText, terminalTextExpanded },
+            details: { ...result, selectedMode: mode, terminalText, terminalTextExpanded },
             isError: result.status === 'error'
           };
         } catch (error) {

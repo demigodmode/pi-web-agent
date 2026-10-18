@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildExplorePresentation } from '../../src/presentation/explore-presentation.js';
 
 describe('buildExplorePresentation', () => {
-  it('builds one compact body plus richer optional views', () => {
+  it('builds compact, preview, and verbose views from measured run facts', () => {
     const presentation = buildExplorePresentation({
       status: 'ok',
       findings: ['Use channel', 'Treat executablePath as fallback'],
@@ -15,24 +15,42 @@ describe('buildExplorePresentation', () => {
         { id: 'S1', title: 'Browsers | Playwright', url: 'https://playwright.dev/docs/browsers', method: 'http', excerpts: [{ text: 'Use the branded browser channel.' }], truncated: false },
         { id: 'S2', title: 'BrowserType | Playwright', url: 'https://playwright.dev/docs/api/class-browsertype', method: 'headless', excerpts: [{ text: 'The executable path is risky.', anchor: 'executablepath' }], truncated: false }
       ],
-      caveat: undefined,
+      caveat: 'Evidence is partial because one candidate could not be read.',
+      durationMs: 8_400,
       metadata: {
         searchPasses: 2,
         fetchedPages: 5,
         headlessAttempts: 1,
-        exhaustedBudget: false
+        exhaustedBudget: false,
+        presentationStats: {
+          searches: 3,
+          executedQueries: ['playwright browser channel', 'site:playwright.dev executablePath'],
+          pagesRead: 4,
+          failedReads: 1,
+          methods: { http: 2, headless: 1, github: 1 }
+        }
       }
     });
 
-    expect(presentation.views.compact).toBe('Reviewed 2 sources · synthesized answer with 2 findings');
-    expect(presentation.views.preview).toContain('- [web_fetch] Use channel');
-    expect(presentation.views.preview).toContain('- [web_fetch_headless] Treat executablePath as fallback');
-    expect(presentation.views.preview).toContain('Internal research: web_search ×2');
+    expect(presentation.views.compact).toContain('3 searches · 4 pages read · 8s');
+    expect(presentation.views.compact).toContain('Evidence is partial');
+    expect(presentation.views.compact).not.toContain('Use channel');
+    expect(presentation.views.preview).toContain('3 searches · 4 pages read · 8s');
+    expect(presentation.views.preview).toContain('Findings');
+    expect(presentation.views.preview).toContain('Use channel');
+    expect(presentation.views.preview).not.toContain('[web_fetch]');
+    expect(presentation.views.preview).not.toContain('Internal research');
     expect(presentation.views.verbose).toContain('Sources');
     expect(presentation.views.verbose).toContain('[S2] Treat executablePath as fallback');
     expect(presentation.views.verbose).toContain('The executable path is risky.');
     expect(presentation.views.verbose).toContain('- [web_fetch_headless] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
-    expect(presentation.views.verbose).toContain('Internal tools');
+    expect(presentation.views.verbose).toContain('Queries');
+    expect(presentation.views.verbose).toContain('site:playwright.dev executablePath');
+    expect(presentation.views.verbose).toContain('Retrieval');
+    expect(presentation.views.verbose).toContain('HTTP: 2');
+    expect(presentation.views.verbose).toContain('Browser: 1');
+    expect(presentation.views.verbose).toContain('GitHub: 1');
+    expect(presentation.views.verbose).toContain('Failed reads: 1');
   });
 
   it('says when no usable evidence was found in preview and verbose views', () => {
@@ -62,6 +80,41 @@ describe('buildExplorePresentation', () => {
     });
 
     expect(presentation.views.compact).toBe('Research failed: Query must not be empty.');
+  });
+
+  it('shows every required source failure before no evidence in every mode', () => {
+    const failures = Array.from({ length: 22 }, (_, index) => ({
+      url: `https://example.com/source-${index}`,
+      code: 'LIMIT',
+      message: 'Source limit reached.',
+      reason: 'limit' as const
+    }));
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      durationMs: 500,
+      findings: [],
+      sources: [],
+      requiredSourceFailures: failures,
+      metadata: {
+        searchPasses: 0,
+        fetchedPages: 0,
+        headlessAttempts: 0,
+        exhaustedBudget: true,
+        presentationStats: { searches: 0, executedQueries: [], pagesRead: 0, failedReads: 22, methods: {} }
+      }
+    });
+
+    const views = [presentation.views.compact, presentation.views.preview, presentation.views.verbose]
+      .filter((view): view is string => view !== undefined);
+    expect(views).toHaveLength(3);
+    for (const view of views) {
+      expect(view).toContain('0 searches · 0 pages read · <1s');
+      expect(view).toContain('https://example.com/source-0');
+      expect(view).toContain('https://example.com/source-21');
+      expect(view).toContain('requirements');
+      expect(view).toContain('not checked');
+      expect(view.indexOf('source-0')).toBeLessThan(view.indexOf('No usable evidence found'));
+    }
   });
 
   it('labels github/pdf/youtube sources with their reader name', () => {

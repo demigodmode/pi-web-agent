@@ -374,6 +374,8 @@ describe('Pi extension entrypoint', () => {
     expect(result.content[0].text).not.toContain('550');
     // The compact terminal view is carried separately for the renderer.
     expect(result.details.terminalText).toBe('Reviewed 1 sources · synthesized answer with 1 findings');
+    expect(result.details.selectedMode).toBe('compact');
+    expect(result.details.terminalTextExpanded).toBe('Findings\n- A concise finding.');
     // renderResult (terminal) shows the compact view, not the full findings.
     const rendered = webExplore
       .renderResult(result, { expanded: false, isPartial: false }, {}, {})
