@@ -20,7 +20,7 @@ That usually means the research loop found usable evidence, but also found a qua
 
 You can usually improve the result by asking a narrower follow-up query that names the docs site, issue tracker, forum, or exact API you care about.
 
-## The output has `[web_fetch]` or `[web_fetch_headless]` labels
+## Verbose output has `[web_fetch]` or `[web_fetch_headless]` labels
 
 Those labels show internal provenance.
 
@@ -28,7 +28,8 @@ Those labels show internal provenance.
 - `[web_fetch_headless]` means it came from a browser-rendered read.
 - `[web_explore]` is a fallback label when older or hand-shaped data did not include a reader method.
 
-They are there so preview/verbose mode stays honest about what happened under the hood.
+They are there so verbose mode can show what happened under the hood. Preview
+uses plain findings without reader labels.
 
 ## The page looked thin or partial
 

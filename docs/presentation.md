@@ -228,7 +228,7 @@ Backend provider, URL, and fallback settings are usually easier to edit through 
 A good practical rule:
 
 - use `compact` if you mostly want clean transcripts
-- use `preview` if you want findings plus internal provenance
+- use `preview` if you want up to three plain findings
 - use `verbose` if you want sources and caveats inline too
 
 For most people, `compact` as the default is probably right. Use `preview` or `verbose` when you are debugging research behavior or want to inspect what happened under the hood.

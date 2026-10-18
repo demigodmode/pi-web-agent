@@ -83,7 +83,9 @@ web_explore ("Vitest coverage configuration")
 One activity line is replaced as the work moves between search and reads. It
 shows safe, short activity only, never page text or raw provider errors.
 
-When research finishes, all modes begin with actual execution-time counts:
+For a completed research result with execution-time statistics, all modes begin
+with actual counts. Input-validation errors, such as an empty query, have no
+research summary:
 
 ```text
 web_explore ("Vitest coverage configuration")

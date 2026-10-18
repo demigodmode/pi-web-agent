@@ -31,7 +31,10 @@ The lower-level capabilities still exist in code, but they are internal steps no
 - headless fetch is for selected browser-rendered reads
 - orchestration decides when enough evidence exists and when source-quality concerns need another pass or a caveat
 
-Keeping those responsibilities separate still matters. It lets the package show provenance like `[web_fetch]`, `[web_fetch_headless]`, `[github]`, `[pdf]`, or `[youtube]` in preview/verbose output without forcing the outer model to manually chain those steps.
+Keeping those responsibilities separate still matters. It lets the package show
+provenance like `[web_fetch]`, `[web_fetch_headless]`, `[github]`, `[pdf]`, or
+`[youtube]` in verbose output without forcing the outer model to manually
+chain those steps. Preview keeps only plain findings.
 
 ## Special-content readers
 
