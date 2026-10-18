@@ -63,7 +63,7 @@ describe('buildExplorePresentation', () => {
     expect(presentation.views.verbose).toContain('Sources');
     expect(presentation.views.verbose).toContain('[S2] Treat executablePath as fallback');
     expect(presentation.views.verbose).toContain('The executable path is risky.');
-    expect(presentation.views.verbose).toContain('- [web_fetch_headless] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
+    expect(presentation.views.verbose).toContain('- [Browser] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
     expect(presentation.views.verbose).toContain('Queries');
     expect(presentation.views.verbose).toContain('site:playwright.dev executablePath');
     expect(presentation.views.verbose).toContain('Retrieval');
@@ -248,9 +248,9 @@ describe('buildExplorePresentation', () => {
     });
 
     const preview = presentation.views.preview as string;
-    expect(preview).toContain('[github]');
-    expect(preview).toContain('[pdf]');
-    expect(preview).toContain('[youtube]');
+    expect(preview).toContain('[GitHub]');
+    expect(preview).toContain('[PDF]');
+    expect(preview).toContain('[YouTube]');
   });
 
   it('shows the fanout providers on the internal-research summary line', () => {

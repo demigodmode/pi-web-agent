@@ -63,7 +63,8 @@ export function synthesizeAnswer({
 }) {
   const findings = evidence.slice(0, 5).map((item) => {
     const summary = normalizeSummary(item.summary);
-    return item.sourceKind === 'community' || item.sourceKind === 'issue-thread'
+    // A link the user typed is a requested source, not a discovered community thread.
+    return (item.sourceKind === 'community' || item.sourceKind === 'issue-thread') && item.requestedUrl === undefined
       ? `Community/practical context: ${summary}`
       : summary;
   });

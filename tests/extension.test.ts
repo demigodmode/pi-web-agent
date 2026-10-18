@@ -1007,3 +1007,24 @@ describe('web_explore redaction on the real orchestrator path', () => {
     expect(JSON.stringify(result.details)).toContain('id=1');
   });
 });
+
+describe('web_explore result rendering', () => {
+  function renderer() {
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn() } as never);
+    const tool = tools.find((item) => item.name === 'web_explore');
+    return (toolResult: unknown, expanded = false) => (tool.renderResult(toolResult, { expanded }) as Text).render(120).join('\n').trimEnd();
+  }
+
+  it('shows Cancelled for an aborted call instead of the generic fallback', () => {
+    const render = renderer();
+    expect(render({ content: [{ type: 'text', text: 'This operation was aborted' }], details: undefined, isError: true })).toBe('Cancelled');
+    expect(render({ content: [{ type: 'text', text: 'Operation aborted' }], details: undefined, isError: true }, true)).toBe('Cancelled');
+  });
+
+  it('keeps the terse fallback for other errors and never shows model text', () => {
+    const render = renderer();
+    expect(render({ content: [{ type: 'text', text: 'Some findings the model would read' }], details: undefined, isError: true })).toBe('web_explore result');
+    expect(render({ content: [{ type: 'text', text: 'Research failed: Search backend is down.' }], details: undefined, isError: true })).toBe('web_explore result');
+  });
+});

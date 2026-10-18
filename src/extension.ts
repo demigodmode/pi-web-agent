@@ -33,6 +33,14 @@ async function waitWithin<T>(work: Promise<T>, timeoutMs: number): Promise<T | u
   }
 }
 
+/** Pi reports a cancelled call as its abort error text, with no terminal details of ours. */
+function isCancelledResult(toolResult: { content?: unknown; details?: unknown }): boolean {
+  if ((toolResult.details as { terminalText?: string } | undefined)?.terminalText) return false;
+  const parts = Array.isArray(toolResult.content) ? toolResult.content as Array<{ text?: unknown }> : [];
+  const text = parts.map((part) => (typeof part?.text === 'string' ? part.text : '')).join(' ').trim();
+  return /^(?:this |the )?operation (?:was )?aborted\.?$/i.test(text);
+}
+
 /**
  * What the model receives as the tool result: the actual synthesized findings (which for a
  * direct GitHub/PDF/YouTube read is the full extracted content), plus source citations and any
@@ -310,6 +318,7 @@ export default function extension(pi: ExtensionAPI) {
           }
         | undefined;
       try {
+        if (isCancelledResult(toolResult)) return new Text('Cancelled', 0, 0);
         // Legacy fallback: results persisted before this change carry `presentation` but no
         // `terminalText`, so old sessions stay readable instead of rendering blank.
         const legacy = options.expanded

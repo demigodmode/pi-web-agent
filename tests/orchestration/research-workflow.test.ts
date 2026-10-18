@@ -857,3 +857,28 @@ describe('links and unavailable search backends through the public tool', () => 
     }
   });
 });
+
+describe('requested links are not labeled as community context', () => {
+  it('a direct issue read has no community prefix in the public findings', async () => {
+    const issueUrl = 'https://github.com/demigodmode/pi-web-agent/issues/83';
+    const workflow = createResearchWorkflow({
+      search: vi.fn(async (): Promise<WebSearchResponse> => ({ status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false } })),
+      fetchPage: async ({ url }) => ({
+        status: 'ok' as const,
+        url,
+        metadata: { method: 'github' as const, cacheHit: false },
+        content: { title: 'Issue 83', text: 'The reporter says the option was ignored when the config file is missing.' }
+      }),
+      headlessFetch: vi.fn()
+    });
+    try {
+      const result = await createWebExploreTool({ explore: workflow })({ query: issueUrl });
+
+      expect(result.status).toBe('ok');
+      expect(result.findings.length).toBeGreaterThan(0);
+      for (const finding of result.findings) expect(finding).not.toContain('Community/practical context:');
+    } finally {
+      await workflow.close();
+    }
+  });
+});

@@ -56,3 +56,65 @@ describe('planSearchQueries', () => {
     expect(later.every((query) => !first.includes(query))).toBe(true);
   });
 });
+
+describe('planSearchQueries site operators', () => {
+  const siteCount = (query: string) => query.match(/site:/gi)?.length ?? 0;
+  const originals = [
+    'site:vitest.dev vitest coverage docs',
+    'site:github.com DuckDuckGo HTML scraping pitfalls',
+    'Find vitest coverage site:vitest.dev/guide',
+    'Compare React and Vue site:reddit.com',
+    'React API site:github.com',
+    'Find current Vitest coverage docs for V8 provider',
+    'how to use the Edge browser policy'
+  ];
+  const gaps = [
+    'Need official docs or API reference.',
+    'Need implementation references.',
+    'Need exact API behavior.',
+    'Need user experience.',
+    'Need comparison evidence for target: Vue',
+    'Sources disagree about the recommendation.'
+  ];
+
+  it('never generates a query with two site: operators', () => {
+    for (const originalQuery of originals) {
+      for (let passIndex = 0; passIndex <= 3; passIndex++) {
+        for (const gap of gaps) {
+          const queries = planSearchQueries({ originalQuery, passIndex, previousQueries: [], gaps: [gap] });
+          for (const query of queries) expect(siteCount(query), query).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it('keeps the user site: operator exactly once in follow-ups and adds none', () => {
+    const queries = [
+      ...planSearchQueries({ originalQuery: 'site:vitest.dev vitest coverage docs', passIndex: 1, previousQueries: [], gaps: ['Need official docs.', 'Need implementation references.'] }),
+      ...planSearchQueries({ originalQuery: 'site:github.com DuckDuckGo HTML scraping pitfalls', passIndex: 2, previousQueries: [], gaps: ['Need implementation references.', 'Need user experience.'] })
+    ];
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries).toContain('site:vitest.dev vitest coverage docs');
+    for (const query of queries) {
+      expect(siteCount(query), query).toBeLessThanOrEqual(1);
+      expect(query).not.toMatch(/site:(?!vitest\.dev|github\.com)/);
+    }
+  });
+
+  it('strips negated site: operators from the search terms', () => {
+    const queries = planSearchQueries({ originalQuery: 'React API -site:stackoverflow.com', passIndex: 1, previousQueries: ['React API -site:stackoverflow.com'], gaps: ['Need implementation references.'] });
+    expect(queries.join('\n')).not.toContain('-site:');
+  });
+
+  it('does not send edge cases to learn.microsoft.com', () => {
+    for (const originalQuery of ['edge cases in vitest', 'edge cases in React', 'cutting edge tooling for Node', 'knowledge base for the team']) {
+      const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+      expect(queries.join('\n'), originalQuery).not.toContain('learn.microsoft.com');
+    }
+  });
+
+  it('still routes Microsoft Edge questions to learn.microsoft.com', () => {
+    const queries = planSearchQueries({ originalQuery: 'Microsoft Edge policy for extensions', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toBe('site:learn.microsoft.com Microsoft Edge policy extensions');
+  });
+});

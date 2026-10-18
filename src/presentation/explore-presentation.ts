@@ -3,17 +3,23 @@ import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
 import { clipTerminalText, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
 
-function internalReaderLabel(method?: FetchMethod) {
-  if (method === 'headless') return 'web_fetch_headless';
-  if (method === 'firecrawl') return 'firecrawl';
-  if (method === 'http') return 'web_fetch';
-  if (method === 'github') return 'github';
-  if (method === 'pdf') return 'pdf';
-  if (method === 'youtube') return 'youtube';
-  return 'web_explore';
-}
-
 export { sanitizeTerminalText } from './explore-display-text.js';
+
+const methodLabels = {
+  http: 'HTTP',
+  headless: 'Browser',
+  firecrawl: 'Firecrawl',
+  github: 'GitHub',
+  pdf: 'PDF',
+  youtube: 'YouTube',
+  repo: 'Repository'
+} as const;
+
+/** The user-facing reader name, or undefined when the method has no label (the bracket is then omitted). */
+function methodTag(method?: FetchMethod): string {
+  const label = method ? (methodLabels as Record<string, string | undefined>)[method] : undefined;
+  return label ? `[${label}] ` : '';
+}
 
 /** One line per distinct unavailable provider, using the provider's own message. */
 export function searchUnavailableNotices(result: Pick<WebExploreResponse, 'searchUnavailable'>, clean: (text: string) => string = (text) => text): string[] {
@@ -31,7 +37,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
   if (result.status === 'error') {
     const successful = result.sources.length
-      ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
+      ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
       : [];
     return {
       mode: 'compact',
@@ -53,12 +59,12 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     : undefined;
   const hasEvidence = result.findings.length > 0 || result.sources.length > 0;
   const evidenceLines = hasEvidence
-    ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${sanitizeTerminalText(finding)}`)
+    ? result.findings.map((finding, index) => `- ${methodTag(result.sources[index]?.method)}${sanitizeTerminalText(finding)}`)
     : ['No usable evidence found.'];
   const verboseFindings = result.findings.map((finding, index) => {
     const ids = result.findingSourceIds?.[index] ?? [];
     const sourceIds = ids.map(sanitizeTerminalText);
-    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
+    return `- ${methodTag(result.sources[index]?.method)}${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
   });
   const preview = [
     ...searchNotices,
@@ -75,7 +81,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
     'Sources',
-    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`),
+    ...result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`),
     ...(result.evidence?.length ? [
       '',
       'Evidence',
@@ -144,15 +150,6 @@ function requiredNotices(result: WebExploreResponse, compact = false) {
   );
 }
 
-const methodLabels = {
-  http: 'HTTP',
-  headless: 'Browser',
-  firecrawl: 'Firecrawl',
-  github: 'GitHub',
-  pdf: 'PDF',
-  youtube: 'YouTube',
-  repo: 'Repository'
-} as const;
 
 /** Terminal-only views built from execution-time statistics; full evidence stays on the response. */
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
@@ -195,7 +192,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     noEvidence ? 'No usable evidence found.' : undefined,
     displayQueries.length ? `Queries\n${displayQueries.join('\n')}` : undefined,
     verboseFindings.length ? `Findings\n${verboseFindings.join('\n')}` : undefined,
-    result.sources.length ? `Sources\n${result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
+    result.sources.length ? `Sources\n${result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
     result.evidence?.length ? `Evidence\n${result.evidence.flatMap((item) => [
       `- [${sanitizeTerminalText(item.id)}] ${sanitizeTerminalText(item.title)}: ${sanitizeTerminalText(item.url)}`,
       ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`)

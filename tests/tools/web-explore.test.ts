@@ -93,7 +93,7 @@ describe('web_explore tool', () => {
     expect(result.sources).toEqual(evidence.slice(0, 5).map(({ title, url, method }) => ({ title, url, method })));
     expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3'], ['S4'], ['S5']]);
     expect(result.evidence?.map((item) => item.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
-    expect(result.presentation?.views.preview).toContain('[web_fetch_headless] Finding 5');
+    expect(result.presentation?.views.preview).toContain('[Browser] Finding 5');
     expect(result.presentation?.views.verbose).toContain('Source 5: https://example.com/5');
     expect(result.presentation?.views.verbose).not.toContain('Source 6: https://example.com/6');
   });
@@ -369,7 +369,7 @@ describe('web_explore tool', () => {
     expect(JSON.stringify(result)).not.toContain('lowValueOutcomes');
     expect(JSON.stringify(result)).not.toContain('suggestedHeadlessUrl');
     expect(result.findings).toEqual(['Community/practical context: A concise summary.']);
-    expect(result.presentation?.views.preview).toContain('- [web_fetch] Community/practical context: A concise summary.');
+    expect(result.presentation?.views.preview).toContain('- [HTTP] Community/practical context: A concise summary.');
   });
 });
 
