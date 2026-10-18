@@ -3,8 +3,8 @@ const HEADING_QUERY_LIMIT = 96;
 /** Removes terminal control sequences while preserving ordinary presentation newlines and tabs. */
 export function sanitizeTerminalText(text: string): string {
   return text
-    .replace(/(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c)/gu, '')
-    .replace(/(?:\x1b\]|\x9d)[\s\S]*$/gu, '')
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/gu, '')
+    .replace(/\x1b\][\s\S]*$/gu, '')
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/gu, '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '')

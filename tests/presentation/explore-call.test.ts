@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clipTerminalText, formatExploreCall, safeDisplayQuery, safeDisplayUrl } from '../../src/presentation/explore-call.js';
+import { sanitizeTerminalText } from '../../src/presentation/explore-display-text.js';
 
 describe('web_explore call heading', () => {
   it('formats a complete whitespace-normalized query', () => {
@@ -58,11 +59,10 @@ describe('web_explore call heading', () => {
     expect(safeDisplayUrl('https://example.com/\x1b]8;;https://alice:secret@example.com/private?token=secret')).toBe('example.com/');
   });
 
-  it.each([
-    ['terminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret\x9cx', 'example.com/x'],
-    ['unterminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret', 'example.com/']
-  ])('removes a %s C1 OSC sequence before parsing a URL', (_kind, value, expected) => {
-    expect(safeDisplayUrl(value)).toBe(expected);
+  it('removes lone C1 controls without treating broken-encoding text as an OSC sequence', () => {
+    const text = 'He said â€œoneâ€\x9d and â€œtwoâ€\x9d then\x9c left.';
+    expect(sanitizeTerminalText(text)).toBe('He said â€œoneâ€ and â€œtwoâ€ then left.');
+    expect(formatExploreCall(text, true)).toBe('web_explore ("He said â€œoneâ€ and â€œtwoâ€ then left.")');
   });
 
   it.each([

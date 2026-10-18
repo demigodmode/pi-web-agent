@@ -79,13 +79,11 @@ describe('formatResearchProgress', () => {
     expect(output).not.toMatch(/alice:secret|token=secret|\]8;;|\u001b/);
   });
 
-  it.each([
-    ['terminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret\x9cx', 'Reading: example.com/x · 2 reads started'],
-    ['unterminated', 'https://example.com/\x9d8;;https://alice:secret@example.com/private?token=secret', 'Reading: example.com/ · 2 reads started']
-  ])('removes a %s C1 OSC sequence from fetch activity', (_kind, target, expected) => {
-    const output = formatResearchProgress({ phase: 'fetch', state: 'started', target, searches: 1, fetches: 2, headless: 0 });
+  it('removes lone C1 controls from search activity without dropping surrounding text', () => {
+    const output = formatResearchProgress({
+      phase: 'search', state: 'started', target: 'He said â€œoneâ€\x9d and â€œtwoâ€\x9d then\x9c left.', searches: 1, fetches: 0, headless: 0
+    });
 
-    expect(output).toBe(expected);
-    expect(output).not.toMatch(/alice:secret|token=secret|8;;|\u009d|\u009c/);
+    expect(output).toBe('Searching: He said â€œoneâ€ and â€œtwoâ€ then left.');
   });
 });
