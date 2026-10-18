@@ -136,10 +136,36 @@ describe('buildExplorePresentation', () => {
       }
     });
 
-    const compactLines = presentation.views.compact.split('\n').filter((line) => line.startsWith('Required sources not read:'));
+    const compactLines = presentation.views.compact.split('\n').filter((line) => line.startsWith('Required source not read:'));
     expect(compactLines).toHaveLength(2);
     expect(compactLines[0]).toContain('https://example.com/read-failed');
     expect(compactLines[1]).toContain('https://example.com/limited');
+  });
+
+  it('keeps the established singular required-source notice in compact mode', () => {
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      durationMs: 1_000,
+      findings: [],
+      sources: [],
+      requiredSourceFailures: [{
+        url: 'https://example.com/unreadable',
+        code: 'READ_FAILED',
+        message: 'Source could not be read.',
+        reason: 'read-failed'
+      }],
+      metadata: {
+        searchPasses: 0,
+        fetchedPages: 0,
+        headlessAttempts: 0,
+        exhaustedBudget: false,
+        presentationStats: { searches: 0, executedQueries: [], pagesRead: 0, failedReads: 1, methods: {} }
+      }
+    });
+
+    expect(presentation.views.compact).toContain(
+      'Required source not read: https://example.com/unreadable. Source could not be read. The requirements of this source were not checked.'
+    );
   });
 
   it('redacts embedded URL credentials and query tokens from verbose queries', () => {

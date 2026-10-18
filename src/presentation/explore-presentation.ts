@@ -130,8 +130,9 @@ function requiredNotices(result: WebExploreResponse, compact = false) {
     group.urls.push(sanitizeTerminalText(failure.url));
     grouped.set(key, group);
   }
-  return [...grouped.values()].map(({ message, urls }) =>
-    `Required sources not read: ${urls.join(', ')}. ${message} The requirements were not checked for these sources.`
+  return [...grouped.values()].map(({ message, urls }) => urls.length === 1
+    ? `Required source not read: ${urls[0]}. ${message} The requirements of this source were not checked.`
+    : `Required sources not read: ${urls.join(', ')}. ${message} The requirements were not checked for these sources.`
   );
 }
 
