@@ -17,39 +17,58 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-// One pattern for parsing and removal, so they can't drift. Groups: wrapper, minus, host, closing wrapper.
-// The lookbehind rejects operators glued to a word (website:, mysite:) or a colon.
-const SITE_OPERATOR = /(?<![\w.:-])(["([]?)(-?)site:([^\s()"',;[\]]+)(["')\]]?)/gi;
+const SITE_OPERATOR_TOKEN = /^(-?)site:([a-z0-9.-]+(?:\/\S*)?)$/i;
+const URL_TOKEN = /^["'(\[]*https?:\/\//i;
 
-function cleanHost(raw: string) {
-  return raw.replace(/[.!?:]+$/, '');
+/** A whitespace token's core: wrapping quotes and brackets off, trailing punctuation off. */
+function tokenCore(piece: string) {
+  return piece.replace(/^["'(\[]+/, '').replace(/[)\]"',;.!?:]+$/, '');
 }
 
-function removeSiteOperators(text: string) {
-  let next = text.replace(SITE_OPERATOR, ' ');
-  let previous: string;
-  do {
-    previous = next;
-    next = next.replace(/\(\s*\)|\[\s*\]|""/g, ' ');
-  } while (next !== previous);
-  return next;
+/**
+ * Splits the query into plain words and site: operators. A URL is always words. An operator
+ * is removed with its surrounding punctuation, so no comma or bracket is left behind.
+ */
+function parseSiteOperators(query: string) {
+  const words: string[] = [];
+  const positives: string[] = [];
+  const negatives: string[] = [];
+  for (const raw of normalizeWhitespace(query).split(' ')) {
+    if (!raw) continue;
+    if (URL_TOKEN.test(raw)) {
+      words.push(raw);
+      continue;
+    }
+    const pieces = raw.split(',');
+    const matches = pieces.map((piece) => tokenCore(piece).match(SITE_OPERATOR_TOKEN));
+    if (!matches.some(Boolean)) {
+      words.push(raw);
+      continue;
+    }
+    pieces.forEach((piece, index) => {
+      const match = matches[index];
+      if (match) (match[1] ? negatives : positives).push(`${match[1]}site:${match[2]}`);
+      else if (piece.trim()) words.push(piece.trim());
+    });
+  }
+  return { words, positives, negatives };
 }
 
 function extractImportantWords(query: string) {
-  return removeSiteOperators(normalizeWhitespace(query).replace(/https?:\/\/\S+/gi, ' '))
+  return parseSiteOperators(query).words
+    .filter((word) => !URL_TOKEN.test(word) && /[\p{L}\p{N}]/u.test(word))
+    .join(' ')
     .replace(/\b(find|current|tell|me|how|to|the|and|with|for|in|a|an)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function siteScope(query: string): SiteScope {
-  const operators = [...query.matchAll(SITE_OPERATOR)];
-  const positive = operators.find((match) => !match[2]);
-  const exclusions = operators.filter((match) => match[2]).map((match) => cleanHost(match[3]!));
+  const { positives, negatives } = parseSiteOperators(query);
   return {
-    positive: positive ? `site:${cleanHost(positive[3]!)}` : undefined,
-    negatives: exclusions.map((host) => `-site:${host}`),
-    excludedHosts: exclusions.map((host) => host.toLowerCase())
+    positive: positives[0],
+    negatives,
+    excludedHosts: negatives.map((operator) => operator.slice('-site:'.length).toLowerCase())
   };
 }
 

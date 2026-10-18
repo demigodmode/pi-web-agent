@@ -275,3 +275,92 @@ describe('Microsoft Edge driver and update routing', () => {
     }
   );
 });
+
+describe('planSearchQueries site operator tokens', () => {
+  const gaps = [
+    'Need supported version details.',
+    'Need exact API behavior.',
+    'Sources disagree about the recommendation.',
+    'Need user experience.',
+    'Need official docs.',
+    'Need implementation references.',
+    'Need comparison evidence for target: Vue'
+  ];
+  const lowerTokens = (query: string) => query.split(' ').map((token) => token.toLowerCase());
+  const hasWordCharacter = (token: string) => /[\p{L}\p{N}]/u.test(token);
+
+  it('does not treat site: text inside a URL as an operator', () => {
+    for (const passIndex of [1, 2]) {
+      for (const gap of gaps) {
+        const queries = planSearchQueries({ originalQuery: 'React API https://example.com/site:github.com/guide', passIndex, previousQueries: [], gaps: [gap] });
+        for (const query of queries) {
+          expect(query, query).not.toContain('site:github.com/guide');
+          expect(query, query).not.toContain('https://');
+        }
+      }
+    }
+  });
+
+  it('removes a quoted positive operator with its comma and keeps the words', () => {
+    const queries = planSearchQueries({ originalQuery: '"site:react.dev", React API', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      expect(query, query).not.toMatch(/ ,|^,|\s,/);
+      expect(lowerTokens(query).filter((token) => token === 'site:react.dev'), query).toHaveLength(1);
+    }
+  });
+
+  it('removes a negated operator with its comma and keeps the words', () => {
+    const queries = planSearchQueries({ originalQuery: '-site:github.com, React API', passIndex: 2, previousQueries: [], gaps: ['Need user experience.'] });
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      expect(query, query).not.toMatch(/,/);
+      expect(lowerTokens(query).filter((token) => token === '-site:github.com'), query).toHaveLength(1);
+    }
+  });
+
+  it('keeps prefix and suffix words of a comma-joined operator', () => {
+    const queries = planSearchQueries({ originalQuery: 'docs,site:vitest.dev coverage', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toContain('site:vitest.dev');
+    expect(queries[0]).toContain('docs');
+    expect(queries[0]).toContain('coverage');
+  });
+
+  const bases = ['React API version compatibility', 'Vitest coverage thresholds', 'Compare React and Vue'];
+  const operators = ['site:react.dev', '-site:github.com', 'SITE:Vitest.dev'];
+  const placements: Array<[string, (x: string) => string]> = [
+    ['plain', (x) => x],
+    ['parens', (x) => `(${x})`],
+    ['quotes', (x) => `"${x}"`],
+    ['brackets', (x) => `[${x}]`],
+    ['trailing comma', (x) => `${x},`],
+    ['leading comma', (x) => `,${x}`],
+    ['trailing period', (x) => `${x}.`],
+    ['quoted with comma', (x) => `"${x}",`]
+  ];
+
+  for (const base of bases) {
+    for (const operator of operators) {
+      for (const [name, place] of placements) {
+        const originalQuery = `${base} ${place(operator)}`;
+        it(`keeps "${operator}" (${name}) clean on every follow-up of "${originalQuery}"`, () => {
+          const canonical = operator.toLowerCase();
+          const excludedHost = canonical.startsWith('-site:') ? canonical.slice('-site:'.length) : undefined;
+          for (const passIndex of [1, 2]) {
+            for (const gap of gaps) {
+              const queries = planSearchQueries({ originalQuery, passIndex, previousQueries: [], gaps: [gap] });
+              expect(queries.length, `${passIndex} ${gap}`).toBeGreaterThan(0);
+              for (const query of queries) {
+                const tokens = lowerTokens(query);
+                expect(tokens.filter((token) => token === canonical), query).toHaveLength(1);
+                expect(tokens.filter((token) => /^(-?)site:/.test(token) && !token.startsWith('-')).length, query).toBeLessThanOrEqual(1);
+                if (excludedHost) expect(tokens, query).not.toContain(`site:${excludedHost}`);
+                expect(tokens.filter((token) => token !== '' && !hasWordCharacter(token)), query).toEqual([]);
+              }
+            }
+          }
+        });
+      }
+    }
+  }
+});
