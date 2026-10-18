@@ -49,4 +49,25 @@ describe('formatResearchProgress', () => {
       searches: 1, fetches: 0, headless: 0
     })).toBe('Searching: q link');
   });
+
+  it.each([
+    ['BEL', '\u0007'],
+    ['ST', '\x1b\\']
+  ])('sanitizes OSC targets before parsing %s fetch and headless activity', (_terminator, terminator) => {
+    const osc = `\x1b]8;;https://alice:secret@example.com/private?token=secret${terminator}`;
+    const target = `https://example.com/${osc}x`;
+    const outputs = [
+      formatResearchProgress({ phase: 'fetch', state: 'started', target, searches: 1, fetches: 2, headless: 0 }),
+      formatResearchProgress({ phase: 'headless', state: 'started', target, searches: 1, fetches: 2, headless: 1 })
+    ];
+
+    expect(outputs).toEqual([
+      'Reading: example.com/x · 2 reads started',
+      'Rendering: example.com/x'
+    ]);
+    for (const output of outputs) {
+      expect(output).not.toMatch(/alice:secret|token=secret|\]8;;|\u001b/);
+      expect(Array.from(output).length).toBeLessThanOrEqual(120);
+    }
+  });
 });

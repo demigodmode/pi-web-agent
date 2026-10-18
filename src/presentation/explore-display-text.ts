@@ -23,7 +23,7 @@ export function clipTerminalText(value: string, maxVisibleChars: number): string
 /** Removes credentials, protocol, and volatile URL parts before terminal display. */
 export function safeDisplayUrl(value: string): string {
   try {
-    const url = new URL(value);
+    const url = new URL(sanitizeTerminalText(value));
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return '[link]';
     return `${url.host}${url.pathname}`;
   } catch {
