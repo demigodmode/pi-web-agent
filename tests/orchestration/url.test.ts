@@ -49,6 +49,15 @@ describe('redactUrlForDisplay', () => {
     }
   });
 
+  it('matches camelCase and percent-encoded secret names without flagging lookalikes', () => {
+    for (const name of ['accessToken', 'clientSecret', '%74oken', 'refreshToken', 'X-Amz-Signature', 'api_key', 'apiKey', 'sessionId']) {
+      expect(redactUrlForDisplay(`https://example.com/a?${name}=secret&id=1`)).toBe(`https://example.com/a?${name}=REDACTED&id=1`);
+    }
+    for (const name of ['author', 'keyword', 'design', 'signup', 'monkey', 'id', 'q', 'tokenizer', 'keyboard']) {
+      expect(redactUrlForDisplay(`https://example.com/a?${name}=v`)).toBe(`https://example.com/a?${name}=v`);
+    }
+  });
+
   it('drops a fragment that carries a secret and keeps a plain one', () => {
     expect(redactUrlForDisplay('https://example.com/cb#access_token=abc')).toBe('https://example.com/cb');
     expect(redactUrlForDisplay('https://example.com/a#section=intro')).toBe('https://example.com/a#section=intro');

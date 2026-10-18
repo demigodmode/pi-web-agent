@@ -143,7 +143,7 @@ describe('web_explore tool', () => {
     const onProgress = vi.fn();
     const result = await webExplore({ query: 'q', onProgress });
     expect(result.status).toBe('error');
-    expect(result.metadata?.presentationStats).toBe(presentationStats);
+    expect(result.metadata?.presentationStats).toEqual(presentationStats);
     expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete', state: 'settled' }));
   });
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {

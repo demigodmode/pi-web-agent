@@ -11,26 +11,30 @@ import { redactUrlForDisplay, redactUrlsInText } from '../orchestration/url.js';
 import type { PresentationEnvelope } from '../presentation/types.js';
 
 // Output-only: the orchestrator keeps raw URLs for fetching, and every view is built from this copy.
+// Findings and evidence excerpts are page content and stay as read.
+function redactStrings<T>(value: T): T {
+  if (typeof value === 'string') return redactUrlsInText(value) as T;
+  if (Array.isArray(value)) return value.map(redactStrings) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactStrings(item)])) as T;
+  }
+  return value;
+}
+
 function withRedactedUrls(response: WebExploreResponse): WebExploreResponse {
   const redactUrls = <T extends { url: string; requestedUrl?: string }>(item: T): T => ({
     ...item,
     url: redactUrlForDisplay(item.url),
     ...(item.requestedUrl ? { requestedUrl: redactUrlForDisplay(item.requestedUrl) } : {})
   });
-  const redactFailures = (failures: NonNullable<WebExploreResponse['requiredSourceFailures']>) => failures.map((failure) => ({
-    ...failure,
-    url: redactUrlForDisplay(failure.url),
-    message: redactUrlsInText(failure.message)
-  }));
   return {
     ...response,
     sources: response.sources.map(redactUrls),
     ...(response.evidence ? { evidence: response.evidence.map(redactUrls) } : {}),
-    ...(response.error ? { error: { ...response.error, message: redactUrlsInText(response.error.message) } } : {}),
-    ...(response.requiredSourceFailures ? { requiredSourceFailures: redactFailures(response.requiredSourceFailures) } : {}),
-    ...(response.metadata?.requiredSourceFailures
-      ? { metadata: { ...response.metadata, requiredSourceFailures: redactFailures(response.metadata.requiredSourceFailures) } }
-      : {})
+    ...(response.caveat ? { caveat: redactUrlsInText(response.caveat) } : {}),
+    ...(response.error ? { error: redactStrings(response.error) } : {}),
+    ...(response.requiredSourceFailures ? { requiredSourceFailures: redactStrings(response.requiredSourceFailures) } : {}),
+    ...(response.metadata ? { metadata: redactStrings(response.metadata) } : {})
   };
 }
 

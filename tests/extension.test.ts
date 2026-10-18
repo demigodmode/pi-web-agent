@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Text } from '@earendil-works/pi-tui';
 import extension from '../src/extension.js';
 import { createWebExploreTool } from '../src/tools/web-explore.js';
+import { createResearchOrchestrator } from '../src/orchestration/research-orchestrator.js';
 
 describe('Pi extension entrypoint', () => {
   it('renders a call heading with active theme colors', () => {
@@ -974,5 +975,32 @@ describe('web_explore credential redaction through the registered tool', () => {
       expect(output).toContain('id=7');
     }
     expect(result.details.presentation.views.compact).toContain('id=7');
+  });
+});
+
+describe('web_explore redaction on the real orchestrator path', () => {
+  it('keeps a failed compare link credentials out of caveat, views, and saved details', async () => {
+    const url = 'https://alice:pw@example.com/a?token=secret&id=1';
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url: target }: { url: string }) => target.includes('other.example')
+        ? { status: 'ok' as const, url: target, content: { title: 'Other', text: 'Other product details that are readable.' }, metadata: { method: 'http' as const, cacheHit: false } }
+        : { status: 'needs_headless' as const, url: target, metadata: { method: 'http' as const, cacheHit: false } }),
+      headlessFetch: vi.fn(async () => { throw new Error('reader timeout'); })
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: createWebExploreTool({ explore: orchestrator as never }) } as never);
+
+    const result = await tools[0].execute('call-1', { query: `Compare ${url} with https://other.example/b` });
+    const text = result.content[0].text as string;
+    const outputs = [text, JSON.stringify(result.details), Object.values(result.details.presentation.views).join('\n')];
+    expect(result.details.caveat).toContain('comparison evidence is missing for https://example.com/a?token=REDACTED&id=1');
+    for (const output of outputs) {
+      expect(output).not.toContain('alice');
+      expect(output).not.toContain('pw@');
+      expect(output).not.toContain('token=secret');
+    }
+    expect(text).toContain('id=1');
+    expect(JSON.stringify(result.details)).toContain('id=1');
   });
 });
