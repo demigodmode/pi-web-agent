@@ -8,6 +8,67 @@ import type { WebFetchResponse } from '../../src/types.js';
 import extension from '../../src/extension.js';
 
 describe('research workflow composition', () => {
+  it('resolves three worker headless candidates after one successful escalation', async () => {
+    const urls = ['https://a.example/one', 'https://b.example/two', 'https://c.example/three'];
+    const workflow = createResearchWorkflow({
+      search: async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } }),
+      headlessFetch: async ({ url }) => ({ status: 'ok' as const, url, content: { text: 'Browser-rendered evidence.' }, metadata: { method: 'headless' as const, cacheHit: false } })
+    });
+    try {
+      const result = await workflow.run({ query: 'How does this dynamic application work?' });
+      expect(result.metadata.presentationStats).toMatchObject({ pagesRead: 1, failedReads: 2, methods: { headless: 1 } });
+    } finally {
+      await workflow.close();
+    }
+  });
+
+  it('counts a typed repository and a separate GitHub issue by their read methods', async () => {
+    const repoUrl = 'https://github.com/acme/widget';
+    const issueUrl = 'https://github.com/acme/widget/issues/7';
+    const workflow = createResearchWorkflow({
+      search: async () => ({ status: 'ok' as const, results: [], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: async ({ url }) => ({ status: 'ok' as const, url, content: { text: 'Issue evidence.' }, metadata: { method: 'github' as const, cacheHit: false } }),
+      headlessFetch: vi.fn(),
+      researchRepo: async () => ({ ok: true as const, response: { status: 'ok' as const, url: repoUrl, content: { text: 'Repository evidence.' }, metadata: { method: 'github' as const, cacheHit: false } } })
+    });
+    try {
+      const result = await workflow.run({ query: `Read ${repoUrl} and ${issueUrl}` });
+      expect(result.metadata.presentationStats).toMatchObject({ pagesRead: 2, failedReads: 0, methods: { repo: 1, github: 1 } });
+    } finally {
+      await workflow.close();
+    }
+  });
+
+  it('counts a failed worker candidate once without a successful page', async () => {
+    const workflow = createResearchWorkflow({
+      search: async () => ({ status: 'ok' as const, results: [{ title: 'Broken', url: 'https://broken.example/page', snippet: 'details' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'FETCH_FAILED', message: 'failed' } }),
+      headlessFetch: vi.fn()
+    });
+    try {
+      const result = await workflow.run({ query: 'Find broken page details' });
+      expect(result.metadata.presentationStats).toMatchObject({ pagesRead: 0, failedReads: 1 });
+    } finally {
+      await workflow.close();
+    }
+  });
+
+  it('does not count a failed typed repository as a read', async () => {
+    const workflow = createResearchWorkflow({
+      search: async () => ({ status: 'ok' as const, results: [], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: vi.fn(),
+      headlessFetch: vi.fn(),
+      researchRepo: async () => ({ ok: false as const, error: { code: 'REPO_FAILED', message: 'failed', failure: { kind: 'transient' as const } } })
+    });
+    try {
+      const result = await workflow.run({ query: 'Read https://github.com/acme/widget' });
+      expect(result.metadata.presentationStats).toMatchObject({ pagesRead: 0, failedReads: 1 });
+    } finally {
+      await workflow.close();
+    }
+  });
+
   it('keeps GitHub reader access failures explicit through the factory, workflow, and public research tool', async () => {
     vi.stubEnv('GITHUB_TOKEN', '');
     const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
