@@ -948,3 +948,31 @@ describe('Pi extension entrypoint', () => {
     }
   });
 });
+
+describe('web_explore credential redaction through the registered tool', () => {
+  it('keeps userinfo and token values out of model text, terminal views, and saved details', async () => {
+    const url = 'https://alice:secret@example.com/doc?token=secret&id=7';
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'research-again' },
+        evidence: [],
+        workerPass: {},
+        requiredSourceFailures: [{ url, reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: `Direct URL could not be read reliably: ${url}` }],
+        terminalFailure: { code: 'WORKER_FAILED', message: `Stopped while reading ${url}` }
+      })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    const result = await tools[0].execute('call-1', { query: 'links' });
+    const text = result.content[0].text as string;
+    const saved = JSON.stringify(result.details);
+    for (const output of [text, saved]) {
+      expect(output).not.toContain('alice');
+      expect(output).not.toContain('secret');
+      expect(output).not.toContain('token=secret');
+      expect(output).toContain('id=7');
+    }
+    expect(result.details.presentation.views.compact).toContain('id=7');
+  });
+});

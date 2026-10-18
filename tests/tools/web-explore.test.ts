@@ -448,3 +448,36 @@ describe('web_explore terminal source preservation', () => {
     expect(compact.indexOf('Required source not read')).toBeLessThan(compact.indexOf('Research failed'));
   });
 });
+
+describe('web_explore output redaction', () => {
+  it('redacts direct URL credentials and secret params in the success shape and views', async () => {
+    const direct = { title: 'Guide', url: 'https://example.test/guide?token=abc&id=5', requestedUrl: 'https://bob:pw@example.test/guide?token=abc&id=5', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Guide finding', supports: ['Guide finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+      decision: { action: 'answer' }, evidence: [direct], requiredSourceEvidence: [direct], workerPass: {}
+    }) })({ query: 'read the guide' });
+    expect(result.sources[0]).toMatchObject({ url: 'https://example.test/guide?token=REDACTED&id=5', requestedUrl: 'https://example.test/guide?token=REDACTED&id=5' });
+    expect(result.evidence?.[0]).toMatchObject({ requestedUrl: 'https://example.test/guide?token=REDACTED&id=5' });
+    expect(result.presentation?.views.verbose).not.toContain('bob');
+    expect(result.presentation?.views.verbose).not.toContain('token=abc');
+    expect(result.presentation?.views.verbose).toContain('id=5');
+    expect(result.findings).toEqual(['Guide finding']);
+  });
+
+  it('redacts required failure URLs, messages and error text on the terminal path', async () => {
+    const url = 'https://alice:secret@example.com/doc?token=secret&id=7';
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+      decision: { action: 'research-again' }, evidence: [], workerPass: {},
+      requiredSourceFailures: [{ url, reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: `Direct URL could not be read reliably: ${url}` }],
+      metadata: { searchPasses: 0, requiredSourceFailures: [{ url, reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: `Direct URL could not be read reliably: ${url}` }] } as never,
+      terminalFailure: { code: 'WORKER_FAILED', message: `Stopped while reading ${url}` }
+    }) })({ query: 'read the link' });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('alice');
+    expect(serialized).not.toContain('secret');
+    expect(serialized).not.toContain('token=secret');
+    expect(result.requiredSourceFailures?.[0]).toMatchObject({ url: 'https://example.com/doc?token=REDACTED&id=7' });
+    expect(result.requiredSourceFailures?.[0]?.message).toContain('id=7');
+    expect(result.metadata?.requiredSourceFailures?.[0]?.url).toBe('https://example.com/doc?token=REDACTED&id=7');
+    expect(result.presentation?.views.compact).toContain('id=7');
+  });
+});

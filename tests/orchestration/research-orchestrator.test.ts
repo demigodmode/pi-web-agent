@@ -1212,3 +1212,32 @@ describe('orchestrator run budget', () => {
     }
   });
 });
+
+describe('research orchestrator search passes', () => {
+  it('does not count a planned search the worker refused before starting', async () => {
+    const worker = {
+      run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true }))
+    };
+    const result = await createResearchOrchestrator({ worker, fetchDirect: vi.fn(), headlessFetch: vi.fn() }).run({ query: 'how does the widget api work' });
+    expect(worker.run).toHaveBeenCalledTimes(1);
+    expect(result.metadata.searchPasses).toBe(0);
+  });
+  it('counts a search the worker claimed before a deadline abort cut it short', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = {
+        run: vi.fn(async ({ budget }: { budget?: { claimSearch: () => boolean } }) => {
+          budget?.claimSearch();
+          return new Promise<never>(() => undefined);
+        })
+      };
+      const run = createResearchOrchestrator({ worker, fetchDirect: vi.fn(), headlessFetch: vi.fn() }).run({ query: 'how does the widget api work' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.metadata.searchPasses).toBe(1);
+      expect(result.metadata).toMatchObject({ exhaustedBudget: true, budgetReason: 'deadline' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

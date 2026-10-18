@@ -133,7 +133,7 @@ function shouldRetryDirectWithHeadless(result: WebFetchResponse, evidence: Resea
 }
 
 function buildMetadata({
-  previousQueries,
+  executedQueries,
   allEvidence,
   allGaps,
   allLowValueOutcomes,
@@ -149,7 +149,7 @@ function buildMetadata({
   presentationStats,
   requiredSourceFailures
 }: {
-  previousQueries: string[];
+  executedQueries: string[];
   allEvidence: ResearchEvidence[];
   allGaps: ResearchGap[];
   allLowValueOutcomes: ResearchLowValueOutcome[];
@@ -166,7 +166,7 @@ function buildMetadata({
   requiredSourceFailures?: RequiredSourceFailure[];
 }) {
   return {
-    searchPasses: previousQueries.length,
+    searchPasses: executedQueries.length,
     fetchedPages: allEvidence.length + allGaps.length + allLowValueOutcomes.length,
     headlessAttempts: budget?.headless ?? headlessAttempts,
     exhaustedBudget,
@@ -271,6 +271,8 @@ export function createResearchOrchestrator({
       const allGaps: ResearchGap[] = [];
       const allLowValueOutcomes: ResearchLowValueOutcome[] = [];
       const previousQueries: string[] = [];
+      // Only searches the worker actually started count as passes.
+      const executedQueries: string[] = [];
       const suggestedHeadlessUrls: string[] = [];
       const attemptedHeadlessUrls = new Set<string>();
       // Only discretionary escalations consume the decider's two attempts.
@@ -326,7 +328,7 @@ export function createResearchOrchestrator({
           evidence: ranked,
           workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: true }),
           metadata: buildMetadata({
-            previousQueries,
+            executedQueries,
             allEvidence,
             allGaps,
             allLowValueOutcomes,
@@ -357,7 +359,7 @@ export function createResearchOrchestrator({
         decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked: [], exhaustedBudget: false }),
         evidence: [],
         workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
-        metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() }),
+        metadata: buildMetadata({ executedQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() }),
         terminalFailure
       });
 
@@ -504,7 +506,7 @@ export function createResearchOrchestrator({
             exhaustedBudget
           }),
           metadata: buildMetadata({
-            previousQueries,
+            executedQueries,
             allEvidence,
             allGaps,
             allLowValueOutcomes,
@@ -529,7 +531,7 @@ export function createResearchOrchestrator({
             decision: decisionForAnswer({ action: decision.action, query, ranked, exhaustedBudget: false }),
             evidence: ranked,
             workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
-            metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, caveatReasons: quality.caveatReasons, ...fanoutSnapshot() })
+            metadata: buildMetadata({ executedQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, caveatReasons: quality.caveatReasons, ...fanoutSnapshot() })
           });
         }
       }
@@ -563,6 +565,7 @@ export function createResearchOrchestrator({
           previousQueries.push(plannedQuery);
           throwIfAborted(signal);
           partialWorkerPass = undefined;
+          const searchesBefore = budget.snapshot().searches;
           const workerWork = worker.run({
             query: plannedQuery,
             maxSearchRounds: 1,
@@ -573,7 +576,10 @@ export function createResearchOrchestrator({
             onProgress,
             onPartial: (partial) => { partialWorkerPass = partial; }
           });
-          const pass = await budget.wait(workerWork);
+          // A search counts once the worker claimed it, even when that worker call then throws.
+          const pass = await budget.wait(workerWork).finally(() => {
+            if (budget.snapshot().searches > searchesBefore) executedQueries.push(plannedQuery);
+          });
           partialWorkerPass = undefined;
           throwIfAborted(signal);
 
@@ -586,7 +592,7 @@ export function createResearchOrchestrator({
               decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked: [], exhaustedBudget: false }),
               evidence: [],
               workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
-              metadata: buildMetadata({ previousQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() }),
+              metadata: buildMetadata({ executedQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() }),
               terminalFailure: pass.terminalFailure
             });
           }
@@ -682,7 +688,7 @@ export function createResearchOrchestrator({
                   exhaustedBudget
                 }),
                 metadata: buildMetadata({
-                  previousQueries,
+                  executedQueries,
                   allEvidence,
                   allGaps,
                   allLowValueOutcomes,
@@ -711,7 +717,7 @@ export function createResearchOrchestrator({
                 exhaustedBudget: false
               }),
               metadata: buildMetadata({
-                previousQueries,
+                executedQueries,
                 allEvidence,
                 allGaps,
                 allLowValueOutcomes,
@@ -740,7 +746,7 @@ export function createResearchOrchestrator({
                 exhaustedBudget
               }),
               metadata: buildMetadata({
-                previousQueries,
+                executedQueries,
                 allEvidence,
                 allGaps,
                 allLowValueOutcomes,
@@ -776,7 +782,7 @@ export function createResearchOrchestrator({
           exhaustedBudget: true
         }),
         metadata: buildMetadata({
-          previousQueries,
+          executedQueries,
           allEvidence,
           allGaps,
           allLowValueOutcomes,

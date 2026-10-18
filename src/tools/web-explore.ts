@@ -7,6 +7,37 @@ import type { WebExploreResponse } from '../types.js';
 import { raceAbort, throwIfAborted } from '../abort.js';
 import { buildEvidenceRecords } from './evidence-records.js';
 import type { ResearchProgress } from '../orchestration/progress.js';
+import { redactUrlForDisplay, redactUrlsInText } from '../orchestration/url.js';
+import type { PresentationEnvelope } from '../presentation/types.js';
+
+// Output-only: the orchestrator keeps raw URLs for fetching, and every view is built from this copy.
+function withRedactedUrls(response: WebExploreResponse): WebExploreResponse {
+  const redactUrls = <T extends { url: string; requestedUrl?: string }>(item: T): T => ({
+    ...item,
+    url: redactUrlForDisplay(item.url),
+    ...(item.requestedUrl ? { requestedUrl: redactUrlForDisplay(item.requestedUrl) } : {})
+  });
+  const redactFailures = (failures: NonNullable<WebExploreResponse['requiredSourceFailures']>) => failures.map((failure) => ({
+    ...failure,
+    url: redactUrlForDisplay(failure.url),
+    message: redactUrlsInText(failure.message)
+  }));
+  return {
+    ...response,
+    sources: response.sources.map(redactUrls),
+    ...(response.evidence ? { evidence: response.evidence.map(redactUrls) } : {}),
+    ...(response.error ? { error: { ...response.error, message: redactUrlsInText(response.error.message) } } : {}),
+    ...(response.requiredSourceFailures ? { requiredSourceFailures: redactFailures(response.requiredSourceFailures) } : {}),
+    ...(response.metadata?.requiredSourceFailures
+      ? { metadata: { ...response.metadata, requiredSourceFailures: redactFailures(response.metadata.requiredSourceFailures) } }
+      : {})
+  };
+}
+
+function toPublicResponse(response: WebExploreResponse): WebExploreResponse & { presentation: PresentationEnvelope } {
+  const redacted = withRedactedUrls(response);
+  return { ...redacted, presentation: buildExplorePresentation(redacted) };
+}
 
 export function createWebExploreTool({
   explore = createResearchWorkflow(),
@@ -52,10 +83,7 @@ export function createWebExploreTool({
         error: { code: 'INVALID_QUERY', message: 'Query must not be empty.' }
       };
 
-      return {
-        ...result,
-        presentation: buildExplorePresentation(result)
-      };
+      return toPublicResponse(result);
     }
 
     const safeProgress = onProgress ? (event: ResearchProgress) => {
@@ -87,7 +115,7 @@ export function createWebExploreTool({
         metadata: result.metadata,
         requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures
       };
-      return { ...failed, presentation: buildExplorePresentation(failed) };
+      return toPublicResponse(failed);
     }
 
     const required = result.requiredSourceEvidence ?? [];
@@ -127,9 +155,6 @@ export function createWebExploreTool({
       requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures
     };
 
-    return {
-      ...shaped,
-      presentation: buildExplorePresentation(shaped)
-    };
+    return toPublicResponse(shaped);
   };
 }
