@@ -13,7 +13,7 @@ describe('formatResearchProgress', () => {
     expect(formatResearchProgress({
       phase: 'fetch', state: 'started', target: 'https://alice:secret@example.com/path?q=secret#fragment',
       searches: 1, fetches: 2, headless: 0
-    })).toBe('Reading: https://example.com/path');
+    })).toBe('Reading: https://example.com/path · 2 reads started');
   });
 
   it('shows a rendering target and claimed read count', () => {
@@ -25,5 +25,8 @@ describe('formatResearchProgress', () => {
     const text = formatResearchProgress({ phase: 'search', state: 'started', target: 'x'.repeat(200), searches: 1, fetches: 0, headless: 0 });
     expect(Array.from(text)).toHaveLength(120);
     expect(text.endsWith('…')).toBe(true);
+    const fetch = formatResearchProgress({ phase: 'fetch', state: 'started', target: `https://example.com/${'x'.repeat(200)}`, searches: 1, fetches: 2, headless: 0 });
+    expect(Array.from(fetch)).toHaveLength(120);
+    expect(fetch).toContain(' · 2 reads started');
   });
 });

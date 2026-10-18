@@ -84,6 +84,21 @@ describe('Pi extension entrypoint', () => {
 
     expect(updates.mock.calls.map(([update]) => update.content[0].text).filter((text: string) => text === 'Research complete.')).toHaveLength(1);
   });
+  it('shows a fetch target and its claimed read count through the normal web_explore tool path', async () => {
+    const updates = vi.fn();
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn(async ({ onProgress }) => {
+        onProgress?.({ phase: 'fetch', state: 'started', target: 'https://alice:secret@example.com/guide?token=secret', searches: 1, fetches: 2, headless: 0 });
+        return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+      })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates.mock.calls.map(([update]) => update.content[0].text)).toContain('Reading: https://example.com/guide · 2 reads started');
+  });
   it('coalesces repeated live activity and ignores worker updates after caller cancellation', async () => {
     let emit: ((event: { phase: 'search'; state: 'started'; target: string; searches: number; fetches: number; headless: number }) => void) | undefined;
     const injected = vi.fn(({ onProgress, signal }: { onProgress?: typeof emit; signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
