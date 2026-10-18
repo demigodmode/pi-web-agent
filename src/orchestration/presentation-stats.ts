@@ -12,7 +12,7 @@ export type PresentationStats = {
   methods: Partial<Record<PresentationReadMethod, number>>;
 };
 
-type Attempt = { id: string; requestedId?: string };
+type Attempt = { id: string; requestedIds: Set<string> };
 
 export function createPresentationStats() {
   const executedQueries: string[] = [];
@@ -26,7 +26,9 @@ export function createPresentationStats() {
     const id = identity(url);
     const requestedId = requestedUrl ? identity(requestedUrl) : undefined;
     const existing = collection.get(id);
-    collection.set(id, { id, requestedId: existing?.requestedId ?? requestedId });
+    const requestedIds = existing?.requestedIds ?? new Set<string>();
+    if (requestedId) requestedIds.add(requestedId);
+    collection.set(id, { id, requestedIds });
   };
 
   return {
@@ -65,7 +67,7 @@ export function createPresentationStats() {
     snapshot(): PresentationStats {
       const unresolved = new Set<string>();
       for (const attempt of [...failures.values(), ...pending.values()]) {
-        if (!successfulIds.has(attempt.id) && (!attempt.requestedId || !successfulIds.has(attempt.requestedId))) {
+        if (!successfulIds.has(attempt.id) && ![...attempt.requestedIds].some((id) => successfulIds.has(id))) {
           unresolved.add(attempt.id);
         }
       }

@@ -86,6 +86,24 @@ describe('createPresentationStats', () => {
     expect(stats.snapshot()).toMatchObject({ pagesRead: 1, failedReads: 0, methods: { headless: 1 } });
   });
 
+  test('settles a final URL when any of its requested failure aliases later succeeds', () => {
+    const stats = createPresentationStats();
+    stats.recordRead(response({ status: 'error', url: 'https://example.test/failed-final', content: undefined }), 'http', 'https://short.test/a');
+    stats.recordRead(response({ status: 'error', url: 'https://example.test/failed-final', content: undefined }), 'http', 'https://short.test/b');
+    stats.recordRead(headless({ url: 'https://example.test/success-final' }), 'headless', 'https://short.test/b');
+
+    expect(stats.snapshot()).toMatchObject({ pagesRead: 1, failedReads: 0, methods: { headless: 1 } });
+  });
+
+  test('settles pending headless URLs when any requested alias later succeeds', () => {
+    const stats = createPresentationStats();
+    stats.recordRead(response({ status: 'needs_headless', url: 'https://example.test/needs-browser' }), 'http', 'https://short.test/a');
+    stats.recordRead(response({ status: 'needs_headless', url: 'https://example.test/needs-browser' }), 'http', 'https://short.test/b');
+    stats.recordRead(headless({ url: 'https://example.test/success-final' }), 'headless', 'https://short.test/b');
+
+    expect(stats.snapshot()).toMatchObject({ pagesRead: 1, failedReads: 0, methods: { headless: 1 } });
+  });
+
   test('keeps repo separate from github and trusts repo content that resembles a bot check', () => {
     const stats = createPresentationStats();
     const botPhrase = response({ metadata: { method: 'github', cacheHit: false }, content: { text: 'Checking your browser is mentioned in this issue.' } });
