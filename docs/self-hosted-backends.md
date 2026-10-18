@@ -417,11 +417,7 @@ The equivalent config is:
 }
 ```
 
-In preview and verbose modes, fanout visibility shows which providers were queried, for example:
-
-```text
-web_search ×2 (fanout: duckduckgo, brave, exa)
-```
+Verbose output lists every backend that failed, was retried, or was skipped, so you can see which fanout providers didn't answer.
 
 Trade-off: fanout costs extra latency and API calls, which is why it is off by default and `auto` exists. Use `on` when you want maximum source diversity at the cost of longer research times. Use `auto` when you want a safety net without paying the latency cost most of the time.
 
@@ -457,7 +453,7 @@ Fallback also looks at why a backend failed before moving on:
 - An empty result is a real answer, so it does not fall back. Neither does a bad request (like an empty query).
 - A private-address refusal or an invalid shared proxy setting never falls back to another backend.
 
-Verbose output lists every backend that was tried, retried, or skipped and why. When some backends failed but another one answered, the answer notes that results may be incomplete. If every backend is being skipped, see "Search says no backend is available" in the troubleshooting guide.
+Verbose output lists every backend that was tried, retried, or skipped and why. When some backends failed but another one answered, the answer notes that results may be incomplete. If the selected provider needs a fix on your side and no fallback is configured, the result starts with a `Search unavailable (provider): ...` line instead of quietly coming back empty. If every backend is being skipped, see "Search says no backend is available" in the troubleshooting guide.
 
 ## Proxy
 

@@ -23,8 +23,8 @@ Internally it can:
 - stop with a specific caveat when the evidence is thin or uneven
 
 Preview shows up to three plain findings. Verbose also shows sources, evidence,
-and the internal reader provenance for its sources and evidence, such as `[web_fetch]`,
-`[web_fetch_headless]`, or a special-content reader like `[github]`.
+and how each source was read, such as `[HTTP]`, `[Browser]`, or a special-content
+reader like `[GitHub]`, `[PDF]`, or `[YouTube]`.
 
 ## What you get right now
 
