@@ -10,6 +10,7 @@ The format is intentionally simple and release-oriented.
 - The GitHub reader can use `GITHUB_TOKEN` or `gh auth login` to read private files, issues, pull requests, and READMEs.
 
 ### Changed
+- `web_explore` now presents a stable Pi call heading, one replacing live activity line, and execution-time search/read counts. Preview intentionally shows at most three plain findings; verbose keeps queries, evidence, retrieval detail, and method breakdowns. Required-source notices and model-facing evidence remain available in every mode.
 - The extension no longer tells Pi to avoid shell commands for web research. Pi can use `gh` or other tools when the task calls for them; `web_explore` remains available for web research.
 - If a supplied link cannot be read, `web_explore` reports that link and adds a caveat to the answer. It continues reading later links.
 

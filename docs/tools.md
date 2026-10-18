@@ -69,27 +69,48 @@ Esc on a running `web_explore` stops searches, page fetches, repo clones, and th
 
 Reads that could otherwise hang have timeouts. Page fetches and the GitHub and YouTube readers give up after 15 seconds, PDFs after 60, and Firecrawl scrapes after 45. A page that times out, drops the connection, refuses the port, fails DNS or TLS, or loops on redirects counts as a failed read of that one page. The run moves on to the other sources.
 
-## What preview and verbose show
+## What Pi shows while a call runs
 
-In compact mode, `web_explore` keeps the transcript short:
-
-```text
-Reviewed 3 sources · synthesized answer with 3 findings
-```
-
-In preview or verbose mode, findings include where the evidence came from internally:
+Every call starts with the same heading. Pi provides the outer shell and `⎿`
+marker shown in these examples; the extension only renders the heading and
+result content.
 
 ```text
-- [web_fetch] Official docs say ...
-- [web_fetch_headless] Rendered docs show ...
-- [github] The README describes ...
-
-Internal research: web_search ×2, web_fetch ×5, web_fetch_headless ×1
+web_explore ("Vitest coverage configuration")
+  ⎿ Searching: site:vitest.dev coverage providers
 ```
 
-The label reflects which reader produced the finding, so you'll also see `[github]`, `[pdf]`, or `[youtube]` when one of those handled a link. When fanout is enabled, the research summary shows which providers were queried, for example `web_search ×2 (fanout: duckduckgo, brave, exa)`.
+One activity line is replaced as the work moves between search and reads. It
+shows safe, short activity only, never page text or raw provider errors.
 
-That is meant to be transparent, not an invitation to call those internal steps directly.
+When research finishes, all modes begin with actual execution-time counts:
+
+```text
+web_explore ("Vitest coverage configuration")
+  ⎿ 3 searches · 4 pages read · 8s
+```
+
+`searches` is the number of logical searches that started. Provider fanout or
+fallback for one query still counts once. `pages read` is the number of
+distinct, successful readable documents, including direct links and successful
+repository research. Retries and redirects for the same document count once.
+
+Compact keeps only that summary and required-source notices or a concise
+limitation. Preview adds at most three plain findings and deliberately leaves
+out reader labels, source lists, and retrieval detail. Verbose adds executed
+queries, all findings, sources, evidence, caveats, backend attempts, and a
+successful-read breakdown by HTTP, Browser, Firecrawl, GitHub, PDF, YouTube,
+and Repository. Repository research is separate from the GitHub reader.
+
+Required-source notices appear before findings in every mode. They give the
+requested URL, the reason it could not be read, and say that its requirements
+were not checked. The model receives the complete findings, evidence,
+citations, caveats, and these notices unchanged across compact, preview, and
+verbose modes. Expanding a result opens the verbose view; saved results keep
+the mode selected when they ran, and older saved results use a legacy fallback.
+
+The visible mode changes terminal presentation only. It does not create extra
+public tools or change the research workflow.
 
 ## When evidence is weak
 
