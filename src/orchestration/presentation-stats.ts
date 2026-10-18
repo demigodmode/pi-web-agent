@@ -65,11 +65,8 @@ export function createPresentationStats() {
     },
 
     snapshot(): PresentationStats {
-      const unresolved = [...failures.values(), ...pending.values()].filter((attempt) =>
-        !successfulIds.has(attempt.id) && ![...attempt.requestedIds].some((id) => successfulIds.has(id))
-      );
       const connected = new Map<string, Set<string>>();
-      for (const attempt of unresolved) {
+      for (const attempt of [...failures.values(), ...pending.values()]) {
         const ids = [attempt.id, ...attempt.requestedIds];
         for (const id of ids) {
           const neighbors = connected.get(id) ?? new Set<string>();
@@ -83,17 +80,20 @@ export function createPresentationStats() {
       let failedReads = 0;
       for (const id of connected.keys()) {
         if (visited.has(id)) continue;
-        failedReads += 1;
+        let succeeded = false;
         const queue = [id];
         visited.add(id);
         while (queue.length) {
-          for (const neighbor of connected.get(queue.pop()!) ?? []) {
+          const current = queue.pop()!;
+          if (successfulIds.has(current)) succeeded = true;
+          for (const neighbor of connected.get(current) ?? []) {
             if (!visited.has(neighbor)) {
               visited.add(neighbor);
               queue.push(neighbor);
             }
           }
         }
+        if (!succeeded) failedReads += 1;
       }
       const methods: Partial<Record<PresentationReadMethod, number>> = {};
       for (const method of methodsByUrl.values()) methods[method] = (methods[method] ?? 0) + 1;
