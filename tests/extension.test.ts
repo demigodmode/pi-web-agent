@@ -56,7 +56,7 @@ describe('Pi extension entrypoint', () => {
 
     await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
 
-    expect(updates).toHaveBeenCalledTimes(2);
+    expect(updates).toHaveBeenCalledTimes(4);
     expect(JSON.stringify(updates.mock.calls)).toContain('Searching');
     expect(JSON.stringify(updates.mock.calls)).not.toContain('Secret extracted evidence');
   });
@@ -70,6 +70,45 @@ describe('Pi extension entrypoint', () => {
     extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
 
     await expect(tools[0].execute('call-1', { query: 'example' }, undefined, () => { throw new Error('display gone'); })).resolves.toMatchObject({ isError: false });
+  });
+  it('coalesces repeated live activity and ignores worker updates after caller cancellation', async () => {
+    let emit: ((event: { phase: 'search'; state: 'started'; target: string; searches: number; fetches: number; headless: number }) => void) | undefined;
+    const injected = vi.fn(({ onProgress, signal }: { onProgress?: typeof emit; signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
+      emit = onProgress;
+      signal?.addEventListener('abort', () => reject(new DOMException('Operation aborted', 'AbortError')), { once: true });
+    }));
+    const tools: any[] = [];
+    const controller = new AbortController();
+    const updates = vi.fn();
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+    const pending = tools[0].execute('call-1', { query: 'example' }, controller.signal, updates);
+    const rejected = expect(pending).rejects.toThrow('Operation aborted');
+    await vi.waitFor(() => expect(emit).toBeDefined());
+    emit?.({ phase: 'search', state: 'started', target: 'example', searches: 1, fetches: 0, headless: 0 });
+    emit?.({ phase: 'search', state: 'started', target: 'example', searches: 1, fetches: 0, headless: 0 });
+    controller.abort();
+    emit?.({ phase: 'search', state: 'started', target: 'late evidence text', searches: 1, fetches: 0, headless: 0 });
+    await rejected;
+    const texts = updates.mock.calls.map(([update]) => update.content[0].text);
+    expect(texts.filter((text: string) => text === 'Searching: example')).toHaveLength(1);
+    expect(texts).toContain('Cancelled');
+    expect(texts).not.toContain('Searching: late evidence text');
+  });
+
+  it('passes one injected clock start time through to each simultaneous execution', async () => {
+    const starts: number[] = [];
+    const tools: any[] = [];
+    let time = 10;
+    extension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreNow: () => ++time,
+      __webExploreTool: vi.fn(async ({ startedAt }) => {
+        starts.push(startedAt);
+        return { status: 'ok', findings: [], sources: [] };
+      })
+    } as never);
+    await Promise.all([tools[0].execute('a', { query: 'one' }), tools[0].execute('b', { query: 'two' })]);
+    expect(starts).toEqual([11, 12]);
   });
   it('reuses the configured web_explore workflow while backend config is unchanged', async () => {
     vi.resetModules();

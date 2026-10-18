@@ -107,6 +107,7 @@ export default function extension(pi: ExtensionAPI) {
   registerWebAgentConfigCommands(pi);
 
   const injectedWebExplore = (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool;
+  const now = (pi as ExtensionAPI & { __webExploreNow?: () => number }).__webExploreNow ?? (() => performance.now());
   type Workflow = ReturnType<typeof createResearchWorkflow>;
   // Clones live for the Pi session (#72): the extension owns the cache, not a backend set,
   // so a backend config change keeps them and session_shutdown removes them.
@@ -190,7 +191,7 @@ export default function extension(pi: ExtensionAPI) {
       configuredSession.cachedBackendKey = backendKey;
       configuredSession.cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache: configuredSession.repoCache });
       configuredSession.workflows.add(configuredSession.cachedWorkflow);
-      configuredSession.cachedWebExplore = createWebExploreTool({ explore: leased(configuredSession.cachedWorkflow) });
+      configuredSession.cachedWebExplore = createWebExploreTool({ explore: leased(configuredSession.cachedWorkflow), now });
     }
 
     return configuredSession.cachedWebExplore;
@@ -232,35 +233,59 @@ export default function extension(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const executionSession = session;
+      const startedAt = now();
+      let updatesOpen = true;
+      let lastActivity: string | undefined;
+      const update = (terminalText: string, force = false) => {
+        if (!updatesOpen || (!force && terminalText === lastActivity)) return;
+        lastActivity = terminalText;
+        try {
+          onUpdate?.({
+            content: [{ type: 'text', text: terminalText }],
+            details: { terminalText, terminalTextExpanded: terminalText }
+          });
+        } catch { /* A closed display must not fail research. */ }
+      };
+      const cancel = () => {
+        if (!updatesOpen) return;
+        update('Cancelled', true);
+        updatesOpen = false;
+      };
+      signal?.addEventListener('abort', cancel, { once: true });
       const operation = (async () => {
-        const webExplore = await getConfiguredWebExplore(executionSession);
-        const result: WebExploreResponse = await webExplore({
-          query: params.query,
-          ...(signal ? { signal } : {}),
-          onProgress(progress) {
-            const terminalText = formatResearchProgress(progress);
-            try {
-              onUpdate?.({
-                content: [{ type: 'text', text: terminalText }],
-                details: { terminalText, terminalTextExpanded: terminalText }
-              });
-            } catch { /* A closed display must not fail research. */ }
-          }
-        });
+        try {
+          update('Starting web research…', true);
+          const webExplore = await getConfiguredWebExplore(executionSession);
+          const result: WebExploreResponse = await webExplore({
+            query: params.query,
+            ...(signal ? { signal } : {}),
+            startedAt,
+            onProgress(progress) {
+              update(formatResearchProgress(progress));
+            }
+          });
+          update('Research complete.', true);
 
-        // Terminal display honors the user's presentation mode; the model gets the full findings.
-        // The fallback must stay terse: never fall back to serializeForModel here, or a missing
-        // presentation would dump the full findings into the terminal.
-        const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
-        const terseFallback = 'web_explore result';
-        const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
-        const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
+          // Terminal display honors the user's presentation mode; the model gets the full findings.
+          // The fallback must stay terse: never fall back to serializeForModel here, or a missing
+          // presentation would dump the full findings into the terminal.
+          const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
+          const terseFallback = 'web_explore result';
+          const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
+          const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
 
-        return {
-          content: [{ type: 'text' as const, text: serializeForModel(result) }],
-          details: { ...result, terminalText, terminalTextExpanded },
-          isError: result.status === 'error'
-        };
+          return {
+            content: [{ type: 'text' as const, text: serializeForModel(result) }],
+            details: { ...result, terminalText, terminalTextExpanded },
+            isError: result.status === 'error'
+          };
+        } catch (error) {
+          if (signal?.aborted) cancel();
+          throw error;
+        } finally {
+          updatesOpen = false;
+          signal?.removeEventListener('abort', cancel);
+        }
       })();
       executionSession.operations.add(operation);
       try {

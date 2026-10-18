@@ -1,3 +1,5 @@
+import { clipTerminalText, safeDisplayQuery, safeDisplayUrl } from '../presentation/explore-call.js';
+
 export type ResearchProgress = {
   phase: 'search' | 'fetch' | 'headless' | 'complete';
   state?: 'started' | 'settled';
@@ -10,10 +12,16 @@ export type ResearchProgress = {
 };
 
 export function formatResearchProgress(progress: ResearchProgress): string {
+  const activity = (label: string, target: string | undefined, formatTarget: (value: string) => string | undefined) => {
+    const display = target === undefined ? undefined : formatTarget(target);
+    return display ? `${label}: ${clipTerminalText(display, 120)}` : label;
+  };
   switch (progress.phase) {
-    case 'search': return `Searching web (${progress.searches}/5)...`;
-    case 'fetch': return `Reading pages (${progress.fetches}/20)...`;
-    case 'headless': return `Rendering page (${progress.headless}/2)...`;
+    case 'search': return activity('Searching', progress.target, (target) => safeDisplayQuery(target, 120));
+    case 'fetch': return progress.target
+      ? activity('Reading', progress.target, (target) => safeDisplayUrl(String(target)))
+      : `${progress.fetches} ${progress.fetches === 1 ? 'read' : 'reads'} started`;
+    case 'headless': return activity('Rendering', progress.target, (target) => safeDisplayUrl(String(target)));
     case 'complete': return 'Research complete.';
   }
 }

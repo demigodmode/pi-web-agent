@@ -9,7 +9,8 @@ import { buildEvidenceRecords } from './evidence-records.js';
 import type { ResearchProgress } from '../orchestration/progress.js';
 
 export function createWebExploreTool({
-  explore = createResearchWorkflow()
+  explore = createResearchWorkflow(),
+  now = () => performance.now()
 }: {
   explore?:
     | {
@@ -32,16 +33,20 @@ export function createWebExploreTool({
         requiredSourceEvidence?: ResearchEvidence[];
         requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
       }>);
+  now?: () => number;
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
 
-  return async function webExplore({ query, signal, onProgress }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) {
+  return async function webExplore({ query, signal, onProgress, startedAt }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void; startedAt?: number }) {
+    const localStartedAt = now();
+    const durationMs = () => Math.max(0, now() - (startedAt ?? localStartedAt));
     throwIfAborted(signal);
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
       const result: WebExploreResponse = {
         status: 'error',
+        durationMs: durationMs(),
         findings: [],
         sources: [],
         error: { code: 'INVALID_QUERY', message: 'Query must not be empty.' }
@@ -73,6 +78,7 @@ export function createWebExploreTool({
       const evidence = buildEvidenceRecords(required);
       const failed: WebExploreResponse = {
         status: 'error',
+        durationMs: durationMs(),
         findings: required.map((item) => item.summary),
         sources: required.map((item) => ({ title: item.title, url: item.url, ...(item.requestedUrl ? { requestedUrl: item.requestedUrl } : {}), method: item.method })),
         evidence,
@@ -111,6 +117,7 @@ export function createWebExploreTool({
 
     const shaped: WebExploreResponse = {
       status: 'ok',
+      durationMs: durationMs(),
       findings: synthesized.findings,
       sources,
       evidence,

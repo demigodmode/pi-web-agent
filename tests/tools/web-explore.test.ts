@@ -3,6 +3,32 @@ import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { ResearchProgress } from '../../src/orchestration/progress.js';
 
 describe('web_explore tool', () => {
+  it('records an injected elapsed duration without changing synthesized output', async () => {
+    let time = 100;
+    const webExplore = createWebExploreTool({
+      now: () => time,
+      explore: vi.fn().mockImplementation(async () => {
+        time = 650;
+        return { decision: { action: 'answer' }, evidence: [], workerPass: {} };
+      })
+    });
+    const result = await webExplore({ query: 'example', startedAt: 100 });
+    expect(result.durationMs).toBe(550);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('uses a local start time when callers do not supply one', async () => {
+    let time = 10;
+    const webExplore = createWebExploreTool({
+      now: () => time,
+      explore: vi.fn().mockImplementation(async () => {
+        time = 20;
+        return { decision: { action: 'answer' }, evidence: [], workerPass: {} };
+      })
+    });
+    await expect(webExplore({ query: 'example' })).resolves.toMatchObject({ durationMs: 10 });
+  });
+
   it('keeps all successful required sources public while findings use the first five', async () => {
     const required = Array.from({ length: 8 }, (_, index) => ({
       title: `Required ${index + 1}`, url: `https://required.example/${index + 1}`, requestedUrl: `https://query.example/${index + 1}`,

@@ -158,6 +158,8 @@ export type WebFetchHeadlessResponse = {
 
 export type WebExploreResponse = {
   status: 'ok' | 'error';
+  /** Monotonic wall time for this individual exploration invocation. */
+  durationMs?: number;
   findings: string[];
   sources: Array<{ title: string; url: string; requestedUrl?: string; method?: FetchMethod }>;
   /** Source IDs for each finding, in finding order. */
