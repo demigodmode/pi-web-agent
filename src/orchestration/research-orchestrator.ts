@@ -1,4 +1,4 @@
-import type { Attempt, ResearchFetchInput, SearchProviderName, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
+import type { Attempt, ResearchFetchInput, SearchProviderName, SearchUnavailable, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { throwIfAborted } from '../abort.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { rankEvidence } from './evidence-ranker.js';
@@ -190,6 +190,7 @@ type ResearchOrchestratorResult = {
   terminalFailure?: { code: string; message: string };
   requiredSourceEvidence: ResearchEvidence[];
   requiredSourceFailures: RequiredSourceFailure[];
+  searchUnavailable?: SearchUnavailable[];
 };
 
 function decisionForAnswer({
@@ -288,6 +289,15 @@ export function createResearchOrchestrator({
       const runAttempts: Attempt[] = [];
       const requiredSourceEvidence: ResearchEvidence[] = [];
       const requiredSourceFailures: RequiredSourceFailure[] = [];
+      // Search backends that failed for a reason the user can fix, deduplicated across passes.
+      const searchUnavailable: SearchUnavailable[] = [];
+      const recordSearchUnavailable = (entries: SearchUnavailable[]) => {
+        for (const entry of entries) {
+          if (!searchUnavailable.some((seen) => seen.provider === entry.provider && seen.kind === entry.kind && seen.message === entry.message)) {
+            searchUnavailable.push(entry);
+          }
+        }
+      };
       const requiredFailure = (url: string, reason: RequiredSourceFailure['reason'], code: string, message: string, failure?: RequiredSourceFailure['failure']) => {
         requiredSourceFailures.push({ url, reason, code, message, ...(failure ? { failure } : {}) });
         if (reason === 'read-failed') allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(url) });
@@ -301,6 +311,7 @@ export function createResearchOrchestrator({
             : {}),
           requiredSourceEvidence: [...requiredSourceEvidence],
           requiredSourceFailures: [...requiredSourceFailures],
+          ...(searchUnavailable.length ? { searchUnavailable: [...searchUnavailable] } : {}),
           metadata: {
             ...result.metadata,
             caveatReasons: hasRequiredFailure
@@ -602,6 +613,17 @@ export function createResearchOrchestrator({
           allGaps.push(...pass.gaps);
           allLowValueOutcomes.push(...pass.lowValueOutcomes);
           if (pass.suggestedHeadlessUrl) suggestedHeadlessUrls.push(pass.suggestedHeadlessUrl);
+          if (pass.searchUnavailable) recordSearchUnavailable(pass.searchUnavailable);
+          // Every provider in the chain needs a fix first, so the remaining planned queries would fail the same way.
+          if (pass.searchUnavailableOnly) {
+            const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));
+            return complete({
+              decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked, exhaustedBudget: false }),
+              evidence: ranked,
+              workerPass: combinedWorkerPass({ lastPass, previousQueries, allGaps, allLowValueOutcomes, exhaustedBudget: false }),
+              metadata: buildMetadata({ executedQueries, allEvidence, allGaps, allLowValueOutcomes, headlessAttempts, exhaustedBudget: false, ...fanoutSnapshot() })
+            });
+          }
           if (pass.exhaustedBudget) return partialBudgetResult();
 
           const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));

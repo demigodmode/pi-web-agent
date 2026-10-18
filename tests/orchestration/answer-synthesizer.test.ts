@@ -81,3 +81,20 @@ describe('synthesizeAnswer', () => {
     );
   });
 });
+
+describe('synthesizeAnswer community prefix', () => {
+  it('leaves a finding from a link the user typed unprefixed', () => {
+    const issue: ResearchEvidence = {
+      ...evidence('issue-thread', 'The reporter says the option was ignored.'),
+      url: 'https://github.com/o/r/issues/83',
+      requestedUrl: 'https://github.com/o/r/issues/83',
+      method: 'github'
+    };
+    expect(synthesizeAnswer({ evidence: [issue], partial: false }).findings).toEqual(['The reporter says the option was ignored.']);
+  });
+
+  it('keeps the prefix on a community thread found by search', () => {
+    const thread = evidence('issue-thread', 'Someone hit the same problem.');
+    expect(synthesizeAnswer({ evidence: [thread], partial: false }).findings).toEqual(['Community/practical context: Someone hit the same problem.']);
+  });
+});

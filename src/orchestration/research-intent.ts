@@ -140,6 +140,17 @@ function representsDistinctSubject(left: ResearchEvidence, right: ResearchEviden
     ![...leftTerms].some((term) => rightTerms.has(term));
 }
 
+// Words that only frame a link, e.g. "check https://...". Anything else left over is a real question.
+const LINK_FILLER_WORDS = new Set([
+  'read', 'open', 'check', 'see', 'look', 'at', 'this', 'these', 'that', 'the', 'a', 'an', 'link', 'links',
+  'url', 'urls', 'page', 'pages', 'issue', 'pr', 'please', 'and', 'summarize', 'summarise', 'here', 'it'
+]);
+
+function hasOnlyLinkFiller(query: string): boolean {
+  const remainder = query.replace(/https?:\/\/\S+/gi, ' ').toLowerCase().split(/[^a-z0-9]+/);
+  return remainder.every((word) => word === '' || LINK_FILLER_WORDS.has(word));
+}
+
 function asksForExternalOpinions(query: string): boolean {
   return /\b(?:opinions?|experiences?|user (?:reviews?|feedback)|community (?:feedback|opinions?|experiences?|reviews?)|what do (?:users|people|developers) think|(?:users|people|developers) (?:think|feel|say))\b/i.test(query);
 }
@@ -159,6 +170,9 @@ export function classifyResearchIntent(query: string): ResearchIntent {
       if (match) targets.push({ kind: 'name', value: match[1] }, { kind: 'name', value: match[2] });
     }
     return { kind: 'compare', targets, requiresAlternative: targets.length < 2 };
+  }
+  if (urls.length > 0 && hasOnlyLinkFiller(query)) {
+    return { kind: 'read', targets: urlTargets, requiresAlternative: false };
   }
   if (urls.length === 1 && /\b(?:read|summari[sz]e)\b/i.test(query) &&
     !/\bhow\s+to\s+(?:read|summari[sz]e)\b/i.test(query) &&

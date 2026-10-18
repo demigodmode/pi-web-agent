@@ -63,7 +63,7 @@ describe('buildExplorePresentation', () => {
     expect(presentation.views.verbose).toContain('Sources');
     expect(presentation.views.verbose).toContain('[S2] Treat executablePath as fallback');
     expect(presentation.views.verbose).toContain('The executable path is risky.');
-    expect(presentation.views.verbose).toContain('- [web_fetch_headless] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
+    expect(presentation.views.verbose).toContain('- [Browser] BrowserType | Playwright: https://playwright.dev/docs/api/class-browsertype');
     expect(presentation.views.verbose).toContain('Queries');
     expect(presentation.views.verbose).toContain('site:playwright.dev executablePath');
     expect(presentation.views.verbose).toContain('Retrieval');
@@ -248,9 +248,9 @@ describe('buildExplorePresentation', () => {
     });
 
     const preview = presentation.views.preview as string;
-    expect(preview).toContain('[github]');
-    expect(preview).toContain('[pdf]');
-    expect(preview).toContain('[youtube]');
+    expect(preview).toContain('[GitHub]');
+    expect(preview).toContain('[PDF]');
+    expect(preview).toContain('[YouTube]');
   });
 
   it('shows the fanout providers on the internal-research summary line', () => {
@@ -321,5 +321,27 @@ describe('buildExplorePresentation', () => {
     expect(presentation.sources).not.toContainEqual(expect.objectContaining({ url: expect.stringContaining('\u001b') }));
     expect(presentation.sources?.[0]?.title).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
     expect(presentation.sources?.[0]?.url).not.toMatch(/[\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+  });
+});
+
+describe('search unavailable notices in the legacy views', () => {
+  it('puts the provider notice once at the top of each view', () => {
+    const notice = 'Search unavailable (brave): Brave search requires PI_WEB_AGENT_BRAVE_API_KEY. Run /web-agent doctor to check backend settings.';
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      findings: [],
+      sources: [],
+      caveat: 'No usable sources were found.',
+      searchUnavailable: [
+        { provider: 'brave', kind: 'not_configured', message: 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.' },
+        { provider: 'brave', kind: 'not_configured', message: 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.' }
+      ]
+    });
+
+    for (const view of ['compact', 'preview', 'verbose'] as const) {
+      const text = presentation.views[view] ?? '';
+      expect(text.startsWith(notice)).toBe(true);
+      expect(text.split(notice).length - 1).toBe(1);
+    }
   });
 });

@@ -2,6 +2,7 @@ import { throwIfAborted } from '../abort.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import type { Attempt, ResearchFetchInput, SearchInput, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { selectCandidates } from './candidate-selector.js';
+import { userFixableSearchFailures } from '../backends/fallback-policy.js';
 import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import { selectEvidencePassages } from './evidence-passages.js';
@@ -172,6 +173,7 @@ export function createResearchWorker({
       const fanoutProviders = searchResult.metadata.fanout?.providers;
       const fanoutSkipped = searchResult.metadata.fanout?.skipped;
       if (searchResult.status !== 'ok') {
+        const unavailable = userFixableSearchFailures(searchResult);
         return {
           searchQueries,
           evidence,
@@ -187,7 +189,8 @@ export function createResearchWorker({
           fanoutProviders,
           fanoutSkipped,
           searchCoveragePartial,
-          searchAttempts
+          searchAttempts,
+          ...(unavailable.entries.length ? { searchUnavailable: unavailable.entries, searchUnavailableOnly: unavailable.exclusive } : {})
         };
       }
 

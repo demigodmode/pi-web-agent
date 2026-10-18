@@ -1,7 +1,7 @@
 import { abortableSleep, throwIfAborted } from '../abort.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import type { Attempt, FailureInfo, ResearchFetchInput, SearchInput, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { Attempt, FailureInfo, ResearchFetchInput, SearchInput, SearchProviderName, SearchUnavailable, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { failureOf, shouldFallBack } from './failure.js';
 import type { ProviderHealth, ProviderHealthState } from './provider-health.js';
 
@@ -20,6 +20,36 @@ type Search = (input: SearchInput) => Promise<WebSearchResponse>;
 type FetchPage = (input: ResearchFetchInput) => Promise<WebFetchResponse>;
 
 const USER_FIXABLE_KINDS: ReadonlySet<string> = new Set(['not_configured', 'auth_failed', 'quota_exhausted']);
+
+/**
+ * The user-fixable search failures behind an error result, one entry per provider.
+ * `exclusive` is true when every failed or skipped provider failed that way, so nothing
+ * else in the chain could have searched.
+ */
+export function userFixableSearchFailures(result: WebSearchResponse): { entries: SearchUnavailable[]; exclusive: boolean } {
+  const failure = failureOf(result);
+  if (!failure || result.results.length > 0) return { entries: [], exclusive: false };
+  const failed = (result.metadata.attempts ?? []).filter((attempt) => attempt.outcome === 'failed' || attempt.outcome === 'skipped');
+  const byProvider = new Map<string, SearchUnavailable>();
+  for (const attempt of failed) {
+    const kind = attempt.failure?.kind;
+    if (!kind || !USER_FIXABLE_KINDS.has(kind)) continue;
+    byProvider.set(attempt.backend, {
+      provider: attempt.backend,
+      kind: kind as SearchUnavailable['kind'],
+      message: attempt.detail ?? result.error?.message ?? kind
+    });
+  }
+  if (failed.length === 0 && USER_FIXABLE_KINDS.has(failure.kind)) {
+    byProvider.set(result.metadata.backend, {
+      provider: result.metadata.backend,
+      kind: failure.kind as SearchUnavailable['kind'],
+      message: result.error?.message ?? failure.kind
+    });
+  }
+  const exclusive = byProvider.size > 0 && failed.every((attempt) => attempt.failure !== undefined && USER_FIXABLE_KINDS.has(attempt.failure.kind));
+  return { entries: [...byProvider.values()], exclusive };
+}
 
 /** Only user-fixable failures keep the provider's message; everything else stays message-free. */
 function detailFor(failure: FailureInfo, message: string | undefined): string | undefined {

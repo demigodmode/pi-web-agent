@@ -168,3 +168,30 @@ describe('classifyResearchIntent', () => {
     expect(missingComparisonTargets(intent, evidence)).toEqual([]);
   });
 });
+
+describe('classifyResearchIntent with links only', () => {
+  it('reads a query that is nothing but a link', () => {
+    const url = 'https://github.com/demigodmode/pi-web-agent/issues/83';
+    expect(classifyResearchIntent(url)).toEqual({ kind: 'read', targets: [{ kind: 'url', value: url }], requiresAlternative: false });
+  });
+
+  it('reads every link when the words around them only frame the request', () => {
+    expect(classifyResearchIntent('check https://a.test/x https://b.test/y')).toEqual({
+      kind: 'read',
+      targets: [{ kind: 'url', value: 'https://a.test/x' }, { kind: 'url', value: 'https://b.test/y' }],
+      requiresAlternative: false
+    });
+  });
+
+  it('keeps a real question about a plain page as research', () => {
+    expect(classifyResearchIntent('how does https://example.com/docs handle retries').kind).toBe('research');
+  });
+
+  it('keeps a question about a typed repository on the existing repository rule', () => {
+    expect(classifyResearchIntent('how does https://github.com/acme/widget handle retries').kind).toBe('read');
+  });
+
+  it('keeps a comparison of two links a comparison', () => {
+    expect(classifyResearchIntent('compare https://a.test vs https://b.test').kind).toBe('compare');
+  });
+});

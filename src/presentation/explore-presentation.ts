@@ -3,30 +3,46 @@ import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
 import { clipTerminalText, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
 
-function internalReaderLabel(method?: FetchMethod) {
-  if (method === 'headless') return 'web_fetch_headless';
-  if (method === 'firecrawl') return 'firecrawl';
-  if (method === 'http') return 'web_fetch';
-  if (method === 'github') return 'github';
-  if (method === 'pdf') return 'pdf';
-  if (method === 'youtube') return 'youtube';
-  return 'web_explore';
+export { sanitizeTerminalText } from './explore-display-text.js';
+
+const methodLabels = {
+  http: 'HTTP',
+  headless: 'Browser',
+  firecrawl: 'Firecrawl',
+  github: 'GitHub',
+  pdf: 'PDF',
+  youtube: 'YouTube',
+  repo: 'Repository'
+} as const;
+
+/** The user-facing reader name, or undefined when the method has no label (the bracket is then omitted). */
+function methodTag(method?: FetchMethod): string {
+  const label = method ? (methodLabels as Record<string, string | undefined>)[method] : undefined;
+  return label ? `[${label}] ` : '';
 }
 
-export { sanitizeTerminalText } from './explore-display-text.js';
+/** One line per distinct unavailable provider, using the provider's own message. */
+export function searchUnavailableNotices(result: Pick<WebExploreResponse, 'searchUnavailable'>, clean: (text: string) => string = (text) => text): string[] {
+  const lines = (result.searchUnavailable ?? []).map((item) => {
+    const message = item.message.replace(/\.*$/, '.');
+    return clean(`Search unavailable (${item.provider}): ${message} Run /web-agent doctor to check backend settings.`);
+  });
+  return [...new Set(lines)];
+}
 
 function buildLegacyExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   const notices = (result.requiredSourceFailures ?? []).map((failure) =>
     sanitizeTerminalText(`Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`)
   );
+  const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
   if (result.status === 'error') {
     const successful = result.sources.length
-      ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
+      ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
       : [];
     return {
       mode: 'compact',
       views: {
-        compact: [...successful, ...notices, `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n')
+        compact: [...searchNotices, ...successful, ...notices, `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n')
       }
     };
   }
@@ -43,14 +59,15 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     : undefined;
   const hasEvidence = result.findings.length > 0 || result.sources.length > 0;
   const evidenceLines = hasEvidence
-    ? result.findings.map((finding, index) => `- [${internalReaderLabel(result.sources[index]?.method)}] ${sanitizeTerminalText(finding)}`)
+    ? result.findings.map((finding, index) => `- ${methodTag(result.sources[index]?.method)}${sanitizeTerminalText(finding)}`)
     : ['No usable evidence found.'];
   const verboseFindings = result.findings.map((finding, index) => {
     const ids = result.findingSourceIds?.[index] ?? [];
     const sourceIds = ids.map(sanitizeTerminalText);
-    return `- [${internalReaderLabel(result.sources[index]?.method)}] ${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
+    return `- ${methodTag(result.sources[index]?.method)}${sourceIds.length ? `[${sourceIds.join(', ')}] ` : ''}${sanitizeTerminalText(finding)}`;
   });
   const preview = [
+    ...searchNotices,
     ...notices,
     ...evidenceLines,
     internalSummary ? `\n${internalSummary}` : undefined
@@ -58,12 +75,13 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     .filter((line) => line !== undefined)
     .join('\n');
   const verbose = [
+    ...searchNotices,
     ...notices,
     'Findings',
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
     'Sources',
-    ...result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`),
+    ...result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`),
     ...(result.evidence?.length ? [
       '',
       'Evidence',
@@ -79,7 +97,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     .filter((line) => line !== undefined)
     .join('\n');
 
-  const compact = notices.length
+  const compactBody = notices.length
     ? notices.join('\n')
     : hasEvidence
     ? `Reviewed ${result.sources.length} sources · synthesized answer with ${result.findings.length} findings`
@@ -88,7 +106,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   return {
     mode: 'compact',
     views: {
-      compact,
+      compact: [...searchNotices, compactBody].join('\n'),
       preview,
       verbose
     },
@@ -132,15 +150,6 @@ function requiredNotices(result: WebExploreResponse, compact = false) {
   );
 }
 
-const methodLabels = {
-  http: 'HTTP',
-  headless: 'Browser',
-  firecrawl: 'Firecrawl',
-  github: 'GitHub',
-  pdf: 'PDF',
-  youtube: 'YouTube',
-  repo: 'Repository'
-} as const;
 
 /** Terminal-only views built from execution-time statistics; full evidence stays on the response. */
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
@@ -155,13 +164,15 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     ? `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`
     : undefined;
   const limitation = !error && result.caveat ? sanitizeTerminalText(result.caveat) : undefined;
-  const compact = [summary, ...compactNotices, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
+  const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
+  const compact = [summary, ...searchNotices, ...compactNotices, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
   const previewFindings = result.findings.slice(0, 3).map((finding) =>
     `- ${clipTerminalText(sanitizeTerminalText(finding), 240)}`
   );
   const displayQueries = stats.executedQueries.map((query) => safeDisplayQuery(query)).filter(Boolean);
   const preview = [
     summary,
+    ...searchNotices,
     ...failureNotices,
     error ?? (noEvidence ? 'No usable evidence found.' : limitation),
     !error && previewFindings.length ? '\nFindings\n' + previewFindings.join('\n') : undefined
@@ -175,12 +186,13 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     .map(([method, count]) => `${methodLabels[method]}: ${count}`);
   const verbose = [
     summary,
+    ...searchNotices,
     ...failureNotices,
     error,
     noEvidence ? 'No usable evidence found.' : undefined,
     displayQueries.length ? `Queries\n${displayQueries.join('\n')}` : undefined,
     verboseFindings.length ? `Findings\n${verboseFindings.join('\n')}` : undefined,
-    result.sources.length ? `Sources\n${result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
+    result.sources.length ? `Sources\n${result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
     result.evidence?.length ? `Evidence\n${result.evidence.flatMap((item) => [
       `- [${sanitizeTerminalText(item.id)}] ${sanitizeTerminalText(item.title)}: ${sanitizeTerminalText(item.url)}`,
       ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`)

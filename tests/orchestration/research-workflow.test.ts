@@ -4,7 +4,9 @@ import { createBackendSet } from '../../src/backends/factory.js';
 import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { createNetworkGuard } from '../../src/fetch/network-guard.js';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
-import type { WebFetchResponse } from '../../src/types.js';
+import type { WebFetchResponse, WebSearchResponse } from '../../src/types.js';
+import { chainSearch, withSearchPolicy } from '../../src/backends/fallback-policy.js';
+import { createProviderHealth } from '../../src/backends/provider-health.js';
 import extension from '../../src/extension.js';
 
 describe('research workflow composition', () => {
@@ -755,6 +757,128 @@ describe('research workflow ownership', () => {
       expect(close).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('links and unavailable search backends through the public tool', () => {
+  const missingKey = 'Brave search requires PI_WEB_AGENT_BRAVE_API_KEY.';
+  const notice = `Search unavailable (brave): ${missingKey} Run /web-agent doctor to check backend settings.`;
+  const caveatSentence = 'Evidence is partial, so this answer is based on the strongest source';
+  const count = (text: string, needle: string) => text.split(needle).length - 1;
+
+  function braveNotConfigured() {
+    const policy = { health: createProviderHealth(), sleep: vi.fn(async () => undefined), random: () => 0 };
+    const brave = vi.fn(async (): Promise<WebSearchResponse> => ({
+      status: 'error',
+      results: [],
+      metadata: { backend: 'brave', cacheHit: false },
+      error: { code: 'BACKEND_CONFIG_INVALID', message: missingKey, failure: { kind: 'not_configured' } }
+    }));
+    return { brave, search: chainSearch([withSearchPolicy('brave', brave, policy)], policy) };
+  }
+
+  function publicTool(workflow: ReturnType<typeof createResearchWorkflow>) {
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: createWebExploreTool({ explore: workflow }) } as never);
+    return tools[0];
+  }
+
+  it('stops after the first unconfigured search and says so in the model text and every view', async () => {
+    const { brave, search } = braveNotConfigured();
+    const fetchPage = vi.fn();
+    const workflow = createResearchWorkflow({ search, fetchPage, headlessFetch: vi.fn() });
+    try {
+      const output = await publicTool(workflow).execute('call-1', { query: 'how to configure the thing' }, undefined, vi.fn());
+
+      expect(brave).toHaveBeenCalledTimes(1);
+      expect(fetchPage).not.toHaveBeenCalled();
+      expect(output.details.searchUnavailable).toEqual([{ provider: 'brave', kind: 'not_configured', message: missingKey }]);
+      expect(output.content[0].text.startsWith(notice)).toBe(true);
+      expect(count(output.content[0].text, notice)).toBe(1);
+      for (const view of ['compact', 'preview', 'verbose'] as const) {
+        const text = output.details.presentation.views[view];
+        expect(count(text, notice)).toBe(1);
+        expect(text).not.toContain(caveatSentence);
+      }
+      expect(output.content[0].text).not.toContain(caveatSentence);
+      expect(output.details.caveat).toBe('No usable sources were found.');
+    } finally {
+      await workflow.close();
+    }
+  });
+
+  it('adds no search notice to a normal run', async () => {
+    const search = vi.fn(async (): Promise<WebSearchResponse> => ({
+      status: 'ok',
+      results: [{ title: 'Thing docs', url: 'https://docs.example/thing', snippet: 'thing' }],
+      metadata: { backend: 'duckduckgo', cacheHit: false }
+    }));
+    const fetchPage = vi.fn(async ({ url }: { url: string }): Promise<WebFetchResponse> => ({
+      status: 'ok',
+      url,
+      metadata: { method: 'http', cacheHit: false },
+      content: { title: 'Thing docs', text: 'Official documentation text that is long enough to count as real evidence for configuring the thing.' }
+    }));
+    const workflow = createResearchWorkflow({ search, fetchPage, headlessFetch: vi.fn() });
+    try {
+      const output = await publicTool(workflow).execute('call-1', { query: 'how to configure the thing' }, undefined, vi.fn());
+
+      expect(output.details.searchUnavailable).toBeUndefined();
+      expect(output.content[0].text).not.toContain('Search unavailable');
+      for (const view of ['compact', 'preview', 'verbose'] as const) {
+        expect(output.details.presentation.views[view]).not.toContain('Search unavailable');
+      }
+    } finally {
+      await workflow.close();
+    }
+  });
+
+  it('reads a bare issue link without searching for its text', async () => {
+    const issueUrl = 'https://github.com/demigodmode/pi-web-agent/issues/83';
+    const search = vi.fn(async (): Promise<WebSearchResponse> => ({ status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false } }));
+    const workflow = createResearchWorkflow({
+      search,
+      fetchPage: async ({ url }) => ({
+        status: 'ok' as const,
+        url,
+        metadata: { method: 'github' as const, cacheHit: false },
+        content: { title: 'Issue 83', text: 'Issue body with enough detail to count as evidence.' }
+      }),
+      headlessFetch: vi.fn()
+    });
+    try {
+      const result = await workflow.run({ query: issueUrl });
+
+      expect(search).not.toHaveBeenCalled();
+      expect(result.evidence.map((item) => item.url)).toEqual([issueUrl]);
+    } finally {
+      await workflow.close();
+    }
+  });
+});
+
+describe('requested links are not labeled as community context', () => {
+  it('a direct issue read has no community prefix in the public findings', async () => {
+    const issueUrl = 'https://github.com/demigodmode/pi-web-agent/issues/83';
+    const workflow = createResearchWorkflow({
+      search: vi.fn(async (): Promise<WebSearchResponse> => ({ status: 'ok', results: [], metadata: { backend: 'duckduckgo', cacheHit: false } })),
+      fetchPage: async ({ url }) => ({
+        status: 'ok' as const,
+        url,
+        metadata: { method: 'github' as const, cacheHit: false },
+        content: { title: 'Issue 83', text: 'The reporter says the option was ignored when the config file is missing.' }
+      }),
+      headlessFetch: vi.fn()
+    });
+    try {
+      const result = await createWebExploreTool({ explore: workflow })({ query: issueUrl });
+
+      expect(result.status).toBe('ok');
+      expect(result.findings.length).toBeGreaterThan(0);
+      for (const finding of result.findings) expect(finding).not.toContain('Community/practical context:');
+    } finally {
+      await workflow.close();
     }
   });
 });

@@ -38,7 +38,7 @@ function joinReasons(reasons: string[]) {
   return `${reasons.slice(0, -1).join(', ')}, and ${reasons.at(-1)}`;
 }
 
-function caveatText(partial: boolean, caveatReasons: EvidenceCaveatReason[] = [], missingComparisonTargets: string[] = []) {
+function caveatText(partial: boolean, caveatReasons: EvidenceCaveatReason[] = [], missingComparisonTargets: string[] = [], hasEvidence = true) {
   if (!partial) return undefined;
   const specificReasons = caveatReasons.map((reason) => reason === 'missing-comparison-target' && missingComparisonTargets.length
     ? `comparison evidence is missing for ${missingComparisonTargets.join(', ')}`
@@ -46,6 +46,7 @@ function caveatText(partial: boolean, caveatReasons: EvidenceCaveatReason[] = []
   if (specificReasons.length > 0) {
     return `Evidence is partial: ${joinReasons(specificReasons)}.`;
   }
+  if (!hasEvidence) return 'No usable sources were found.';
   return 'Evidence is partial, so this answer is based on the strongest source found within the bounded research budget.';
 }
 
@@ -62,13 +63,14 @@ export function synthesizeAnswer({
 }) {
   const findings = evidence.slice(0, 5).map((item) => {
     const summary = normalizeSummary(item.summary);
-    return item.sourceKind === 'community' || item.sourceKind === 'issue-thread'
+    // A link the user typed is a requested source, not a discovered community thread.
+    return (item.sourceKind === 'community' || item.sourceKind === 'issue-thread') && item.requestedUrl === undefined
       ? `Community/practical context: ${summary}`
       : summary;
   });
 
   return {
     findings,
-    caveat: caveatText(partial, caveatReasons, missingComparisonTargets)
+    caveat: caveatText(partial, caveatReasons, missingComparisonTargets, evidence.length > 0)
   };
 }
