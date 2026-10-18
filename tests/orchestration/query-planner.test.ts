@@ -101,13 +101,14 @@ describe('planSearchQueries site operators', () => {
     }
   });
 
-  it('strips negated site: operators from the search terms', () => {
+  it('keeps a negated site: exclusion on every follow-up', () => {
     const queries = planSearchQueries({ originalQuery: 'React API -site:stackoverflow.com', passIndex: 1, previousQueries: ['React API -site:stackoverflow.com'], gaps: ['Need implementation references.'] });
-    expect(queries.join('\n')).not.toContain('-site:');
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) expect(query.split(' ').filter((token) => token === '-site:stackoverflow.com')).toHaveLength(1);
   });
 
   it('does not send edge cases to learn.microsoft.com', () => {
-    for (const originalQuery of ['edge cases in vitest', 'edge cases in React', 'cutting edge tooling for Node', 'knowledge base for the team']) {
+    for (const originalQuery of ['edge cases in React', 'knowledge base for the team']) {
       const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
       expect(queries.join('\n'), originalQuery).not.toContain('learn.microsoft.com');
     }
@@ -116,5 +117,89 @@ describe('planSearchQueries site operators', () => {
   it('still routes Microsoft Edge questions to learn.microsoft.com', () => {
     const queries = planSearchQueries({ originalQuery: 'Microsoft Edge policy for extensions', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
     expect(queries[0]).toBe('site:learn.microsoft.com Microsoft Edge policy extensions');
+  });
+});
+
+describe('planSearchQueries keeps the user site operators', () => {
+  const originals = [
+    '-site:github.com Vitest coverage',
+    'site:github.com React API version compatibility',
+    'site:vitest.dev -site:github.com coverage thresholds'
+  ];
+  const gaps = [
+    'Need supported version details.',
+    'Need exact API behavior.',
+    'Sources disagree about the recommendation.',
+    'Need user experience.',
+    'Need official docs.',
+    'Need implementation references.',
+    'Need comparison evidence for target: Vue'
+  ];
+  const tokens = (query: string) => query.split(' ').map((token) => token.toLowerCase());
+
+  for (const originalQuery of originals) {
+    const userOperators = originalQuery.split(' ').filter((token) => /^-?site:/i.test(token));
+    const positive = userOperators.find((token) => !token.startsWith('-'));
+    const excluded = userOperators.filter((token) => token.startsWith('-')).map((token) => token.slice(1).toLowerCase());
+
+    it(`keeps ${JSON.stringify(userOperators)} exactly once on every follow-up of "${originalQuery}"`, () => {
+      for (const passIndex of [1, 2]) {
+        for (const gap of gaps) {
+          const queries = planSearchQueries({ originalQuery, passIndex, previousQueries: [], gaps: [gap] });
+          expect(queries.length, `${passIndex} ${gap}`).toBeGreaterThan(0);
+          for (const query of queries) {
+            const parts = tokens(query);
+            for (const operator of userOperators) {
+              expect(parts.filter((token) => token === operator.toLowerCase()), query).toHaveLength(1);
+            }
+            const positives = parts.filter((token) => /^site:/.test(token));
+            expect(positives.length, query).toBeLessThanOrEqual(1);
+            if (positive) expect(positives, query).toEqual([positive.toLowerCase()]);
+            for (const host of excluded) expect(parts, query).not.toContain(`site:${host}`);
+          }
+        }
+      }
+    });
+  }
+
+  it('adds no site: operator to a query the user did not scope', () => {
+    const queries = planSearchQueries({ originalQuery: 'Compare React and Vue', passIndex: 2, previousQueries: [], gaps: ['Need supported version details.'] });
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.join('\n')).not.toContain('site:');
+  });
+});
+
+describe('Microsoft Edge routing', () => {
+  const edgeQueries = [
+    'How do I configure Edge extensions?',
+    'Edge browser policies for kiosk mode',
+    'Edge group policy for homepage',
+    'Edge add-ons store publishing',
+    'Edge devtools protocol',
+    'Edge webview2 runtime setup',
+    'Edge enterprise sync settings',
+    'Edge sidebar customization',
+    'Edge profiles management',
+    'msedge driver version',
+    'Microsoft Edge policy for extensions'
+  ];
+  const notEdgeQueries = [
+    'edge cases in vitest',
+    'cutting edge tooling for Node',
+    'edge-to-edge layout',
+    'knowledge base for the team',
+    'Vercel edge functions timeouts',
+    'edge runtime limits',
+    'edge network latency'
+  ];
+
+  it.each(edgeQueries)('routes "%s" to learn.microsoft.com', (originalQuery) => {
+    const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toMatch(/^site:learn\.microsoft\.com /);
+  });
+
+  it.each(notEdgeQueries)('does not route "%s" to learn.microsoft.com', (originalQuery) => {
+    const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries.join('\n')).not.toContain('learn.microsoft.com');
   });
 });
