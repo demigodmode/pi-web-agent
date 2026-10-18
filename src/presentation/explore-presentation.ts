@@ -162,6 +162,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
   const previewFindings = result.findings.slice(0, 3).map((finding) =>
     `- ${clipTerminalText(sanitizeTerminalText(finding), 240)}`
   );
+  const displayQueries = stats.executedQueries.map((query) => safeDisplayQuery(query)).filter(Boolean);
   const preview = [
     summary,
     ...failureNotices,
@@ -180,7 +181,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     ...failureNotices,
     error,
     noEvidence ? 'No usable evidence found.' : undefined,
-    stats.executedQueries.length ? `Queries\n${stats.executedQueries.map((query) => safeDisplayQuery(query)).filter(Boolean).join('\n')}` : undefined,
+    displayQueries.length ? `Queries\n${displayQueries.join('\n')}` : undefined,
     verboseFindings.length ? `Findings\n${verboseFindings.join('\n')}` : undefined,
     result.sources.length ? `Sources\n${result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
     result.evidence?.length ? `Evidence\n${result.evidence.flatMap((item) => [

@@ -165,6 +165,25 @@ describe('buildExplorePresentation', () => {
     expect(presentation.views.verbose).not.toContain(query);
   });
 
+  it('omits the verbose Queries section when all executed queries sanitize away', () => {
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      durationMs: 1_000,
+      findings: ['A finding'],
+      sources: [{ title: 'Source', url: 'https://example.test/doc', method: 'http' }],
+      metadata: {
+        searchPasses: 1,
+        fetchedPages: 1,
+        headlessAttempts: 0,
+        exhaustedBudget: false,
+        presentationStats: { searches: 1, executedQueries: ['\u202e\u2066\u2069'], pagesRead: 1, failedReads: 0, methods: { http: 1 } }
+      }
+    });
+
+    expect(presentation.views.verbose).not.toContain('Queries');
+    expect(presentation.views.verbose).toContain('Findings');
+  });
+
   it('labels github/pdf/youtube sources with their reader name', () => {
     const presentation = buildExplorePresentation({
       status: 'ok',
