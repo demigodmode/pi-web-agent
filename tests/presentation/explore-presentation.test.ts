@@ -142,6 +142,29 @@ describe('buildExplorePresentation', () => {
     expect(compactLines[1]).toContain('https://example.com/limited');
   });
 
+  it('redacts embedded URL credentials and query tokens from verbose queries', () => {
+    const query = 'read https://alice:secret@example.test/doc?token=secret#private';
+    const presentation = buildExplorePresentation({
+      status: 'ok',
+      durationMs: 1_000,
+      findings: ['A finding'],
+      sources: [{ title: 'Source', url: 'https://example.test/doc', method: 'http' }],
+      metadata: {
+        searchPasses: 1,
+        fetchedPages: 1,
+        headlessAttempts: 0,
+        exhaustedBudget: false,
+        presentationStats: { searches: 1, executedQueries: [query], pagesRead: 1, failedReads: 0, methods: { http: 1 } }
+      }
+    });
+
+    expect(presentation.views.verbose).toContain('read https://example.test/doc');
+    expect(presentation.views.verbose).not.toContain('alice:secret');
+    expect(presentation.views.verbose).not.toContain('token=secret');
+    expect(presentation.views.verbose).not.toContain('#private');
+    expect(presentation.views.verbose).not.toContain(query);
+  });
+
   it('labels github/pdf/youtube sources with their reader name', () => {
     const presentation = buildExplorePresentation({
       status: 'ok',

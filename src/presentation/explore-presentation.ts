@@ -1,7 +1,7 @@
 import type { FetchMethod, WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
-import { clipTerminalText } from './explore-call.js';
+import { clipTerminalText, safeDisplayQuery } from './explore-call.js';
 
 function internalReaderLabel(method?: FetchMethod) {
   if (method === 'headless') return 'web_fetch_headless';
@@ -180,7 +180,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     ...failureNotices,
     error,
     noEvidence ? 'No usable evidence found.' : undefined,
-    stats.executedQueries.length ? `Queries\n${stats.executedQueries.map(sanitizeTerminalText).join('\n')}` : undefined,
+    stats.executedQueries.length ? `Queries\n${stats.executedQueries.map((query) => safeDisplayQuery(query)).filter(Boolean).join('\n')}` : undefined,
     verboseFindings.length ? `Findings\n${verboseFindings.join('\n')}` : undefined,
     result.sources.length ? `Sources\n${result.sources.map((source) => `- [${internalReaderLabel(source.method)}] ${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
     result.evidence?.length ? `Evidence\n${result.evidence.flatMap((item) => [
