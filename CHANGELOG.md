@@ -25,6 +25,10 @@ The format is intentionally simple and release-oriented.
 - Questions about what people think of something are treated as opinion questions, so community threads can answer them instead of triggering more searches for official docs.
 - Closing a Pi session no longer waits forever on research that never finishes.
 - Control characters and escape codes in page text are removed before they reach the terminal.
+- If the selected search provider isn't set up (missing key, rejected key, used-up quota), `web_explore` now says so and points to `/web-agent doctor`, instead of quietly returning nothing.
+- A question that's only links ("read https://...") just reads them now, without also searching for the link text.
+- Follow-up searches no longer stack a second `site:` onto a query that already has one, and questions mentioning "edge cases" stop getting sent to Microsoft's docs.
+- The tool description asks the model to keep the user's links in its query, so they actually get read directly.
 
 ### Breaking
 - None.
