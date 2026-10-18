@@ -104,6 +104,15 @@ describe('createPresentationStats', () => {
     expect(stats.snapshot()).toMatchObject({ pagesRead: 1, failedReads: 0, methods: { headless: 1 } });
   });
 
+  test('counts a pending URL and its failed redirected headless retry as one failed read', () => {
+    const stats = createPresentationStats();
+    stats.recordRead(response({ status: 'needs_headless', url: 'https://example.test/needs-browser' }), 'http', 'https://source.test/u');
+    stats.recordRead(headless({ status: 'error', url: 'https://example.test/failed-after-redirect', content: undefined }), 'headless', 'https://example.test/needs-browser');
+    stats.recordFailure('https://unrelated.test/failure');
+
+    expect(stats.snapshot()).toMatchObject({ pagesRead: 0, failedReads: 2, methods: {} });
+  });
+
   test('keeps repo separate from github and trusts repo content that resembles a bot check', () => {
     const stats = createPresentationStats();
     const botPhrase = response({ metadata: { method: 'github', cacheHit: false }, content: { text: 'Checking your browser is mentioned in this issue.' } });
