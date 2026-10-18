@@ -47,7 +47,7 @@ function serializeForModel(result: WebExploreResponse): string {
   if (result.findings.length === 0 && result.sources.length === 0) {
     return terminalError
       ? [...requiredNotices, terminalError].filter(Boolean).join('\n\n')
-      : ['No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
+      : [...requiredNotices, 'No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
   }
   const linked = (result.evidence?.length ?? 0) > 0;
   const findings = result.findings.map((finding, index) => {

@@ -225,14 +225,27 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
         if (signal?.aborted) throw abortError();
         if (err instanceof GithubHttpError) {
           const rateLimited = err.status === 429 || (err.status === 403 && (err.retryAfterMs !== undefined || err.rateLimited));
-          const failure = { kind: rateLimited ? 'rate_limited' : err.status === 404 ? 'not_found_or_inaccessible' : (err.status === 401 || err.status === 403) ? 'auth_failed' : err.status === 503 ? 'transient' : 'bad_response', httpStatus: err.status, ...(err.retryAfterMs !== undefined ? { providerRetryAfterMs: err.retryAfterMs } : {}) } as const;
-          const message = err.status === 404
-            ? credential.source === 'none' ? `GitHub resource was not found or may require access; sign in to GitHub and retry: ${requestedUrl}` : `GitHub resource was not found or your credential lacks access: ${requestedUrl}`
-            : `GitHub returned HTTP ${err.status} for ${requestedUrl}`;
+          const authFailed = err.status === 401 || err.status === 403;
+          const failure = { kind: rateLimited ? 'rate_limited' : err.status === 404 ? 'not_found_or_inaccessible' : authFailed ? 'auth_failed' : err.status >= 500 && err.status < 600 ? 'transient' : 'bad_response', httpStatus: err.status, ...(err.retryAfterMs !== undefined ? { providerRetryAfterMs: err.retryAfterMs } : {}) } as const;
+          const message = rateLimited
+            ? `GitHub rate limit reached (HTTP ${err.status}). Retry later.`
+            : err.status === 404
+              ? credential.source === 'none'
+                ? 'GitHub resource not found or inaccessible. Set GITHUB_TOKEN or run gh auth login and retry.'
+                : 'GitHub resource not found or inaccessible to this credential. Check repository access and retry.'
+              : authFailed
+                ? credential.source === 'none'
+                  ? `GitHub denied access (HTTP ${err.status}). Set GITHUB_TOKEN or run gh auth login, then retry.`
+                  : credential.source === 'env'
+                    ? `GitHub denied access (HTTP ${err.status}) with GITHUB_TOKEN. Check token access and retry.`
+                    : `GitHub denied access (HTTP ${err.status}) with gh auth login. Check account access and retry.`
+                : err.status >= 500 && err.status < 600
+                  ? `GitHub server error (HTTP ${err.status}). Retry later.`
+                  : `GitHub returned HTTP ${err.status}.`;
           return fail(requestedUrl, message, failure);
         }
         const transient = err instanceof TypeError || (err instanceof Error && /timeout|timed out/i.test(err.message));
-        return fail(requestedUrl, transient ? `GitHub request failed transiently for ${requestedUrl}` : 'GitHub read failed.', transient ? { kind: 'transient' } : undefined);
+        return fail(requestedUrl, transient ? 'GitHub request failed transiently.' : 'GitHub read failed.', transient ? { kind: 'transient' } : undefined);
       }
     }
   };

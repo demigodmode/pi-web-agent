@@ -288,15 +288,24 @@ export function createResearchOrchestrator({
         requiredSourceFailures.push({ url, reason, code, message, ...(failure ? { failure } : {}) });
         if (reason === 'read-failed') allGaps.push({ kind: 'fetch-failed', message: directUnreadableMessage(url) });
       };
-      const complete = (result: Omit<ResearchOrchestratorResult, 'requiredSourceEvidence' | 'requiredSourceFailures'>): ResearchOrchestratorResult => ({
-        ...result,
-        requiredSourceEvidence: [...requiredSourceEvidence],
-        requiredSourceFailures: [...requiredSourceFailures],
-        metadata: {
-          ...result.metadata,
-          ...(requiredSourceFailures.length ? { requiredSourceFailures: [...requiredSourceFailures] } : {})
-        }
-      });
+      const complete = (result: Omit<ResearchOrchestratorResult, 'requiredSourceEvidence' | 'requiredSourceFailures'>): ResearchOrchestratorResult => {
+        const hasRequiredFailure = requiredSourceFailures.length > 0;
+        return {
+          ...result,
+          ...(hasRequiredFailure && result.decision.action === 'answer'
+            ? { decision: decisionForAnswer({ action: 'answer-with-caveat', query, ranked: result.evidence, exhaustedBudget: result.metadata.exhaustedBudget }) }
+            : {}),
+          requiredSourceEvidence: [...requiredSourceEvidence],
+          requiredSourceFailures: [...requiredSourceFailures],
+          metadata: {
+            ...result.metadata,
+            caveatReasons: hasRequiredFailure
+              ? [...new Set([...result.metadata.caveatReasons, 'unreadable-direct-source' as EvidenceCaveatReason])]
+              : result.metadata.caveatReasons,
+            ...(hasRequiredFailure ? { requiredSourceFailures: [...requiredSourceFailures] } : {})
+          }
+        };
+      };
 
       const partialBudgetResult = (): ResearchOrchestratorResult => {
         const ranked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));

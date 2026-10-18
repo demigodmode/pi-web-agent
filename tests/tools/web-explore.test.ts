@@ -378,6 +378,15 @@ describe('web_explore terminal source preservation', () => {
     expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3']]);
   });
 
+  it('keeps search evidence when a required item has no requested URL', async () => {
+    const required = { title: 'Direct', url: 'https://direct.test', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Direct finding', supports: ['Direct finding'] };
+    const searched = { title: 'Searched', url: 'https://search.test', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Search finding', supports: ['Search finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [required, searched], requiredSourceEvidence: [required], workerPass: {} }) })({ query: 'research' });
+    expect(result.sources.map((item) => item.url)).toEqual([required.url, searched.url]);
+    expect(result.findings).toEqual(['Direct finding', 'Search finding']);
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2']]);
+  });
+
   it('reports a terminal required failure before its error when there are no findings', async () => {
     const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'research-again' }, evidence: [], requiredSourceFailures: [{ url: 'https://bad.test', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'cannot read' }], workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'stopped' } }) })({ query: 'read' });
     expect(result.findings).toEqual([]);

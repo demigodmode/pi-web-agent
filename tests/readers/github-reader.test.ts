@@ -126,7 +126,9 @@ describe('createGithubReader', () => {
     const reader = createGithubReader({ fetchImpl, resolveToken: async () => ({ source: 'none' }) });
     const res = await reader.read('https://github.com/o/r/blob/main/missing.ts');
     expect(res.error?.failure).toMatchObject({ kind: 'not_found_or_inaccessible', httpStatus: 404 });
-    expect(res.error?.message).toMatch(/sign in/i);
+    expect(res.error?.message).toContain('GITHUB_TOKEN');
+    expect(res.error?.message).toContain('gh auth login');
+    expect(res.error?.message).not.toContain('https://github.com/');
   });
 
   it('does not leak a token-bearing README download URL after a failed download', async () => {
@@ -135,7 +137,7 @@ describe('createGithubReader', () => {
       .mockResolvedValueOnce({ ok: false, status: 503, headers: new Headers(), text: async () => 'nope' });
     const res = await createGithubReader({ fetchImpl, resolveToken: async () => ({ token: 'secret', source: 'env' }) }).read('https://github.com/o/r');
     expect(res.error?.message).not.toContain('private-secret');
-    expect(res.error?.message).toContain('https://github.com/o/r');
+    expect(res.error?.message).not.toContain('https://github.com/o/r');
     expect(res.error?.failure).toMatchObject({ kind: 'transient', httpStatus: 503 });
   });
 
@@ -197,12 +199,28 @@ describe('createGithubReader', () => {
     [401, new Headers(), 'auth_failed'],
     [403, new Headers(), 'auth_failed'],
     [403, new Headers({ 'x-ratelimit-remaining': '0', 'retry-after': '7' }), 'rate_limited'],
-    [429, new Headers({ 'retry-after': '9' }), 'rate_limited']
+    [429, new Headers({ 'retry-after': '9' }), 'rate_limited'],
+    [500, new Headers(), 'transient'],
+    [502, new Headers(), 'transient'],
+    [504, new Headers(), 'transient']
   ] as const)('classifies GitHub HTTP %s as %s', async (status, headers, kind) => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status, headers, text: async () => '' });
     const res = await createGithubReader({ fetchImpl, resolveToken: async () => ({ token: 'secret', source: 'env' }) }).read('https://github.com/o/r/blob/main/a.ts');
     expect(res.error?.failure).toMatchObject({ kind, httpStatus: status });
     if (kind === 'rate_limited') expect(res.error?.failure?.providerRetryAfterMs).toBe((status === 403 ? 7 : 9) * 1000);
+  });
+
+  it.each([
+    [{ source: 'none' as const }, 'GITHUB_TOKEN', 'gh auth login'],
+    [{ source: 'env' as const, token: 'secret' }, 'GITHUB_TOKEN', 'access'],
+    [{ source: 'gh' as const, token: 'secret' }, 'gh auth login', 'access']
+  ])('explains HTTP 403 for credential source %s without repeating the URL', async (credential, guidance, access) => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 403, headers: new Headers(), text: async () => '' });
+    const res = await createGithubReader({ fetchImpl, resolveToken: async () => credential }).read('https://github.com/o/r/issues/14');
+    expect(res.error?.failure).toMatchObject({ kind: 'auth_failed', httpStatus: 403 });
+    expect(res.error?.message).toContain(guidance);
+    expect(res.error?.message).toContain(access);
+    expect(res.error?.message).not.toContain('https://github.com/o/r/issues/14');
   });
 
   it('classifies network and timeout errors as transient without exposing their messages', async () => {

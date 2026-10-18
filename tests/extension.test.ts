@@ -338,6 +338,34 @@ describe('Pi extension entrypoint', () => {
     expect(result.details.terminalText).toBe('web_explore result');
   });
 
+  it('puts a required-source failure before the empty-result caveat in model content', async () => {
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'Evidence is partial: one or more linked sources could not be read reliably.',
+        requiredSourceFailures: [{
+          url: 'https://github.com/acme/private/issues/14',
+          reason: 'read-failed',
+          code: 'GITHUB_FETCH_FAILED',
+          message: 'GitHub resource was not found or is inaccessible.'
+        }]
+      })
+    } as never);
+
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'Read issue 14' });
+    const modelText = result.content[0].text as string;
+    expect(modelText).toMatch(/^Required source not read: https:\/\/github\.com\/acme\/private\/issues\/14\./);
+    expect(modelText).toContain('The requirements of this source were not checked.');
+    expect(modelText).toContain('No usable evidence found.');
+    expect(modelText.indexOf('Required source not read')).toBeLessThan(modelText.indexOf('No usable evidence found.'));
+  });
+
   it('sanitizes terminal and bidi formatting controls in persisted legacy presentation views', () => {
     const tools: any[] = [];
     const pi = {

@@ -86,8 +86,11 @@ export function createWebExploreTool({
     }
 
     const required = result.requiredSourceEvidence ?? [];
-    const publicEvidence = [...required, ...result.evidence.filter((item) => !required.some((direct) => direct.requestedUrl === item.requestedUrl || direct.url === item.url))].slice(0, required.length + 5);
-    const selectedEvidence = [...required, ...result.evidence.filter((item) => !required.some((direct) => direct.requestedUrl === item.requestedUrl || direct.url === item.url))].slice(0, 5);
+    const discretionary = result.evidence.filter((item) => !required.some((direct) =>
+      (direct.requestedUrl !== undefined && direct.requestedUrl === item.requestedUrl) || direct.url === item.url
+    ));
+    const publicEvidence = [...required, ...discretionary].slice(0, required.length + 5);
+    const selectedEvidence = [...required, ...discretionary].slice(0, 5);
     const evidence = buildEvidenceRecords(publicEvidence);
     const sources = publicEvidence.map((item) => ({
       title: item.title,

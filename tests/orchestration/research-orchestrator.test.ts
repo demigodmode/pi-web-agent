@@ -187,6 +187,32 @@ describe('research orchestrator types', () => {
     });
   });
 
+  it('caveats an otherwise answerable research run when a required link exceeds the limit', async () => {
+    const links = Array.from({ length: 9 }, (_, index) => `https://example.test/source-${index + 1}`);
+    const worker = { run: vi.fn(async () => ({
+      searchQueries: ['research evidence'],
+      evidence: [
+        { title: 'Official A', url: 'https://official-a.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The requested behavior is supported.', supports: ['The requested behavior is supported.'] },
+        { title: 'Official B', url: 'https://official-b.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The requested behavior is documented.', supports: ['The requested behavior is documented.'] }
+      ],
+      gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+    })) };
+    const result = await createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'ok' as const, url,
+        content: { title: 'Direct guide', text: 'The requested behavior is supported and documented.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: `Research the documented behavior using ${links.join(' ')}` });
+
+    expect(worker.run).toHaveBeenCalled();
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: links[8], reason: 'limit' }));
+    expect(result.decision.action).toBe('research-again');
+    expect(result.metadata.caveatReasons).toContain('unreadable-direct-source');
+  });
+
   it('keeps searching a named comparison until both targets have evidence', async () => {
     const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
     const vue = { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Vue details', supports: ['Vue details'] };

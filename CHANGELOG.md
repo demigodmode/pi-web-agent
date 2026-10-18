@@ -7,14 +7,14 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- Pi can use `web_explore` as the public web-research entry point while still using explicitly requested task tools.
-- Authenticated GitHub readers can read private files, issues, pull requests, and README content with `GITHUB_TOKEN` or `gh auth login`.
+- The GitHub reader can use `GITHUB_TOKEN` or `gh auth login` to read private files, issues, pull requests, and READMEs.
 
 ### Changed
-- Required direct sources now remain explicit failures when they cannot be read, while later direct links can still contribute evidence.
+- The extension no longer tells Pi to avoid shell commands for web research. Pi can use `gh` or other tools when the task calls for them; `web_explore` remains available for web research.
+- If a supplied link cannot be read, `web_explore` reports that link and adds a caveat to the answer. It continues reading later links.
 
 ### Fixed
-- GitHub thread results disclose when only part of the comment thread was read.
+- GitHub issue and pull request results say when some comments were not read.
 
 ### Breaking
 - None.
