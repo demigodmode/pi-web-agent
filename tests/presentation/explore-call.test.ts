@@ -54,6 +54,10 @@ describe('web_explore call heading', () => {
     expect(safeDisplayUrl('https://[bad')).toBe('[link]');
   });
 
+  it('removes an unterminated OSC sequence before parsing a URL', () => {
+    expect(safeDisplayUrl('https://example.com/\x1b]8;;https://alice:secret@example.com/private?token=secret')).toBe('example.com/');
+  });
+
   it.each([
     ['BEL', '\u0007'],
     ['ST', '\x1b\\']

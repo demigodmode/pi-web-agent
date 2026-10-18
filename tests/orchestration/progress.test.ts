@@ -70,4 +70,12 @@ describe('formatResearchProgress', () => {
       expect(Array.from(output).length).toBeLessThanOrEqual(120);
     }
   });
+
+  it('removes an unterminated OSC sequence from fetch activity', () => {
+    const target = 'https://example.com/\x1b]8;;https://alice:secret@example.com/private?token=secret';
+    const output = formatResearchProgress({ phase: 'fetch', state: 'started', target, searches: 1, fetches: 2, headless: 0 });
+
+    expect(output).toBe('Reading: example.com/ · 2 reads started');
+    expect(output).not.toMatch(/alice:secret|token=secret|\]8;;|\u001b/);
+  });
 });
