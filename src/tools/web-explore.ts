@@ -61,14 +61,13 @@ export function createWebExploreTool({
     // some layer underneath is slow to stop. The run itself keeps its lease in
     // extension.ts until it really settles.
     const result = signal ? await raceAbort(run, signal) : await run;
-    if (!result.terminalFailure) {
-      const counts = result.metadata?.budget ?? {
-        searches: result.metadata?.searchPasses ?? 0,
-        fetches: result.metadata?.fetchedPages ?? 0,
-        headless: result.metadata?.headlessAttempts ?? 0
-      };
-      safeProgress?.({ phase: 'complete', searches: counts.searches, fetches: counts.fetches, headless: counts.headless });
-    }
+    const counts = result.metadata?.budget ?? {
+      searches: result.metadata?.searchPasses ?? 0,
+      fetches: result.metadata?.fetchedPages ?? 0,
+      headless: result.metadata?.headlessAttempts ?? 0
+    };
+    const presentationStats = result.metadata?.presentationStats;
+    safeProgress?.({ phase: 'complete', state: 'settled', searches: counts.searches, fetches: counts.fetches, headless: counts.headless, ...(presentationStats ? { pagesRead: presentationStats.pagesRead, failedReads: presentationStats.failedReads } : {}) });
     if (result.terminalFailure) {
       const required = result.requiredSourceEvidence ?? [];
       const evidence = buildEvidenceRecords(required);

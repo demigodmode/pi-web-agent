@@ -1,8 +1,12 @@
 export type ResearchProgress = {
   phase: 'search' | 'fetch' | 'headless' | 'complete';
+  state?: 'started' | 'settled';
+  target?: string;
   searches: number;
   fetches: number;
   headless: number;
+  pagesRead?: number;
+  failedReads?: number;
 };
 
 export function formatResearchProgress(progress: ResearchProgress): string {

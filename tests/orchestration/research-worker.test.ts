@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createResearchWorker } from '../../src/orchestration/research-worker.js';
+import { createPresentationStats } from '../../src/orchestration/presentation-stats.js';
 import { createResearchRunBudget } from '../../src/orchestration/run-budget.js';
 import type { WebFetchResponse } from '../../src/types.js';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
@@ -71,7 +72,7 @@ describe('research worker', () => {
       vi.useRealTimers();
     }
   });
-  it('reports search and fetch counts without page content', async () => {
+  it('emits started and settled search and fetch events without page content', async () => {
     const url = 'https://example.com/guide';
     const events: Array<{ phase: string; searches: number; fetches: number; headless: number }> = [];
     const worker = createResearchWorker({
@@ -80,7 +81,9 @@ describe('research worker', () => {
     });
     const budget = createResearchRunBudget({ timeoutMs: 120_000 });
     await worker.run({ query: 'guide', maxSearchRounds: 1, maxFetches: 1, budget, onProgress: (event) => events.push(event) });
-    expect(events.map((event) => event.phase)).toEqual(['search', 'fetch']);
+    expect(events.map((event) => `${event.phase}:${(event as { state?: string }).state}`)).toEqual([
+      'search:started', 'search:settled', 'fetch:started', 'fetch:settled'
+    ]);
     expect(events.at(-1)).toMatchObject({ searches: 1, fetches: 1, headless: 0 });
     expect(JSON.stringify(events)).not.toContain('Secret page content');
     budget.dispose();
@@ -109,6 +112,21 @@ describe('research worker', () => {
     const result = await resultPromise;
     expect(result.evidence.map((item) => item.url)).toEqual(urls);
     budget.dispose();
+  });
+
+  it('records out-of-order concurrent candidates while preserving evidence order', async () => {
+    const urls = ['https://a.example/one', 'https://b.example/two', 'https://c.example/three'];
+    const waiting = new Map<string, (response: WebFetchResponse) => void>();
+    const stats = createPresentationStats();
+    const worker = createResearchWorker({
+      search: async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: ({ url }) => new Promise<WebFetchResponse>((resolve) => waiting.set(url, resolve))
+    });
+    const run = worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 3, presentationStats: stats });
+    await vi.waitFor(() => expect(waiting.size).toBe(3));
+    for (const url of [...urls].reverse()) waiting.get(url)!({ status: 'ok', url, content: { text: `details ${url}` }, metadata: { method: 'http', cacheHit: false } });
+    expect((await run).evidence.map((item) => item.url)).toEqual(urls);
+    expect(stats.snapshot()).toMatchObject({ searches: 1, pagesRead: 3, failedReads: 0, methods: { http: 3 } });
   });
 
   it('does not fetch a URL already visited in an earlier worker pass', async () => {

@@ -19,9 +19,9 @@ describe('research orchestrator types', () => {
       headlessFetch: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'PDF', text: 'Readable PDF content' }, metadata: { method: 'headless' as const, cacheHit: false } }))
     });
 
-    const result = await orchestrator.run({ query: 'Read https://example.com/file.pdf', onProgress: (event) => phases.push(`${event.phase}:${event.fetches}:${event.headless}`) });
+    const result = await orchestrator.run({ query: 'Read https://example.com/file.pdf', onProgress: (event) => phases.push(`${event.phase}:${event.state}:${event.fetches}:${event.headless}`) });
 
-    expect(phases).toEqual(['fetch:1:0', 'headless:1:1']);
+    expect(phases).toEqual(['fetch:started:1:0', 'fetch:settled:1:0', 'headless:started:1:1', 'headless:settled:1:1']);
     expect(result.metadata.budget).toMatchObject({ searches: 0, fetches: 1, headless: 1 });
   });
 
@@ -33,6 +33,16 @@ describe('research orchestrator types', () => {
     expect(fetchDirect).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.test/two' }));
     expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://example.test/one', reason: 'read-failed' }));
     expect(result.requiredSourceEvidence).toContainEqual(expect.objectContaining({ requestedUrl: 'https://example.test/two' }));
+  });
+
+  it('deduplicates a direct redirect with the same worker candidate in presentation stats', async () => {
+    const finalUrl = 'https://example.test/final';
+    const worker = { run: vi.fn(async ({ presentationStats }: { presentationStats?: ReturnType<typeof import('../../src/orchestration/presentation-stats.js').createPresentationStats> }) => {
+      presentationStats?.recordRead({ status: 'ok', url: finalUrl, content: { text: 'worker evidence' }, metadata: { method: 'http', cacheHit: false } }, undefined, 'https://example.test/candidate');
+      return { searchQueries: ['q'], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false };
+    }) };
+    const result = await createResearchOrchestrator({ worker, fetchDirect: vi.fn(async () => ({ status: 'ok' as const, url: finalUrl, content: { text: 'direct evidence' }, metadata: { method: 'http' as const, cacheHit: false } })), headlessFetch: vi.fn() }).run({ query: 'Research https://example.test/direct' });
+    expect(result.metadata.presentationStats).toMatchObject({ pagesRead: 1, failedReads: 0, methods: { http: 1 } });
   });
 
   it('rethrows caller cancellation during a direct headless retry', async () => {

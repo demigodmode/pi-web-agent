@@ -8,6 +8,7 @@ import { selectEvidencePassages } from './evidence-passages.js';
 import { isBotCheckContent } from '../extract/bot-check.js';
 import type { ResearchRunBudget } from './run-budget.js';
 import type { ResearchProgress } from './progress.js';
+import type { PresentationStatsCollector } from './presentation-stats.js';
 import type {
   ResearchEvidence,
   ResearchGap,
@@ -101,7 +102,8 @@ export function createResearchWorker({
       signal,
       budget,
       onProgress,
-      onPartial
+      onPartial,
+      presentationStats
     }: {
       query: string;
       maxSearchRounds: number;
@@ -110,6 +112,7 @@ export function createResearchWorker({
       budget?: ResearchRunBudget;
       onProgress?: (event: ResearchProgress) => void;
       onPartial?: (result: ResearchWorkerResult) => void;
+      presentationStats?: PresentationStatsCollector;
     }): Promise<ResearchWorkerResult> {
       const activeSignal = budget?.signal ?? signal;
       const searchQueries = [query];
@@ -118,10 +121,11 @@ export function createResearchWorker({
       const lowValueOutcomes: ResearchLowValueOutcome[] = [];
       let suggestedHeadlessUrl: string | undefined;
       let exhaustedBudget = false;
-      const emit = (phase: ResearchProgress['phase']) => {
+      const emit = (phase: ResearchProgress['phase'], state?: ResearchProgress['state'], target?: string) => {
         if (!onProgress) return;
         const { searches, fetches, headless } = budget?.snapshot() ?? { searches: 0, fetches: 0, headless: 0 };
-        try { onProgress({ phase, searches, fetches, headless }); } catch { /* Progress is observational. */ }
+        const stats = presentationStats?.snapshot();
+        try { onProgress({ phase, ...(state ? { state } : {}), ...(target ? { target } : {}), searches, fetches, headless, ...(stats ? { pagesRead: stats.pagesRead, failedReads: stats.failedReads } : {}) }); } catch { /* Progress is observational. */ }
       };
 
       if (maxSearchRounds <= 0 || maxFetches <= 0) {
@@ -139,9 +143,15 @@ export function createResearchWorker({
       if (budget && !budget.claimSearch()) {
         return { searchQueries: [], evidence, gaps, lowValueOutcomes, exhaustedBudget: true };
       }
-      emit('search');
-      const searchWork = search({ query, signal: activeSignal });
-      const searchResult = budget ? await budget.wait(searchWork) : await searchWork;
+      presentationStats?.recordSearch(query);
+      emit('search', 'started', query);
+      let searchResult: WebSearchResponse;
+      try {
+        const searchWork = search({ query, signal: activeSignal });
+        searchResult = budget ? await budget.wait(searchWork) : await searchWork;
+      } finally {
+        emit('search', 'settled', query);
+      }
       throwIfAborted(activeSignal);
       const searchCoveragePartial = searchResult.metadata.coverage?.partial === true;
       const searchAttempts = searchResult.metadata.attempts;
@@ -281,16 +291,20 @@ export function createResearchWorker({
             if (budget.snapshot().limitReason === 'fetch-limit') exhaustedBudget = true;
             continue;
           }
-          emit('fetch');
+          emit('fetch', 'started', candidate.url);
           activeHosts.add(hostname);
           const request = (async () => {
             try {
               throwIfAborted(activeSignal);
               const fetchWork = fetchPage({ url: candidate.url, query, signal: activeSignal });
               outcomes[index] = budget ? await budget.wait(fetchWork) : await fetchWork;
+              presentationStats?.recordRead(outcomes[index], undefined, candidate.url);
             } catch (error) {
+              if (!activeSignal?.aborted) presentationStats?.recordFailure(candidate.url);
               throwIfAborted(activeSignal);
               outcomes[index] = error instanceof Error ? error : new Error(String(error));
+            } finally {
+              emit('fetch', 'settled', candidate.url);
             }
           })().finally(() => {
             activeHosts.delete(hostname);

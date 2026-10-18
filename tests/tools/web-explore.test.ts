@@ -92,6 +92,15 @@ describe('web_explore tool', () => {
     expect(onProgress).toHaveBeenCalledWith({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
     expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete' }));
   });
+  it('retains presentation stats on a terminal workflow error', async () => {
+    const presentationStats = { searches: 1, executedQueries: ['q'], pagesRead: 0, failedReads: 1, methods: {} };
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({ decision: { action: 'research-again' }, evidence: [], workerPass: {}, terminalFailure: { code: 'SEARCH_FAILED', message: 'failed' }, metadata: { searchPasses: 1, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false, presentationStats } })
+    });
+    const result = await webExplore({ query: 'q' });
+    expect(result.status).toBe('error');
+    expect(result.metadata?.presentationStats).toBe(presentationStats);
+  });
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({

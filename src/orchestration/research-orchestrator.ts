@@ -24,6 +24,7 @@ import { parseRepoUrl } from '../repo/repo-url.js';
 import { classifyResearchIntent, missingComparisonTargets } from './research-intent.js';
 import { createResearchRunBudget, type ResearchBudgetReason, type ResearchBudgetSnapshot } from './run-budget.js';
 import type { ResearchProgress } from './progress.js';
+import { createPresentationStats, type PresentationStats } from './presentation-stats.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -145,6 +146,7 @@ function buildMetadata({
   attempts,
   budgetReason,
   budget,
+  presentationStats,
   requiredSourceFailures
 }: {
   previousQueries: string[];
@@ -160,6 +162,7 @@ function buildMetadata({
   attempts?: Attempt[];
   budgetReason?: ResearchBudgetReason;
   budget?: ResearchBudgetSnapshot;
+  presentationStats?: PresentationStats;
   requiredSourceFailures?: RequiredSourceFailure[];
 }) {
   return {
@@ -173,6 +176,7 @@ function buildMetadata({
     fanoutSkipped,
     budgetReason,
     budget,
+    presentationStats,
     ...(requiredSourceFailures?.length ? { requiredSourceFailures } : {}),
     ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
@@ -229,6 +233,7 @@ export function createResearchOrchestrator({
       budget?: import('./run-budget.js').ResearchRunBudget;
       onProgress?: (event: ResearchProgress) => void;
       onPartial?: (result: ResearchWorkerResult) => void;
+      presentationStats?: ReturnType<typeof createPresentationStats>;
     }) => Promise<ResearchWorkerResult>;
   };
   fetchDirect?: (input: ResearchFetchInput) => Promise<WebFetchResponse>;
@@ -253,10 +258,12 @@ export function createResearchOrchestrator({
         maxFetches: 20 + Math.min(8, typedUrls.length),
         maxHeadless: 2 + Math.min(8, typedUrls.filter((url) => !parseRepoUrl(url)).length)
       });
-      const emit = (phase: ResearchProgress['phase']) => {
+      const presentationStats = createPresentationStats();
+      const emit = (phase: ResearchProgress['phase'], state?: ResearchProgress['state'], target?: string) => {
         if (!onProgress) return;
         const { searches, fetches, headless } = budget.snapshot();
-        try { onProgress({ phase, searches, fetches, headless }); } catch { /* Progress is observational. */ }
+        const stats = presentationStats.snapshot();
+        try { onProgress({ phase, ...(state ? { state } : {}), ...(target ? { target } : {}), searches, fetches, headless, pagesRead: stats.pagesRead, failedReads: stats.failedReads }); } catch { /* Progress is observational. */ }
       };
       const intent = classifyResearchIntent(query);
       const opinionQuestion = isOpinionQuestion(query);
@@ -341,6 +348,7 @@ export function createResearchOrchestrator({
           fanoutSkipped: skipped.length ? skipped : undefined,
           attempts: [...runAttempts],
           budget: budget.snapshot(),
+          presentationStats: presentationStats.snapshot(),
           ...(requiredSourceFailures.length ? { requiredSourceFailures } : {})
         };
       }
@@ -386,16 +394,20 @@ export function createResearchOrchestrator({
             requiredFailure(url, budget.deadlineReached() ? 'deadline-unvisited' : 'limit', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_LIMIT', budget.deadlineReached() ? 'Source deadline reached before this URL could be read.' : 'Source limit reached; use a follow-up call for this URL.');
             continue;
           }
-          emit('fetch');
+          emit('fetch', 'started', url);
           let researched: RepoResearchResult;
           try { researched = await budget.wait(researchRepo!({ url, query, signal: budget.signal })); }
           catch (error) {
             if (signal?.aborted) throw error;
+            presentationStats.recordFailure(url);
             requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : `Direct URL could not be read reliably: ${url}`);
             continue;
+          } finally {
+            emit('fetch', 'settled', url);
           }
           throwIfAborted(signal);
-          if (!researched.ok) { requiredFailure(url, 'read-failed', researched.error.code, researched.error.message, researched.error.failure); continue; }
+          if (!researched.ok) { presentationStats.recordFailure(url); requiredFailure(url, 'read-failed', researched.error.code, researched.error.message, researched.error.failure); continue; }
+          presentationStats.recordRead(researched.response, 'repo', url);
           const repoEvidence = evidenceFromFetch(researched.response, query, { trustedContent: true, requestedUrl: url });
           if (repoEvidence) { allEvidence.push(repoEvidence); requiredSourceEvidence.push(repoEvidence); }
           else requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', `Direct URL could not be read reliably: ${url}`);
@@ -410,15 +422,19 @@ export function createResearchOrchestrator({
           requiredFailure(url, budget.deadlineReached() ? 'deadline-unvisited' : 'limit', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_LIMIT', budget.deadlineReached() ? 'Source deadline reached before this URL could be read.' : 'Source limit reached; use a follow-up call for this URL.');
           continue;
         }
-        emit('fetch');
+        emit('fetch', 'started', url);
         let directResult: WebFetchResponse;
         try { directResult = await budget.wait(fetchDirect({ url, query, signal: budget.signal })); }
         catch (error) {
           if (signal?.aborted) throw error;
+          presentationStats.recordFailure(url);
           requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : `Direct URL could not be read reliably: ${url}`);
           continue;
+        } finally {
+          emit('fetch', 'settled', url);
         }
         throwIfAborted(signal);
+        presentationStats.recordRead(directResult, undefined, url);
         if (directResult.metadata.attempts) runAttempts.push(...directResult.metadata.attempts);
         const directEvidence = evidenceFromFetch(directResult, query, { requestedUrl: url });
           if (directEvidence) {
@@ -428,7 +444,7 @@ export function createResearchOrchestrator({
           }
           if (!isTerminalFailure(failureOf(directResult)) && shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (directHeadlessAttempts < 8 && budget.claimHeadless()) {
-              emit('headless');
+              emit('headless', 'started', directResult.url);
               directHeadlessAttempts++;
               attemptedHeadlessUrls.add(directResult.url);
               throwIfAborted(signal);
@@ -438,10 +454,14 @@ export function createResearchOrchestrator({
                 headlessResult = await budget.wait(headlessWork);
               } catch (error) {
                 if (signal?.aborted) throw error;
+                presentationStats.recordFailure(directResult.url);
                 requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : directUnreadableMessage(directResult.url));
                 continue;
+              } finally {
+                emit('headless', 'settled', directResult.url);
               }
               throwIfAborted(signal);
+              presentationStats.recordRead(headlessResult, undefined, directResult.url);
               const headlessEvidence = evidenceFromHeadless(headlessResult, query, url);
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
@@ -544,6 +564,7 @@ export function createResearchOrchestrator({
             maxFetches: DEFAULT_MAX_FETCHES_PER_PASS,
             signal,
             budget,
+            presentationStats,
             onProgress,
             onPartial: (partial) => { partialWorkerPass = partial; }
           });
@@ -595,12 +616,21 @@ export function createResearchOrchestrator({
 
           if (decision.action === 'headless') {
             if (!budget.claimHeadless()) return partialBudgetResult();
-            emit('headless');
+            emit('headless', 'started', decision.url);
             headlessAttempts++;
             attemptedHeadlessUrls.add(decision.url);
             throwIfAborted(signal);
-            const headlessWork = headlessFetch({ url: decision.url, query, signal: budget.signal });
-            const headlessResult = await budget.wait(headlessWork);
+            let headlessResult: WebFetchHeadlessResponse;
+            try {
+              const headlessWork = headlessFetch({ url: decision.url, query, signal: budget.signal });
+              headlessResult = await budget.wait(headlessWork);
+              presentationStats.recordRead(headlessResult, undefined, decision.url);
+            } catch (error) {
+              if (!signal?.aborted) presentationStats.recordFailure(decision.url);
+              throw error;
+            } finally {
+              emit('headless', 'settled', decision.url);
+            }
             throwIfAborted(signal);
             const headlessEvidence = evidenceFromHeadless(headlessResult, query);
             if (headlessEvidence) {
