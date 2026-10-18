@@ -5,7 +5,7 @@ import { selectCandidates } from './candidate-selector.js';
 import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import { selectEvidencePassages } from './evidence-passages.js';
-import { hasBotCheckContent } from '../extract/bot-check.js';
+import { isBotCheckContent } from '../extract/bot-check.js';
 import type { ResearchRunBudget } from './run-budget.js';
 import type { ResearchProgress } from './progress.js';
 import type {
@@ -22,11 +22,6 @@ function classifySource(url: string): ResearchSourceKind {
 
 function isReaderMethod(method: string): boolean {
   return method === 'github' || method === 'pdf' || method === 'youtube';
-}
-
-function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
-  if (botCheck) return true;
-  return hasBotCheckContent(`${title}\n${text}`);
 }
 
 function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, query: string) {

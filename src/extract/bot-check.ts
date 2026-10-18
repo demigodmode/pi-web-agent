@@ -9,3 +9,7 @@ export function hasBotCheckContent(source: string, format: 'html' | 'markdown' |
     : source;
   return BOT_CHECK_RE.test(visibleSource);
 }
+
+export function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }): boolean {
+  return botCheck === true || hasBotCheckContent(`${title}\n${text}`);
+}

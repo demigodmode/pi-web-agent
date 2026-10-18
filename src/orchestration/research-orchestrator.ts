@@ -17,7 +17,7 @@ import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
 import { selectEvidencePassages } from './evidence-passages.js';
-import { hasBotCheckContent } from '../extract/bot-check.js';
+import { isBotCheckContent } from '../extract/bot-check.js';
 import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
 import { parseRepoUrl } from '../repo/repo-url.js';
@@ -39,11 +39,6 @@ function isReaderMethod(method: string): boolean {
 
 function isOpinionQuestion(query: string): boolean {
   return /\b(?:what do (?:users|people|developers) (?:think|feel|say)(?: about)?|(?:users?|people|developers?|community)[’']?\s+(?:opinions?|experiences?|reviews?|feedback)(?:\s+(?:with|of|about|using))?)\b/i.test(query);
-}
-
-function isBotCheckContent({ title = '', text, botCheck }: { title?: string; text: string; botCheck?: boolean }) {
-  if (botCheck) return true;
-  return hasBotCheckContent(`${title}\n${text}`);
 }
 
 function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedContent = false, requestedUrl }: { trustedContent?: boolean; requestedUrl?: string } = {}): ResearchEvidence | null {

@@ -1,4 +1,5 @@
 import type { PresentationEnvelope } from './presentation/types.js';
+import type { PresentationStats } from './orchestration/presentation-stats.js';
 
 export const TOOL_STATUSES = [
   'ok',
@@ -192,6 +193,7 @@ export type WebExploreResponse = {
     fanoutSkipped?: SearchProviderName[];
     attempts?: Attempt[];
     requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
+    presentationStats?: PresentationStats;
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;
