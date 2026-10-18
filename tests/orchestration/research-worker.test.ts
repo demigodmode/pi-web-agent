@@ -131,25 +131,53 @@ describe('research worker', () => {
 
   it.each([
     ['a synchronous throw', () => { throw new Error('sync failure'); }, 1],
-    ['a rejected fetch promise', () => Promise.reject(new Error('async failure')), 1],
-    ['a deadline cancellation', ({ signal }: { signal?: AbortSignal }) => new Promise<WebFetchResponse>((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))), 0]
+    ['a rejected fetch promise', () => Promise.reject(new Error('async failure')), 1]
   ])('settles fetch progress once for %s', async (_name, fetchPage, failedReads) => {
     const url = 'https://example.test/page';
     const stats = createPresentationStats();
     const events: Array<{ phase: string; state?: string }> = [];
-    const budget = createResearchRunBudget({ timeoutMs: failedReads === 0 ? 1 : 120_000 });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
     const worker = createResearchWorker({
       search: async () => ({ status: 'ok' as const, results: [{ title: 'Page', url, snippet: 'details' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
       fetchPage
     });
     try {
-      if (failedReads === 0) await expect(worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) })).rejects.toThrow();
-      else await worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) });
+      await worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) });
       expect(events.filter((event) => event.phase === 'fetch' && event.state === 'started')).toHaveLength(1);
       expect(events.filter((event) => event.phase === 'fetch' && event.state === 'settled')).toHaveLength(1);
       expect(stats.snapshot().failedReads).toBe(failedReads);
     } finally {
       budget.dispose();
+    }
+  });
+
+  it('settles a deadline-aborted fetch exactly once after it starts', async () => {
+    vi.useFakeTimers();
+    const url = 'https://example.test/page';
+    const stats = createPresentationStats();
+    const events: Array<{ phase: string; state?: string }> = [];
+    let fetchStarted!: () => void;
+    const started = new Promise<void>((resolve) => { fetchStarted = resolve; });
+    const budget = createResearchRunBudget({ timeoutMs: 100 });
+    const worker = createResearchWorker({
+      search: async () => ({ status: 'ok' as const, results: [{ title: 'Page', url, snippet: 'details' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: ({ signal }) => new Promise<WebFetchResponse>((_resolve, reject) => {
+        fetchStarted();
+        signal?.addEventListener('abort', () => reject(new Error('deadline aborted')));
+      })
+    });
+    try {
+      const run = worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) });
+      const completion = expect(run).rejects.toThrow('Operation aborted');
+      await started;
+      await vi.advanceTimersByTimeAsync(100);
+      await completion;
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'started')).toHaveLength(1);
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'settled')).toHaveLength(1);
+      expect(stats.snapshot().failedReads).toBe(0);
+    } finally {
+      budget.dispose();
+      vi.useRealTimers();
     }
   });
 
