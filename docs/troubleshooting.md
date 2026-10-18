@@ -20,13 +20,16 @@ That usually means the research loop found usable evidence, but also found a qua
 
 You can usually improve the result by asking a narrower follow-up query that names the docs site, issue tracker, forum, or exact API you care about.
 
-## Verbose output has `[web_fetch]` or `[web_fetch_headless]` labels
+## What the `[HTTP]` and `[Browser]` labels in verbose output mean
 
-Those labels show internal provenance.
+They show how each source was read.
 
-- `[web_fetch]` means the finding came from a plain HTTP read.
-- `[web_fetch_headless]` means it came from a browser-rendered read.
-- `[web_explore]` is a fallback label when older or hand-shaped data did not include a reader method.
+- `[HTTP]` is a plain page read.
+- `[Browser]` is a browser-rendered read.
+- `[GitHub]`, `[PDF]`, `[YouTube]`, and `[Firecrawl]` are the special readers and the Firecrawl backend.
+- No label means the data didn't say how it was read (older saved results, for example).
+
+Results saved by older versions may still show `[web_fetch]` or `[web_fetch_headless]`. Those mean HTTP and Browser.
 
 They are there so verbose mode can show what happened under the hood. Preview
 uses plain findings without reader labels.
@@ -229,10 +232,18 @@ A rate limit clears on its own. For a quota or key problem, fix the key or plan.
 
 When some backends failed but another one answered, the answer notes that results may be incomplete.
 
-## The model used shell commands for web research
+## The model used shell commands instead of `web_explore`
 
-That is not the intended path.
+That's allowed. The extension used to tell Pi to avoid shell and network commands for research, and Pi read that as a ban on `gh` too, even when you asked for it. It no longer does that, so Pi can use `gh`, `git`, or `curl` when the task calls for it.
 
-For web research, the model should use `web_explore`. If the first result is thin, it should call `web_explore` again with a narrower query rather than using shell network commands like `curl`, `Invoke-WebRequest`, or `npm view`.
+The trade-off: a raw `curl` skips the source ranking, citations, and caveats `web_explore` adds. For ordinary web research the tool description still suggests `web_explore`. If you want that, say so in your prompt.
 
-The live eval tracks this as a quality issue because shell networking bypasses the package's source ranking, provenance, and caveat behavior.
+## Results say "Search unavailable"
+
+```
+Search unavailable (brave): Brave search requires PI_WEB_AGENT_BRAVE_API_KEY. Run /web-agent doctor to check backend settings.
+```
+
+The selected search provider can't search until you fix something on your side: a missing or rejected key, a used-up quota, or a missing endpoint URL. The message after the provider name is the provider's own explanation. `web_explore` stops searching for that run instead of repeating the same failure, and links in your question are still read.
+
+Run `/web-agent doctor` to see what's missing, then set the key (in the environment where Pi runs, then restart Pi) or switch providers in settings. If you'd rather fall back to DuckDuckGo automatically, turn on fallback (see [self-hosted backends](./self-hosted-backends.md#explicit-fallback)).

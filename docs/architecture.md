@@ -32,8 +32,8 @@ The lower-level capabilities still exist in code, but they are internal steps no
 - orchestration decides when enough evidence exists and when source-quality concerns need another pass or a caveat
 
 Keeping those responsibilities separate still matters. It lets the package show
-provenance like `[web_fetch]`, `[web_fetch_headless]`, `[github]`, `[pdf]`, or
-`[youtube]` in verbose output without forcing the outer model to manually
+provenance like `[HTTP]`, `[Browser]`, `[GitHub]`, `[PDF]`, or
+`[YouTube]` in verbose output without forcing the outer model to manually
 chain those steps. Preview keeps only plain findings.
 
 ## Special-content readers
@@ -66,6 +66,6 @@ A bot-check page should not become a source.
 
 A same-host or community-only source set should not get treated like broad corroboration.
 
-And if more evidence is needed, the model should call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
+If more evidence is needed, a narrower follow-up `web_explore` call keeps the ranking, citations, and caveats. The extension doesn't stop Pi from using its other tools, though: `gh`, `git`, or anything the user asks for are still fair game for repository, issue, and pull request work.
 
 Those boundaries make failures easier to understand and make it harder for the package to lie by accident.
