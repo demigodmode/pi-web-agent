@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.15.0] - 2026-10-19
+### Added
 - The GitHub reader can use `GITHUB_TOKEN` or `gh auth login` to read private files, issues, pull requests, and READMEs.
 
 ### Changed
