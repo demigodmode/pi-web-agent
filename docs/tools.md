@@ -38,11 +38,11 @@ The important bit: those internal steps are not separate public tools for normal
 
 You don't do anything special for these. If a GitHub, PDF, or YouTube URL shows up, whether you pasted it or search surfaced it, `web_explore` reads the real content instead of the rendered page:
 
-- GitHub: files come from the raw endpoint, issues and PRs come from the API with their comments, and a repo that turns up in search gives you the README plus a top-level file listing. It's keyless; set `GITHUB_TOKEN` in the environment if you want the higher API rate limit. A repo link you type yourself is handled differently, see below.
+- GitHub: files come from the raw endpoint, issues and PRs come from the API with their comments, and a repo that turns up in search gives you the README plus a top-level file listing. Public content is keyless. Private content needs `GITHUB_TOKEN` or `gh auth login`. A repo link you type yourself is handled differently, see below.
 - PDF: the text is extracted directly. A scanned PDF with no text layer can't be read, so you get a note saying so rather than a silent empty result.
 - YouTube: you get the transcript from the captions. A video with no captions gets the same kind of note.
 
-These run behind `web_explore`, so there's still nothing extra to call. When you paste a link to one of these and ask to read or summarize it, you get the extracted content back: the transcript or PDF text or file/issue body (long content is capped around 24k characters), not a research digest.
+These run behind `web_explore`, so there's still nothing extra to call. When you paste a link to one of these and ask to read or summarize it, you get the extracted content back: the transcript or PDF text or file/issue body (long content is capped around 24k characters), not a research digest. A question that's only links ("read https://...") just reads them, without searching the web as well.
 
 ## Asking about a GitHub repo
 
@@ -55,8 +55,8 @@ When you put a repo link in your question yourself (`https://github.com/owner/re
 
 - It fetches one exact commit at depth 1, over HTTPS only, and never runs anything from the repo. Folder links limit the folder listing to that folder. They use that folder's README when it has one, or the repository root README otherwise.
 - Clones live for your Pi session in a private folder in your temp directory (`pi-web-agent-repos-<your-user-id>`), so follow-up questions about the same repo are instant. They're deleted when the session ends (quit, `/new`, `/resume`, `/fork`, reload), and anything left behind by a crash is cleaned up the next time Pi starts. Idle clones are capped at 1GB in total.
-- Limits: repos over 300MB are refused, the clone gives up after 60 seconds, and at most two repo links per question.
-- If the repo can't be read (too big, private without access, `git` missing, clone timed out), the answer says so and stops there. It doesn't fall back to the README, because that would look like an answer about the code without being one.
+- Limits: a question can contain up to eight direct query links, including at most three repo reads. Further links are reported as `Source limit reached; use a follow-up call for this URL.`
+- If a repo can't be read (too big, private without access, `git` missing, clone timed out), its required-source failure stays in the result. Later query links can still be read, but the failed repo is never replaced with its README.
 - Private repos work if you're signed in with the GitHub CLI (`gh auth login`) or have `GITHUB_TOKEN` set. The token is sent as an HTTP header, never on the command line.
 - It needs `git` 2.32 or newer. `/web-agent doctor` shows a `repo research:` line with your git version and where the GitHub token comes from.
 - Repo links that only turn up in search results still get the lighter README reader.
@@ -69,27 +69,50 @@ Esc on a running `web_explore` stops searches, page fetches, repo clones, and th
 
 Reads that could otherwise hang have timeouts. Page fetches and the GitHub and YouTube readers give up after 15 seconds, PDFs after 60, and Firecrawl scrapes after 45. A page that times out, drops the connection, refuses the port, fails DNS or TLS, or loops on redirects counts as a failed read of that one page. The run moves on to the other sources.
 
-## What preview and verbose show
+## What Pi shows while a call runs
 
-In compact mode, `web_explore` keeps the transcript short:
-
-```text
-Reviewed 3 sources · synthesized answer with 3 findings
-```
-
-In preview or verbose mode, findings include where the evidence came from internally:
+Every call starts with the same heading. Pi provides the outer shell and `⎿`
+marker shown in these examples; the extension only renders the heading and
+result content.
 
 ```text
-- [web_fetch] Official docs say ...
-- [web_fetch_headless] Rendered docs show ...
-- [github] The README describes ...
-
-Internal research: web_search ×2, web_fetch ×5, web_fetch_headless ×1
+web_explore ("Vitest coverage configuration")
+  ⎿ Searching: site:vitest.dev coverage providers
 ```
 
-The label reflects which reader produced the finding, so you'll also see `[github]`, `[pdf]`, or `[youtube]` when one of those handled a link. When fanout is enabled, the research summary shows which providers were queried, for example `web_search ×2 (fanout: duckduckgo, brave, exa)`.
+One activity line is replaced as the work moves between search and reads. It
+shows safe, short activity only, never page text or raw provider errors.
 
-That is meant to be transparent, not an invitation to call those internal steps directly.
+For a completed research result with execution-time statistics, all modes begin
+with actual counts. Input-validation errors, such as an empty query, have no
+research summary:
+
+```text
+web_explore ("Vitest coverage configuration")
+  ⎿ 3 searches · 4 pages read · 8s
+```
+
+`searches` is the number of logical searches that started. Provider fanout or
+fallback for one query still counts once. `pages read` is the number of
+distinct, successful readable documents, including direct links and successful
+repository research. Retries and redirects for the same document count once.
+
+Compact keeps only that summary and required-source notices or a concise
+limitation. Preview adds at most three plain findings and deliberately leaves
+out reader labels, source lists, and retrieval detail. Verbose adds executed
+queries, all findings, sources, evidence, caveats, backend attempts, and a
+successful-read breakdown by HTTP, Browser, Firecrawl, GitHub, PDF, YouTube,
+and Repository. Repository research is separate from the GitHub reader.
+
+Required-source notices appear before findings in every mode. They give the
+requested URL, the reason it could not be read, and say that its requirements
+were not checked. The model receives the complete findings, evidence,
+citations, caveats, and these notices unchanged across compact, preview, and
+verbose modes. Expanding a result opens the verbose view; saved results keep
+the mode selected when they ran, and older saved results use a legacy fallback.
+
+The visible mode changes terminal presentation only. It does not create extra
+public tools or change the research workflow.
 
 ## When evidence is weak
 
@@ -111,4 +134,4 @@ Evidence is partial: one or more thread sources could not be read reliably, and 
 
 If the task is web research, use `web_explore`.
 
-If you need another angle, call `web_explore` again with a better query. Do not switch to shell network commands like `curl`, `Invoke-WebRequest`, or `npm view` just to continue web research.
+If you need another angle, call `web_explore` again with a better query.

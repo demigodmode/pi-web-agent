@@ -1,8 +1,252 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createResearchWorker } from '../../src/orchestration/research-worker.js';
+import { createPresentationStats } from '../../src/orchestration/presentation-stats.js';
+import { createResearchRunBudget } from '../../src/orchestration/run-budget.js';
+import type { WebFetchResponse } from '../../src/types.js';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('research worker', () => {
+  it('retains several source passages and extraction metadata from an ordinary page', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Coverage guide', url: 'https://example.com/coverage', snippet: 'Coverage' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://example.com/coverage',
+        content: { title: 'Coverage guide', text: 'First coverage paragraph.\n\nSecond coverage paragraph.\n\nThird coverage paragraph.', sectionAnchor: 'coverage' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: true }
+      })
+    });
+
+    const result = await worker.run({ query: 'coverage', maxSearchRounds: 1, maxFetches: 1 });
+    expect(result.evidence[0]?.supports).toEqual(['First coverage paragraph.', 'Second coverage paragraph.', 'Third coverage paragraph.']);
+    expect(result.evidence[0]?.sectionAnchor).toBe('coverage');
+    expect(result.evidence[0]?.truncated).toBe(true);
+    expect(result.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('does not assign a fresh retrieval time to cached source text', async () => {
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok', results: [{ title: 'Cached guide', url: 'https://example.com/cached', snippet: 'Guide' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://example.com/cached',
+        content: { title: 'Cached guide', text: 'Cached guide content.' },
+        metadata: { method: 'http', cacheHit: true, truncated: false }
+      })
+    });
+
+    const result = await worker.run({ query: 'cached guide', maxSearchRounds: 1, maxFetches: 1 });
+    expect(result.evidence[0]?.retrievedAt).toBeUndefined();
+  });
+
+  it('keeps the original retrieval time when later concurrent pages finish', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const urls = ['https://a.example.com/guide', 'https://b.example.com/guide'];
+    const waiting = new Map<string, (value: WebFetchResponse) => void>();
+    const partials: string[] = [];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: 'Guide', url, snippet: 'Guide' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage: vi.fn(({ url }: { url: string }) => new Promise<WebFetchResponse>((resolve) => waiting.set(url, resolve)))
+    });
+    const response = (url: string): WebFetchResponse => ({ status: 'ok', url, content: { title: 'Guide', text: `Guide content from ${url}` }, metadata: { method: 'http', cacheHit: false } });
+
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const run = worker.run({ query: 'guide', maxSearchRounds: 1, maxFetches: 2, onPartial: (partial) => {
+        const retrievedAt = partial.evidence.find((item) => item.url === urls[0])?.retrievedAt;
+        if (retrievedAt) partials.push(retrievedAt);
+      } });
+      await vi.waitFor(() => expect(waiting.size).toBe(2));
+      waiting.get(urls[0])!(response(urls[0]));
+      await vi.waitFor(() => expect(partials).toHaveLength(1));
+      vi.setSystemTime(new Date('2026-01-01T01:00:00.000Z'));
+      waiting.get(urls[1])!(response(urls[1]));
+      const result = await run;
+      expect(result.evidence[0]?.retrievedAt).toBe(partials[0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('emits started and settled search and fetch events without page content', async () => {
+    const url = 'https://example.com/guide';
+    const events: Array<{ phase: string; searches: number; fetches: number; headless: number }> = [];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: [{ title: 'Guide', url, snippet: 'Guide' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage: vi.fn(async () => ({ status: 'ok' as const, url, content: { title: 'Guide', text: 'Secret page content' }, metadata: { method: 'http' as const, cacheHit: false } }))
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    await worker.run({ query: 'guide', maxSearchRounds: 1, maxFetches: 1, budget, onProgress: (event) => events.push(event) });
+    expect(events.map((event) => `${event.phase}:${(event as { state?: string }).state}`)).toEqual([
+      'search:started', 'search:settled', 'fetch:started', 'fetch:settled'
+    ]);
+    expect(events.at(-1)).toMatchObject({ searches: 1, fetches: 1, headless: 0 });
+    expect(JSON.stringify(events)).not.toContain('Secret page content');
+    budget.dispose();
+  });
+  it('fetches up to three distinct hosts concurrently and keeps candidate order', async () => {
+    const waiting = new Map<string, (value: WebFetchResponse) => void>();
+    const fetchPage = vi.fn(({ url }: { url: string }) => new Promise<WebFetchResponse>((resolve) => waiting.set(url, resolve)));
+    const urls = ['https://a.example.com/one', 'https://b.example.com/two', 'https://c.example.com/three', 'https://a.example.com/four'];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'Details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    const resultPromise = worker.run({ query: 'distinct hosts', maxSearchRounds: 1, maxFetches: 4, budget });
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(3));
+    expect(waiting.has(urls[3])).toBe(false);
+
+    const response = (url: string) => ({ status: 'ok' as const, url, content: { title: url, text: `Useful details from ${url}` }, metadata: { method: 'http' as const, cacheHit: false } });
+    waiting.get(urls[2])!(response(urls[2]));
+    await Promise.resolve();
+    expect(waiting.has(urls[3])).toBe(false);
+    waiting.get(urls[0])!(response(urls[0]));
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(4));
+    waiting.get(urls[3])!(response(urls[3]));
+    waiting.get(urls[1])!(response(urls[1]));
+    const result = await resultPromise;
+    expect(result.evidence.map((item) => item.url)).toEqual(urls);
+    budget.dispose();
+  });
+
+  it('records out-of-order concurrent candidates while preserving evidence order', async () => {
+    const urls = ['https://a.example/one', 'https://b.example/two', 'https://c.example/three'];
+    const waiting = new Map<string, (response: WebFetchResponse) => void>();
+    const stats = createPresentationStats();
+    const worker = createResearchWorker({
+      search: async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: ({ url }) => new Promise<WebFetchResponse>((resolve) => waiting.set(url, resolve))
+    });
+    const run = worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 3, presentationStats: stats });
+    await vi.waitFor(() => expect(waiting.size).toBe(3));
+    for (const url of [...urls].reverse()) waiting.get(url)!({ status: 'ok', url, content: { text: `details ${url}` }, metadata: { method: 'http', cacheHit: false } });
+    expect((await run).evidence.map((item) => item.url)).toEqual(urls);
+    expect(stats.snapshot()).toMatchObject({ searches: 1, pagesRead: 3, failedReads: 0, methods: { http: 3 } });
+  });
+
+  it.each([
+    ['a synchronous throw', () => { throw new Error('sync failure'); }, 1],
+    ['a rejected fetch promise', () => Promise.reject(new Error('async failure')), 1]
+  ])('settles fetch progress once for %s', async (_name, fetchPage, failedReads) => {
+    const url = 'https://example.test/page';
+    const stats = createPresentationStats();
+    const events: Array<{ phase: string; state?: string }> = [];
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    const worker = createResearchWorker({
+      search: async () => ({ status: 'ok' as const, results: [{ title: 'Page', url, snippet: 'details' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage
+    });
+    try {
+      await worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) });
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'started')).toHaveLength(1);
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'settled')).toHaveLength(1);
+      expect(stats.snapshot().failedReads).toBe(failedReads);
+    } finally {
+      budget.dispose();
+    }
+  });
+
+  it('settles a deadline-aborted fetch exactly once after it starts', async () => {
+    vi.useFakeTimers();
+    const url = 'https://example.test/page';
+    const stats = createPresentationStats();
+    const events: Array<{ phase: string; state?: string }> = [];
+    let fetchStarted!: () => void;
+    const started = new Promise<void>((resolve) => { fetchStarted = resolve; });
+    const budget = createResearchRunBudget({ timeoutMs: 100 });
+    const worker = createResearchWorker({
+      search: async () => ({ status: 'ok' as const, results: [{ title: 'Page', url, snippet: 'details' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } }),
+      fetchPage: ({ signal }) => new Promise<WebFetchResponse>((_resolve, reject) => {
+        fetchStarted();
+        signal?.addEventListener('abort', () => reject(new Error('deadline aborted')));
+      })
+    });
+    try {
+      const run = worker.run({ query: 'details', maxSearchRounds: 1, maxFetches: 1, budget, presentationStats: stats, onProgress: (event) => events.push(event) });
+      const completion = expect(run).rejects.toThrow('Operation aborted');
+      await started;
+      await vi.advanceTimersByTimeAsync(100);
+      await completion;
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'started')).toHaveLength(1);
+      expect(events.filter((event) => event.phase === 'fetch' && event.state === 'settled')).toHaveLength(1);
+      expect(stats.snapshot().failedReads).toBe(0);
+    } finally {
+      budget.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fetch a URL already visited in an earlier worker pass', async () => {
+    const url = 'https://example.com/guide';
+    const fetchPage = vi.fn(async () => ({ status: 'ok' as const, url, content: { title: 'Guide', text: 'Useful guide details' }, metadata: { method: 'http' as const, cacheHit: false } }));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: [{ title: 'Guide', url, snippet: 'Guide' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    await worker.run({ query: 'first', maxSearchRounds: 1, maxFetches: 4, budget });
+    const second = await worker.run({ query: 'second', maxSearchRounds: 1, maxFetches: 4, budget });
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(second.evidence).toEqual([]);
+    budget.dispose();
+  });
+
+  it('stops at a shared fetch cap after direct URLs have spent slots', async () => {
+    const budget = createResearchRunBudget({ timeoutMs: 120_000, maxFetches: 4 });
+    for (const name of ['a', 'b', 'c']) expect(budget.claimFetch(`https://${name}.example/direct`)).toBe(true);
+    const urls = Array.from({ length: 4 }, (_, index) => `https://result-${index}.example/page`);
+    const fetchPage = vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'Page', text: 'Useful page details' }, metadata: { method: 'http' as const, cacheHit: false } }));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: 'Page', url, snippet: 'Details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+
+    const result = await worker.run({ query: 'pages', maxSearchRounds: 1, maxFetches: 4, budget });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.exhaustedBudget).toBe(true);
+    expect(budget.snapshot()).toMatchObject({ fetches: 4, limitReason: 'fetch-limit' });
+    budget.dispose();
+  });
+
+  it('keeps evidence from another host when one candidate throws', async () => {
+    const urls = ['https://a.example.com/failed', 'https://b.example.com/good'];
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: urls.map((url) => ({ title: url, url, snippet: 'Details' })), metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage: vi.fn(async ({ url }) => {
+        if (url === urls[0]) throw new Error('connection reset');
+        return { status: 'ok' as const, url, content: { title: 'Good', text: 'Useful details' }, metadata: { method: 'http' as const, cacheHit: false } };
+      })
+    });
+    const budget = createResearchRunBudget({ timeoutMs: 120_000 });
+    const result = await worker.run({ query: 'two hosts', maxSearchRounds: 1, maxFetches: 2, budget });
+    expect(result.evidence.map((item) => item.url)).toEqual([urls[1]]);
+    expect(result.gaps[0]?.message).toContain('connection reset');
+    budget.dispose();
+  });
+
+  it('stops in-flight fetch work when the caller cancels', async () => {
+    const controller = new AbortController();
+    const url = 'https://example.com/pending';
+    const fetchPage = vi.fn(() => new Promise<WebFetchResponse>(() => undefined));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({ status: 'ok' as const, results: [{ title: 'Pending', url, snippet: 'Pending' }], metadata: { backend: 'duckduckgo' as const, cacheHit: false } })),
+      fetchPage
+    });
+    const budget = createResearchRunBudget({ signal: controller.signal, timeoutMs: 120_000 });
+    const run = worker.run({ query: 'pending', maxSearchRounds: 1, maxFetches: 1, signal: controller.signal, budget });
+    const rejected = expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(1));
+    controller.abort();
+    await rejected;
+    budget.dispose();
+  });
   it('runs one bounded search/fetch pass and summarizes evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
@@ -75,7 +319,7 @@ describe('research worker', () => {
     const result = await worker.run({ query: 'lunar archive transfer', maxSearchRounds: 1, maxFetches: 1 });
 
     expect(result.evidence[0]?.summary).toContain('Lunar archive transfer requires the signed manifest');
-    expect(result.evidence[0]?.supports[0]).toContain('Lunar archive transfer requires the signed manifest');
+    expect(result.evidence[0]?.supports).toContain('Lunar archive transfer requires the signed manifest before upload.');
   });
 
   it('keeps a Firecrawl bot wall omitted by query selection out of evidence', async () => {
@@ -384,7 +628,7 @@ describe('research worker', () => {
     expect(result.gaps[0].kind).toBe('fetch-failed');
   });
 
-  it('returns reader method content as primary-content with full text, not summarized', async () => {
+  it('keeps full reader text without treating the reader method as authority', async () => {
     const fullYoutubeText =
       'This is a very long transcript from a YouTube video that contains detailed technical information about the topic. It has more than 180 characters of content that should be preserved in full for primary-content evidence extraction.';
 
@@ -419,13 +663,13 @@ describe('research worker', () => {
 
     expect(result.evidence).toHaveLength(1);
     const evidence = result.evidence[0];
-    expect(evidence?.sourceKind).toBe('primary-content');
+    expect(evidence?.sourceKind).toBe('unknown');
     expect(evidence?.method).toBe('youtube');
     expect(evidence?.summary).toBe(fullYoutubeText);
     expect(evidence?.supports[0]).toBe(fullYoutubeText);
   });
 
-  it('does not turn reader method response with empty text into primary-content', async () => {
+  it('does not accept an empty reader response as evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
         status: 'ok',
@@ -455,11 +699,10 @@ describe('research worker', () => {
       maxFetches: 1
     });
 
-    const primaryContent = result.evidence.find((e) => e.sourceKind === 'primary-content');
-    expect(primaryContent).toBeUndefined();
+    expect(result.evidence.some((item) => item.method === 'pdf')).toBe(false);
   });
 
-  it('does not turn reader method response with only whitespace into primary-content', async () => {
+  it('does not accept a whitespace-only reader response as evidence', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
         status: 'ok',
@@ -489,11 +732,10 @@ describe('research worker', () => {
       maxFetches: 1
     });
 
-    const primaryContent = result.evidence.find((e) => e.sourceKind === 'primary-content');
-    expect(primaryContent).toBeUndefined();
+    expect(result.evidence.some((item) => item.method === 'pdf')).toBe(false);
   });
 
-  it('makes reader method content primary-content even if url classifies as package-page', async () => {
+  it('keeps reader content from a deep package URL without treating it as a package listing', async () => {
     const pdfText = 'This is actual PDF content from a package documentation PDF hosted on npmjs.';
 
     const worker = createResearchWorker({
@@ -527,7 +769,7 @@ describe('research worker', () => {
 
     expect(result.evidence).toHaveLength(1);
     const evidence = result.evidence[0];
-    expect(evidence?.sourceKind).toBe('primary-content');
+    expect(evidence?.sourceKind).toBe('unknown');
     expect(evidence?.method).toBe('pdf');
     expect(evidence?.summary).toBe(pdfText);
   });

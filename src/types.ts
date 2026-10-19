@@ -1,4 +1,5 @@
 import type { PresentationEnvelope } from './presentation/types.js';
+import type { PresentationStats } from './orchestration/presentation-stats.js';
 
 export const TOOL_STATUSES = [
   'ok',
@@ -31,6 +32,7 @@ export type FailureKind =
   | 'rate_limited'
   | 'quota_exhausted'
   | 'auth_failed'
+  | 'not_found_or_inaccessible'
   | 'not_configured'
   | 'transient'
   | 'blocked'
@@ -109,6 +111,8 @@ export type FetchMetadata = {
   fallbackReason?: string;
   contentType?: string;
   truncated?: boolean;
+  /** GitHub thread comments could not be completely read within the bounded reader request. */
+  partialComments?: boolean;
   browser?: 'configured' | 'chrome' | 'edge' | 'brave' | 'chromium';
   navigationMs?: number;
   /** Headless only: browser requests refused by the private-address guard (#53). */
@@ -152,20 +156,54 @@ export type WebFetchHeadlessResponse = {
   error?: ToolError;
 };
 
+/** A search provider that could not run for a reason the user can fix (missing key, bad key, quota). */
+export type SearchUnavailable = {
+  provider: string;
+  kind: 'not_configured' | 'auth_failed' | 'quota_exhausted';
+  message: string;
+};
+
 export type WebExploreResponse = {
   status: 'ok' | 'error';
+  /** Monotonic wall time for this individual exploration invocation. */
+  durationMs?: number;
   findings: string[];
-  sources: Array<{ title: string; url: string; method?: FetchMethod }>;
+  sources: Array<{ title: string; url: string; requestedUrl?: string; method?: FetchMethod }>;
+  /** Source IDs for each finding, in finding order. */
+  findingSourceIds?: string[][];
+  evidence?: Array<{
+    id: string;
+    url: string;
+    requestedUrl?: string;
+    title: string;
+    method?: FetchMethod;
+    excerpts: Array<{ text: string; anchor?: string }>;
+    retrievedAt?: string;
+    truncated: boolean;
+  }>;
   caveat?: string;
+  searchUnavailable?: SearchUnavailable[];
+  requiredSourceFailures?: Array<{
+    url: string;
+    code: string;
+    message: string;
+    reason: 'read-failed' | 'limit' | 'deadline-in-flight' | 'deadline-unvisited';
+    failure?: FailureInfo;
+  }>;
   metadata?: {
     searchPasses: number;
     fetchedPages: number;
     headlessAttempts: number;
     exhaustedBudget: boolean;
     caveatReasons?: string[];
+    budgetReason?: 'deadline' | 'search-limit' | 'fetch-limit' | 'headless-limit';
+    budget?: { searches: number; fetches: number; headless: number; limitReason?: 'deadline' | 'search-limit' | 'fetch-limit' | 'headless-limit' };
+    missingComparisonTargets?: string[];
     fanoutProviders?: SearchProviderName[];
     fanoutSkipped?: SearchProviderName[];
     attempts?: Attempt[];
+    requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
+    presentationStats?: PresentationStats;
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;

@@ -6,6 +6,7 @@ export type SourceProfileKind =
   | 'issue-thread'
   | 'forum-thread'
   | 'package-page'
+  | 'unknown'
   | 'community';
 
 export type SourceProfile = {
@@ -76,7 +77,7 @@ function isForumThread(host: string, path: string) {
 
 export function classifySourceProfile(rawUrl: string): SourceProfile {
   const parsed = parseUrl(rawUrl);
-  if (!parsed) return profile('community', 'community', false);
+  if (!parsed) return profile('unknown', 'unknown', false);
 
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
   const path = parsed.pathname.toLowerCase();
@@ -97,9 +98,9 @@ export function classifySourceProfile(rawUrl: string): SourceProfile {
     return profile('forum-thread', 'community', true);
   }
 
-  if (host === 'npmjs.com' && path.startsWith('/package/')) {
+  if (host === 'npmjs.com' && /^\/package\/(?:@[^/]+\/)?[^/]+\/?$/.test(path)) {
     return profile('package-page', 'package-page', false);
   }
 
-  return profile('community', 'community', false);
+  return profile('unknown', 'unknown', false);
 }

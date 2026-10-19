@@ -8,12 +8,38 @@ import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presenta
 import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
+import { sanitizeTerminalText } from './presentation/explore-display-text.js';
+import { searchUnavailableNotices } from './presentation/explore-presentation.js';
+import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
 import type { WebExploreResponse } from './types.js';
 import { getUpdateChangelogNotice } from './changelog-notice.js';
 import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
+import { formatResearchProgress } from './orchestration/progress.js';
+
+const SESSION_SHUTDOWN_GRACE_MS = 5_000;
+
+async function waitWithin<T>(work: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Pi reports a cancelled call as its abort error text, with no terminal details of ours. */
+function isCancelledResult(toolResult: { content?: unknown; details?: unknown }): boolean {
+  if ((toolResult.details as { terminalText?: string } | undefined)?.terminalText) return false;
+  const parts = Array.isArray(toolResult.content) ? toolResult.content as Array<{ text?: unknown }> : [];
+  const text = parts.map((part) => (typeof part?.text === 'string' ? part.text : '')).join(' ').trim();
+  return /^(?:this |the )?operation (?:was )?aborted\.?$/i.test(text);
+}
 
 /**
  * What the model receives as the tool result: the actual synthesized findings (which for a
@@ -22,18 +48,37 @@ import { Text } from '@earendil-works/pi-tui';
  * gets the substance regardless of the user's compact/preview/verbose presentation setting.
  */
 function serializeForModel(result: WebExploreResponse): string {
-  if (result.status === 'error') {
-    return `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`;
-  }
+  const searchNotices = searchUnavailableNotices(result);
+  const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
+    `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
+  );
+  const terminalError = result.status === 'error'
+    ? `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`
+    : undefined;
   if (result.findings.length === 0 && result.sources.length === 0) {
-    return 'No usable evidence found.';
+    return terminalError
+      ? [...searchNotices, ...requiredNotices, terminalError].filter(Boolean).join('\n\n')
+      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
   }
+  const linked = (result.evidence?.length ?? 0) > 0;
+  const findings = result.findings.map((finding, index) => {
+    const ids = result.findingSourceIds?.[index] ?? [];
+    return ids.length ? `[${ids.join(', ')}] ${finding}` : finding;
+  });
+  const evidence = result.evidence?.map((item) => [
+    `[${item.id}] ${item.title}: ${item.url}`,
+    ...item.excerpts.map((excerpt) => `  - ${excerpt.anchor ? `#${excerpt.anchor}: ` : ''}${excerpt.text}`),
+    item.truncated ? '  (source excerpt truncated)' : undefined
+  ].filter(Boolean).join('\n')).join('\n');
   return [
-    result.findings.join('\n\n'),
-    result.sources.length
+    ...searchNotices,
+    ...requiredNotices,
+    findings.join('\n\n'),
+    linked ? `Evidence:\n${evidence}` : result.sources.length
       ? `Sources:\n${result.sources.map((source) => `- ${source.title}: ${source.url}`).join('\n')}`
       : undefined,
-    result.caveat
+    result.caveat,
+    terminalError
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -73,22 +118,38 @@ export default function extension(pi: ExtensionAPI) {
   registerWebAgentConfigCommands(pi);
 
   const injectedWebExplore = (pi as ExtensionAPI & { __webExploreTool?: ReturnType<typeof createWebExploreTool> }).__webExploreTool;
+  const now = (pi as ExtensionAPI & { __webExploreNow?: () => number }).__webExploreNow ?? (() => performance.now());
   type Workflow = ReturnType<typeof createResearchWorkflow>;
   // Clones live for the Pi session (#72): the extension owns the cache, not a backend set,
   // so a backend config change keeps them and session_shutdown removes them.
   const makeRepoCache = (pi as ExtensionAPI & { __repoCacheFactory?: () => RepoCache }).__repoCacheFactory ?? (() => createRepoCache());
-  let repoCache = makeRepoCache();
-
-  let cachedBackendKey: string | undefined;
-  let cachedWorkflow: Workflow | undefined;
-  let cachedWebExplore: ReturnType<typeof createWebExploreTool> | undefined;
+  type Session = {
+    repoCache: RepoCache;
+    shutdownDeadline?: number;
+    cachedBackendKey?: string;
+    cachedWorkflow?: Workflow;
+    cachedWebExplore?: ReturnType<typeof createWebExploreTool>;
+    workflows: Set<Workflow>;
+    operations: Set<Promise<unknown>>;
+  };
+  const makeSession = (): Session => ({
+    repoCache: makeRepoCache(),
+    workflows: new Set<Workflow>(),
+    operations: new Set<Promise<unknown>>()
+  });
+  let session = makeSession();
   // Runs in flight per workflow, so a replaced workflow is never closed mid-run.
   const activeRuns = new Map<Workflow, number>();
+  const activeRunSettlements = new Map<Workflow, Set<Promise<void>>>();
   const retiring = new Set<Workflow>();
-
+  const closePromises = new Map<Workflow, Promise<void>>();
   const closeWorkflowNow = (workflow: Workflow): Promise<void> => {
+    const existing = closePromises.get(workflow);
+    if (existing) return existing;
     retiring.delete(workflow);
-    return Promise.resolve((workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+    const closing = Promise.resolve().then(() => (workflow as { close?: () => Promise<void> }).close?.()).catch(() => undefined);
+    closePromises.set(workflow, closing);
+    return closing;
   };
 
   const closeWorkflow = (workflow: Workflow) => {
@@ -105,6 +166,11 @@ export default function extension(pi: ExtensionAPI) {
 
   const leased = (workflow: Workflow) => ({
     run: async (input: Parameters<Workflow['run']>[0]) => {
+      let finish!: () => void;
+      const settled = new Promise<void>((resolve) => { finish = resolve; });
+      const settlements = activeRunSettlements.get(workflow) ?? new Set<Promise<void>>();
+      settlements.add(settled);
+      activeRunSettlements.set(workflow, settlements);
       activeRuns.set(workflow, (activeRuns.get(workflow) ?? 0) + 1);
       try {
         return await workflow.run(input);
@@ -116,40 +182,43 @@ export default function extension(pi: ExtensionAPI) {
           activeRuns.delete(workflow);
           if (retiring.has(workflow)) closeWorkflow(workflow);
         }
+        settlements.delete(settled);
+        if (settlements.size === 0) activeRunSettlements.delete(workflow);
+        finish();
       }
     }
   });
 
-  async function getConfiguredWebExplore() {
+  async function getConfiguredWebExplore(configuredSession = session) {
     if (injectedWebExplore) return injectedWebExplore;
 
     const backendConfig = await getEffectiveBackendConfig(pi);
+    if (configuredSession.shutdownDeadline !== undefined && Date.now() >= configuredSession.shutdownDeadline) {
+      throw new Error('The session has ended.');
+    }
     const backendKey = JSON.stringify(backendConfig);
-    if (!cachedWebExplore || cachedBackendKey !== backendKey) {
-      if (cachedWorkflow) retire(cachedWorkflow);
-      cachedBackendKey = backendKey;
-      cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache });
-      cachedWebExplore = createWebExploreTool({ explore: leased(cachedWorkflow) });
+    if (!configuredSession.cachedWebExplore || configuredSession.cachedBackendKey !== backendKey) {
+      if (configuredSession.cachedWorkflow) retire(configuredSession.cachedWorkflow);
+      configuredSession.cachedBackendKey = backendKey;
+      configuredSession.cachedWorkflow = createResearchWorkflow({ backendConfig, repoCache: configuredSession.repoCache });
+      configuredSession.workflows.add(configuredSession.cachedWorkflow);
+      configuredSession.cachedWebExplore = createWebExploreTool({ explore: leased(configuredSession.cachedWorkflow), now });
     }
 
-    return cachedWebExplore;
+    return configuredSession.cachedWebExplore;
   }
 
   pi.on('session_shutdown', async () => {
-    const workflow = cachedWorkflow;
-    cachedWorkflow = undefined;
-    cachedWebExplore = undefined;
-    cachedBackendKey = undefined;
+    const shuttingDown = session;
+    const deadline = Date.now() + SESSION_SHUTDOWN_GRACE_MS;
+    shuttingDown.shutdownDeadline = deadline;
+    session = makeSession();
+    const remaining = () => Math.max(0, deadline - Date.now());
     // A new session (after /new, /resume, /fork or a reload) starts with an empty cache.
-    const oldCache = repoCache;
-    repoCache = makeRepoCache();
-    const closing: Array<Promise<unknown>> = [oldCache.close()];
-    if (workflow) {
-      // An idle workflow is closed and awaited now; a running one closes when its run settles.
-      if ((activeRuns.get(workflow) ?? 0) === 0) closing.push(closeWorkflowNow(workflow));
-      else retiring.add(workflow);
-    }
-    await Promise.allSettled(closing);
+    await waitWithin(Promise.allSettled([...shuttingDown.operations]), remaining());
+    await waitWithin(Promise.allSettled([...shuttingDown.workflows].flatMap((workflow) => [...(activeRunSettlements.get(workflow) ?? [])])), remaining());
+    await waitWithin(Promise.allSettled([...shuttingDown.workflows].map(closeWorkflowNow)), remaining());
+    await waitWithin(shuttingDown.repoCache.close(), remaining());
   });
 
   pi.on('session_start', async (_event, ctx) => {
@@ -163,39 +232,82 @@ export default function extension(pi: ExtensionAPI) {
     }
   });
 
-  pi.on('before_agent_start', async (event) => ({
-    systemPrompt:
-      `${event.systemPrompt}\n\n` +
-      'For web research questions that require finding and comparing sources, use web_explore. ' +
-      'web_explore handles search, fetch, source ranking, and headless escalation internally. ' +
-      'If more web evidence is needed after web_explore, call web_explore again with a narrower query; do not use shell/network commands such as curl, Invoke-WebRequest, npm view/search/pack, or direct HTTP URLs for web research.'
-  }));
-
   pi.registerTool({
     name: 'web_explore',
     label: 'Web Explore',
     description:
-      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. Use this for web research, current docs/discussion lookups, and recommendation summaries.',
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
+      'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Include every link the user supplied, unchanged, in the query: links in the query are read directly (GitHub issues and pull requests through the API, GitHub repositories cloned and searched), and reported if they cannot be read. ' +
+      'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.',
     parameters: Type.Object({
-      query: Type.String({ description: 'Web research question to explore.' })
+      query: Type.String({ description: 'Web research question. Include any links the user gave, unchanged.' })
     }),
-    async execute(_toolCallId, params, signal) {
-      const webExplore = await getConfiguredWebExplore();
-      const result: WebExploreResponse = await webExplore({ query: params.query, ...(signal ? { signal } : {}) });
-
-      // Terminal display honors the user's presentation mode; the model gets the full findings.
-      // The fallback must stay terse: never fall back to serializeForModel here, or a missing
-      // presentation would dump the full findings into the terminal.
-      const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
-      const terseFallback = 'web_explore result';
-      const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
-      const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
-
-      return {
-        content: [{ type: 'text', text: serializeForModel(result) }],
-        details: { ...result, terminalText, terminalTextExpanded },
-        isError: result.status === 'error'
+    async execute(_toolCallId, params, signal, onUpdate) {
+      const executionSession = session;
+      const startedAt = now();
+      let updatesOpen = true;
+      let lastActivity: string | undefined;
+      const update = (terminalText: string, force = false) => {
+        if (!updatesOpen || (!force && terminalText === lastActivity)) return;
+        lastActivity = terminalText;
+        try {
+          onUpdate?.({
+            content: [{ type: 'text', text: terminalText }],
+            details: { terminalText, terminalTextExpanded: terminalText }
+          });
+        } catch { /* A closed display must not fail research. */ }
       };
+      const cancel = () => {
+        if (!updatesOpen) return;
+        update('Cancelled', true);
+        updatesOpen = false;
+      };
+      signal?.addEventListener('abort', cancel, { once: true });
+      const operation = (async () => {
+        try {
+          update('Starting web research…', true);
+          const webExplore = await getConfiguredWebExplore(executionSession);
+          const result: WebExploreResponse = await webExplore({
+            query: params.query,
+            ...(signal ? { signal } : {}),
+            startedAt,
+            onProgress(progress) {
+              update(formatResearchProgress(progress));
+            }
+          });
+          update('Research complete.');
+
+          // Terminal display honors the user's presentation mode; the model gets the full findings.
+          // The fallback must stay terse: never fall back to serializeForModel here, or a missing
+          // presentation would dump the full findings into the terminal.
+          const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
+          const terseFallback = 'web_explore result';
+          const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
+          const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
+
+          return {
+            content: [{ type: 'text' as const, text: serializeForModel(result) }],
+            details: { ...result, selectedMode: mode, terminalText, terminalTextExpanded },
+            isError: result.status === 'error'
+          };
+        } catch (error) {
+          if (signal?.aborted) cancel();
+          throw error;
+        } finally {
+          updatesOpen = false;
+          signal?.removeEventListener('abort', cancel);
+        }
+      })();
+      executionSession.operations.add(operation);
+      try {
+        return await operation;
+      } finally {
+        executionSession.operations.delete(operation);
+      }
+    },
+    renderCall(args, theme, context) {
+      return renderExploreCall(args?.query, context.argsComplete, theme);
     },
     renderResult(toolResult, options) {
       const details = toolResult.details as
@@ -206,6 +318,7 @@ export default function extension(pi: ExtensionAPI) {
           }
         | undefined;
       try {
+        if (isCancelledResult(toolResult)) return new Text('Cancelled', 0, 0);
         // Legacy fallback: results persisted before this change carry `presentation` but no
         // `terminalText`, so old sessions stay readable instead of rendering blank.
         const legacy = options.expanded
@@ -216,7 +329,7 @@ export default function extension(pi: ExtensionAPI) {
           details?.terminalText ??
           legacy ??
           'web_explore result';
-        return new Text(text, 0, 0);
+        return new Text(sanitizeTerminalText(text), 0, 0);
       } catch {
         // Never throw: a thrown renderer makes Pi fall back to raw content, which would dump
         // the full model-facing findings into the terminal.

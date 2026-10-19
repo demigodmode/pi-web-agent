@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as researchTypes from '../../src/orchestration/research-types.js';
+import type { ResearchProgress } from '../../src/orchestration/progress.js';
 import { createResearchOrchestrator } from '../../src/orchestration/research-orchestrator.js';
+import type { WebFetchHeadlessResponse } from '../../src/types.js';
+import type { PresentationStatsCollector } from '../../src/orchestration/presentation-stats.js';
 import type {
   ResearchWorkerResult,
   ResearchEvidence,
@@ -9,6 +12,294 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it('reports the first successful direct read in its settled progress snapshot', async () => {
+    const events: ResearchProgress[] = [];
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { text: 'Readable direct source.' }, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Read https://example.com/source', onProgress: (event) => events.push(event) });
+    expect(events.find((event) => event.phase === 'fetch' && event.state === 'settled')).toMatchObject({ pagesRead: 1, failedReads: 0 });
+    expect(result.metadata.presentationStats?.pagesRead).toBe(1);
+  });
+
+  it('reports the first successful typed repo read in its settled progress snapshot', async () => {
+    const events: ResearchProgress[] = [];
+    await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      researchRepo: vi.fn(async ({ url }) => ({ ok: true as const, response: { status: 'ok' as const, url, content: { text: 'Readable repository source.' }, metadata: { method: 'github' as const, cacheHit: false } } })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Read https://github.com/acme/widget', onProgress: (event) => events.push(event) });
+    expect(events.find((event) => event.phase === 'fetch' && event.state === 'settled')).toMatchObject({ pagesRead: 1, failedReads: 0 });
+  });
+
+  it('reports direct fetch and headless progress with shared counts', async () => {
+    const phases: string[] = [];
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'PDF', text: 'Readable PDF content' }, metadata: { method: 'headless' as const, cacheHit: false } }))
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://example.com/file.pdf', onProgress: (event) => phases.push(`${event.phase}:${event.state}:${event.fetches}:${event.headless}`) });
+
+    expect(phases).toEqual(['fetch:started:1:0', 'fetch:settled:1:0', 'headless:started:1:1', 'headless:settled:1:1']);
+    expect(result.metadata.budget).toMatchObject({ searches: 0, fetches: 1, headless: 1 });
+  });
+
+  it('continues after a direct headless reader failure and reports that required URL', async () => {
+    const fetchDirect = vi.fn(async ({ url }: { url: string }) => url.endsWith('/one')
+      ? { status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } }
+      : { status: 'ok' as const, url, content: { title: 'Two', text: 'Readable second source.' }, metadata: { method: 'http' as const, cacheHit: false } });
+    const result = await createResearchOrchestrator({ worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) }, fetchDirect, headlessFetch: vi.fn(async () => { throw new Error('reader timeout'); }) }).run({ query: 'Read https://example.test/one https://example.test/two' });
+    expect(fetchDirect).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.test/two' }));
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://example.test/one', reason: 'read-failed' }));
+    expect(result.requiredSourceEvidence).toContainEqual(expect.objectContaining({ requestedUrl: 'https://example.test/two' }));
+  });
+
+  it('deduplicates a direct redirect with the same worker candidate in presentation stats', async () => {
+    const finalUrl = 'https://example.test/final';
+    const worker = { run: vi.fn(async ({ presentationStats }: { presentationStats?: PresentationStatsCollector }) => {
+      presentationStats?.recordRead({ status: 'ok', url: finalUrl, content: { text: 'worker evidence' }, metadata: { method: 'http', cacheHit: false } }, undefined, 'https://example.test/candidate');
+      return { searchQueries: ['q'], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false };
+    }) };
+    const result = await createResearchOrchestrator({ worker, fetchDirect: vi.fn(async () => ({ status: 'ok' as const, url: finalUrl, content: { text: 'direct evidence' }, metadata: { method: 'http' as const, cacheHit: false } })), headlessFetch: vi.fn() }).run({ query: 'Research https://example.test/direct' });
+    expect(result.metadata.presentationStats).toMatchObject({ pagesRead: 1, failedReads: 0, methods: { http: 1 } });
+  });
+
+  it('rethrows caller cancellation during a direct headless retry', async () => {
+    const controller = new AbortController();
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async () => { controller.abort(); throw new Error('aborted reader'); })
+    });
+    await expect(orchestrator.run({ query: 'Read https://cancel.test/direct', signal: controller.signal })).rejects.toThrow('Operation aborted');
+  });
+
+  it('marks an active direct headless URL in-flight at deadline and later URLs unvisited', async () => {
+    vi.useFakeTimers();
+    let resolveHeadless!: (value: WebFetchHeadlessResponse) => void;
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(({ url }) => new Promise<WebFetchHeadlessResponse>((resolve) => { resolveHeadless = resolve; }))
+    });
+    try {
+      const run = orchestrator.run({ query: 'Read https://deadline.test/one https://deadline.test/two' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.requiredSourceFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ url: 'https://deadline.test/one', reason: 'deadline-in-flight' }),
+        expect.objectContaining({ url: 'https://deadline.test/two', reason: 'deadline-unvisited' })
+      ]));
+      expect(result.decision.action).toBe('research-again');
+      expect(result.metadata).toMatchObject({ exhaustedBudget: true, budgetReason: 'deadline' });
+      expect(result.metadata.caveatReasons).toContain('budget-exhausted');
+      resolveHeadless({ status: 'ok', url: 'https://deadline.test/one', content: { title: 'late', text: 'late' }, metadata: { method: 'headless', cacheHit: false } });
+      await orchestrator.drain();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('marks a read-only direct deadline as exhausted instead of a normal unreadable result', async () => {
+    vi.useFakeTimers();
+    let resolveHeadless!: (value: WebFetchHeadlessResponse) => void;
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(() => new Promise<WebFetchHeadlessResponse>((resolve) => { resolveHeadless = resolve; }))
+    });
+    try {
+      const run = orchestrator.run({ query: 'Read https://deadline.test/only' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.decision.action).toBe('research-again');
+      expect(result.metadata).toMatchObject({ exhaustedBudget: true, budgetReason: 'deadline' });
+      expect(result.metadata.caveatReasons).toContain('budget-exhausted');
+      resolveHeadless({ status: 'ok', url: 'https://deadline.test/only', content: { title: 'late', text: 'late' }, metadata: { method: 'headless', cacheHit: false } });
+      await orchestrator.drain();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('reserves a direct retry without consuming two later discretionary headless retries', async () => {
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], suggestedHeadlessUrl: 'https://dynamic.test/one', exhaustedBudget: false })
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], suggestedHeadlessUrl: 'https://dynamic.test/two', exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    const headlessFetch = vi.fn(async ({ url }: { url: string }) => ({ status: 'ok' as const, url: url.includes('one') ? 'https://input.test/direct' : url, content: { title: url.includes('two') ? 'Vue' : 'Other', text: url.includes('two') ? 'Vue guide' : 'Other useful detail' }, metadata: { method: 'headless' as const, cacheHit: false } }));
+    const result = await createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch
+    }).run({ query: 'Compare React vs Vue using https://input.test/direct' });
+    expect(headlessFetch.mock.calls.map(([input]) => input.url)).toEqual(['https://input.test/direct', 'https://dynamic.test/one', 'https://dynamic.test/two']);
+    expect(result.metadata.budget).toMatchObject({ headless: 3 });
+  });
+
+  it('forwards worker progress to callers', async () => {
+    const phases: string[] = [];
+    const worker = { run: vi.fn(async ({ onProgress }: { onProgress?: (event: ResearchProgress) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false };
+    }) };
+    await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'plain research', onProgress: (event) => phases.push(event.phase) });
+    expect(phases).toContain('search');
+  });
+  it('reads a supplied PDF directly but researches alternatives for a comparison', async () => {
+    const worker = { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'ok' as const, url, content: { title: 'Source PDF', text: 'Long readable PDF source content.' },
+        metadata: { method: 'pdf' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    await orchestrator.run({ query: 'Read https://example.com/file.pdf' });
+    expect(worker.run).not.toHaveBeenCalled();
+
+    await orchestrator.run({ query: 'Please summarize https://example.com/file.pdf' });
+    expect(worker.run).not.toHaveBeenCalled();
+
+    await orchestrator.run({ query: 'Compare https://example.com/file.pdf with alternatives' });
+    expect(worker.run).toHaveBeenCalled();
+  });
+
+  it('finishes a read request from a usable direct HTML page without searching', async () => {
+    const worker = { run: vi.fn() };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'ok' as const, url,
+        content: { title: 'Guide', text: 'A usable guide with the requested details.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Summarize https://example.com/guide' });
+
+    expect(worker.run).not.toHaveBeenCalled();
+    expect(result.evidence).toHaveLength(1);
+    expect(result.metadata?.searchPasses).toBe(0);
+  });
+
+  it('does not answer a failed direct read from unrelated search evidence', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: ['example start'],
+        evidence: [
+          { title: 'Official A', url: 'https://official-a.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Unrelated official guidance.', supports: [] },
+          { title: 'Official B', url: 'https://official-b.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Different unrelated official guidance.', supports: [] }
+        ],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'error' as const,
+        url,
+        metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'FETCH_FAILED', message: 'Connection refused.' }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Read https://example.com/start' });
+
+    expect(worker.run).not.toHaveBeenCalled();
+    expect(result.evidence).toEqual([]);
+    expect(result.decision.action).toBe('research-again');
+    expect(result.metadata?.caveatReasons).toContain('unreadable-direct-source');
+    expect(result.workerPass.gaps).toContainEqual({
+      kind: 'fetch-failed',
+      message: 'Direct URL could not be read reliably: https://example.com/start'
+    });
+  });
+
+  it('caveats an otherwise answerable research run when a required link exceeds the limit', async () => {
+    const links = Array.from({ length: 9 }, (_, index) => `https://example.test/source-${index + 1}`);
+    const worker = { run: vi.fn(async () => ({
+      searchQueries: ['research evidence'],
+      evidence: [
+        { title: 'Official A', url: 'https://official-a.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The requested behavior is supported.', supports: ['The requested behavior is supported.'] },
+        { title: 'Official B', url: 'https://official-b.example/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The requested behavior is documented.', supports: ['The requested behavior is documented.'] }
+      ],
+      gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+    })) };
+    const result = await createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'ok' as const, url,
+        content: { title: 'Direct guide', text: 'The requested behavior is supported and documented.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: `Research the documented behavior using ${links.join(' ')}` });
+
+    expect(worker.run).toHaveBeenCalled();
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: links[8], reason: 'limit' }));
+    expect(result.decision.action).toBe('research-again');
+    expect(result.metadata.caveatReasons).toContain('unreadable-direct-source');
+  });
+
+  it('keeps searching a named comparison until both targets have evidence', async () => {
+    const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
+    const vue = { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Vue details', supports: ['Vue details'] };
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [react('https://react.dev/a'), react('https://react.dev/b')], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [vue], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch: vi.fn() });
+
+    const result = await orchestrator.run({ query: 'Compare React and Vue' });
+
+    expect(worker.run).toHaveBeenCalledTimes(2);
+    expect(worker.run.mock.calls[1]?.[0].query).toContain('Vue comparison evidence');
+    expect(result.evidence.some((item) => item.title === 'Vue guide')).toBe(true);
+  });
+
+  it('reports the uncovered comparison target when the search budget ends', async () => {
+    const react = (url: string) => ({ title: 'React guide', url, sourceKind: 'unknown' as const, method: 'http' as const, summary: 'React details', supports: ['React details'] });
+    const worker = { run: vi.fn(async () => ({ searchQueries: [], evidence: [react('https://react.dev/a'), react('https://react.dev/b')], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Compare React and Vue' });
+
+    expect(result.metadata?.caveatReasons).toContain('missing-comparison-target');
+    expect(result.metadata?.missingComparisonTargets).toEqual(['Vue']);
+    expect(result.metadata?.exhaustedBudget).toBe(true);
+    expect(result.decision.action).toBe('research-again');
+  });
+
+  it('plans a version-specific follow-up when the first evidence has no version', async () => {
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [
+        { title: 'Feature overview', url: 'https://example.com/overview', sourceKind: 'unknown', method: 'http', summary: 'Feature details without compatibility information', supports: [] }
+      ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [
+        { title: 'Release notes', url: 'https://example.org/releases', sourceKind: 'unknown', method: 'http', summary: 'Feature is supported since 2.0', supports: [] }
+      ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Which versions support the feature?' });
+    expect(worker.run.mock.calls[1]?.[0].query).toContain('supported version release notes');
+  });
+
+  it('continues searching after a useful headless result leaves the comparison incomplete', async () => {
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], suggestedHeadlessUrl: 'https://react.dev/guide', exhaustedBudget: false })
+      .mockResolvedValue({ searchQueries: [], evidence: [
+        { title: 'Vue guide', url: 'https://vuejs.org/guide', sourceKind: 'unknown', method: 'http', summary: 'Vue details', supports: ['Vue details'] }
+      ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false }) };
+    const headlessFetch = vi.fn(async ({ url }) => ({
+      status: 'ok' as const, url, content: { title: 'React guide', text: 'React details available from rendered page.' },
+      metadata: { method: 'headless' as const, cacheHit: false }
+    }));
+
+    const result = await createResearchOrchestrator({ worker, headlessFetch }).run({ query: 'Compare React and Vue' });
+
+    expect(headlessFetch).toHaveBeenCalledTimes(1);
+    expect(worker.run.mock.calls.length).toBeGreaterThan(1);
+    expect(result.evidence.some((item) => item.title === 'Vue guide')).toBe(true);
+  });
   it('exports a runtime module for orchestration types', () => {
     expect(researchTypes).toBeTypeOf('object');
   });
@@ -100,11 +391,83 @@ describe('research orchestrator types', () => {
     const result = await orchestrator.run({ query: 'Read https://example.com/thread?utm_source=x' });
 
     expect(calls[0]).toBe('direct:https://example.com/thread');
-    expect(fetchDirect).toHaveBeenCalledWith({
+    expect(fetchDirect).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://example.com/thread',
       query: 'Read https://example.com/thread?utm_source=x'
-    });
+    }));
     expect(result.evidence[0]?.url).toBe('https://example.com/thread');
+  });
+
+  it('keeps a redirected direct comparison target associated with its requested URL', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: [],
+        evidence: [{ title: 'CSS | MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/CSS', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'CSS styling guide', supports: [] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async () => ({
+        status: 'ok' as const,
+        url: 'https://www.example.com/docs/',
+        content: { title: 'Example docs', text: 'Readable documentation for the requested product.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    });
+
+    const result = await orchestrator.run({ query: 'Compare https://example.com/docs with alternatives' });
+
+    expect(result.evidence.find((item) => item.url === 'https://www.example.com/docs/')?.requestedUrl).toBe('https://example.com/docs');
+    expect(result.metadata?.missingComparisonTargets).toEqual([]);
+  });
+
+  it('keeps a redirected target in its requested project identity when checking alternatives', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: [],
+        evidence: [{ title: 'Other docs', url: 'https://example.com/other', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Other page from the same project.', supports: [] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const result = await createResearchOrchestrator({
+      worker,
+      fetchDirect: vi.fn(async () => ({
+        status: 'ok' as const,
+        url: 'https://cdn.example.net/docs',
+        content: { title: 'Example docs', text: 'Readable documentation for the requested product.' },
+        metadata: { method: 'http' as const, cacheHit: false }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Compare https://example.com/docs with alternatives' });
+
+    expect(result.metadata?.missingComparisonTargets).toEqual(['alternatives']);
+  });
+
+  it('counts a pinned typed repository as the comparison primary', async () => {
+    const worker = {
+      run: vi.fn(async () => ({
+        searchQueries: [],
+        evidence: [{ title: 'Alternative', url: 'https://github.com/other/widget', sourceKind: 'official-docs' as const, method: 'github' as const, summary: 'Alternative project', supports: [] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      }))
+    };
+    const result = await createResearchOrchestrator({
+      worker,
+      researchRepo: vi.fn(async () => ({
+        ok: true as const,
+        response: {
+          status: 'ok' as const,
+          url: `https://github.com/acme/widget/tree/${'a'.repeat(40)}`,
+          content: { title: 'Widget', text: 'Repository source evidence.' },
+          metadata: { method: 'github' as const, cacheHit: false }
+        }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Compare https://github.com/acme/widget with alternatives' });
+
+    expect(result.metadata?.missingComparisonTargets).toEqual([]);
   });
 
   it('uses a late query-relevant passage for direct and direct-headless evidence', async () => {
@@ -115,14 +478,17 @@ describe('research orchestrator types', () => {
     const fetchDirect = vi.fn(async ({ url }) => ({
       status: 'ok' as const,
       url,
-      content: { title: 'Archive guide', text: `${'General archive background. '.repeat(12)}\n\n${lateAnswer}` },
+      content: { title: 'Archive guide', text: `${'General archive background. '.repeat(12)}\n\n${lateAnswer}`, sectionAnchor: 'transfer' },
       metadata: { method: 'http' as const, cacheHit: false }
     }));
     const direct = createResearchOrchestrator({ worker, fetchDirect, headlessFetch: vi.fn() });
     const directResult = await direct.run({ query: 'Read https://example.com/archive lunar archive transfer' });
 
     expect(directResult.evidence[0]?.summary).toContain(lateAnswer);
-    expect(directResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+    expect(directResult.evidence[0]?.supports).toContain(lateAnswer);
+    expect(directResult.evidence[0]?.supports.length).toBeGreaterThan(1);
+    expect(directResult.evidence[0]?.sectionAnchor).toBe('transfer');
+    expect(directResult.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
     const headlessFetch = vi.fn(async ({ url }) => ({
       status: 'ok' as const,
@@ -143,7 +509,8 @@ describe('research orchestrator types', () => {
     const headlessResult = await headless.run({ query: 'Read https://example.com/archive lunar archive transfer' });
 
     expect(headlessResult.evidence[0]?.summary).toContain(lateAnswer);
-    expect(headlessResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+    expect(headlessResult.evidence[0]?.supports).toContain(lateAnswer);
+    expect(headlessResult.evidence[0]?.supports.length).toBeGreaterThan(1);
 
     const searchHeadless = createResearchOrchestrator({
       worker: {
@@ -157,7 +524,7 @@ describe('research orchestrator types', () => {
     const searchHeadlessResult = await searchHeadless.run({ query: 'lunar archive transfer' });
 
     expect(searchHeadlessResult.evidence[0]?.summary).toContain(lateAnswer);
-    expect(searchHeadlessResult.evidence[0]?.supports[0]).toContain(lateAnswer);
+    expect(searchHeadlessResult.evidence[0]?.supports).toContain(lateAnswer);
   });
 
   it('uses headless fallback when a direct url has weak http extraction', async () => {
@@ -184,10 +551,10 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'Read https://example.com/comment' });
 
-    expect(headlessFetch).toHaveBeenCalledWith({
+    expect(headlessFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://example.com/comment',
       query: 'Read https://example.com/comment'
-    });
+    }));
     expect(result.evidence[0]?.method).toBe('headless');
   });
 
@@ -215,10 +582,10 @@ describe('research orchestrator types', () => {
 
     const result = await orchestrator.run({ query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/' });
 
-    expect(headlessFetch).toHaveBeenCalledWith({
+    expect(headlessFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://www.reddit.com/r/selfhosted/comments/abc/example',
       query: 'Read https://www.reddit.com/r/selfhosted/comments/abc/example/'
-    });
+    }));
     expect(result.workerPass.gaps).toContainEqual({
       kind: 'fetch-failed',
       message: 'Thread source could not be read reliably: https://www.reddit.com/r/selfhosted/comments/abc/example'
@@ -486,7 +853,7 @@ describe('research orchestrator types', () => {
 
     expect(result.decision.action).toBe('research-again');
     expect(result.evidence).toHaveLength(1);
-    expect(headlessFetch).toHaveBeenCalledWith({ url: 'https://example.com/app', query: 'dynamic app' });
+    expect(headlessFetch).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/app', query: 'dynamic app' }));
   });
 
   it('answers once two strong sources exist and one is official', async () => {
@@ -812,5 +1179,65 @@ describe('orchestrator cancellation', () => {
     const worker = { run: vi.fn(async () => ({ ...weakPass, suggestedHeadlessUrl: undefined })) };
     await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'q', signal: controller.signal });
     expect(worker.run).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+  });
+});
+
+describe('orchestrator run budget', () => {
+  it('returns accumulated evidence at the deadline while an uncooperative worker remains pending', async () => {
+    vi.useFakeTimers();
+    let resolveWorker!: (value: ResearchWorkerResult) => void;
+    const firstEvidence = { title: 'Initial guide', url: 'https://example.com/guide', sourceKind: 'unknown' as const, method: 'http' as const, summary: 'Useful initial evidence', supports: ['Useful initial evidence'] };
+    const worker = { run: vi.fn()
+      .mockResolvedValueOnce({ searchQueries: ['initial'], evidence: [firstEvidence], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })
+      .mockImplementationOnce(() => new Promise<ResearchWorkerResult>((resolve) => { resolveWorker = resolve; })) };
+    const orchestrator = createResearchOrchestrator({
+      worker,
+      headlessFetch: vi.fn()
+    });
+
+    try {
+      const run = orchestrator.run({ query: 'pending search' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+
+      expect(worker.run).toHaveBeenCalledTimes(2);
+      expect(result.metadata.exhaustedBudget).toBe(true);
+      expect(result.metadata.budgetReason).toBe('deadline');
+      expect(result.evidence).toContainEqual(firstEvidence);
+
+      resolveWorker({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false });
+      await orchestrator.drain();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('research orchestrator search passes', () => {
+  it('does not count a planned search the worker refused before starting', async () => {
+    const worker = {
+      run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true }))
+    };
+    const result = await createResearchOrchestrator({ worker, fetchDirect: vi.fn(), headlessFetch: vi.fn() }).run({ query: 'how does the widget api work' });
+    expect(worker.run).toHaveBeenCalledTimes(1);
+    expect(result.metadata.searchPasses).toBe(0);
+  });
+  it('counts a search the worker claimed before a deadline abort cut it short', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = {
+        run: vi.fn(async ({ budget }: { budget?: { claimSearch: () => boolean } }) => {
+          budget?.claimSearch();
+          return new Promise<never>(() => undefined);
+        })
+      };
+      const run = createResearchOrchestrator({ worker, fetchDirect: vi.fn(), headlessFetch: vi.fn() }).run({ query: 'how does the widget api work' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.metadata.searchPasses).toBe(1);
+      expect(result.metadata).toMatchObject({ exhaustedBudget: true, budgetReason: 'deadline' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

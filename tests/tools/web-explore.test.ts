@@ -1,7 +1,151 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWebExploreTool } from '../../src/tools/web-explore.js';
+import type { ResearchProgress } from '../../src/orchestration/progress.js';
 
 describe('web_explore tool', () => {
+  it('records an injected elapsed duration without changing synthesized output', async () => {
+    let time = 100;
+    const webExplore = createWebExploreTool({
+      now: () => time,
+      explore: vi.fn().mockImplementation(async () => {
+        time = 650;
+        return { decision: { action: 'answer' }, evidence: [], workerPass: {} };
+      })
+    });
+    const result = await webExplore({ query: 'example', startedAt: 100 });
+    expect(result.durationMs).toBe(550);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('uses a local start time when callers do not supply one', async () => {
+    let time = 10;
+    const webExplore = createWebExploreTool({
+      now: () => time,
+      explore: vi.fn().mockImplementation(async () => {
+        time = 20;
+        return { decision: { action: 'answer' }, evidence: [], workerPass: {} };
+      })
+    });
+    await expect(webExplore({ query: 'example' })).resolves.toMatchObject({ durationMs: 10 });
+  });
+
+  it('records duration on terminal workflow errors and invalid queries', async () => {
+    let time = 10;
+    const terminal = createWebExploreTool({
+      now: () => time,
+      explore: vi.fn().mockImplementation(async () => {
+        time = 40;
+        return { decision: { action: 'research-again' }, evidence: [], workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'stopped' } };
+      })
+    });
+    await expect(terminal({ query: 'example', startedAt: 10 })).resolves.toMatchObject({ status: 'error', durationMs: 30 });
+
+    time = 60;
+    const invalid = createWebExploreTool({ now: () => time });
+    time = 65;
+    await expect(invalid({ query: ' ', startedAt: 60 })).resolves.toMatchObject({ status: 'error', durationMs: 5 });
+  });
+
+  it('keeps all successful required sources public while findings use the first five', async () => {
+    const required = Array.from({ length: 8 }, (_, index) => ({
+      title: `Required ${index + 1}`, url: `https://required.example/${index + 1}`, requestedUrl: `https://query.example/${index + 1}`,
+      sourceKind: 'official-docs' as const, method: 'http' as const, summary: `Required finding ${index + 1}`, supports: [`Required finding ${index + 1}`]
+    }));
+    const webExplore = createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [...required, { title: 'Extra', url: 'https://extra.example', sourceKind: 'community', method: 'http', summary: 'Extra finding', supports: ['Extra finding'] }], requiredSourceEvidence: required, requiredSourceFailures: [], workerPass: {} }) });
+    const result = await webExplore({ query: 'Read required links' });
+    expect(result.sources).toHaveLength(9);
+    expect(result.evidence).toHaveLength(9);
+    expect(result.findings).toEqual(required.slice(0, 5).map((item) => item.summary));
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3'], ['S4'], ['S5']]);
+  });
+  it('forces a model-facing caveat for incomplete GitHub thread comments even when answering', async () => {
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence: [{ title: 'Issue', url: 'https://github.com/o/r/issues/1', sourceKind: 'issue-thread', method: 'github', summary: 'detail', supports: ['detail'], partialComments: true }],
+        workerPass: {},
+        metadata: { searchPasses: 1, fetchedPages: 1, headlessAttempts: 0, exhaustedBudget: false, caveatReasons: ['partial-thread-comments'] }
+      })
+    });
+    const result = await webExplore({ query: 'issue' });
+    expect(result.caveat).toContain('the GitHub thread comments were incomplete');
+  });
+  it('pairs all five findings with their sources', async () => {
+    const evidence = Array.from({ length: 6 }, (_, index) => ({
+      title: `Source ${index + 1}`,
+      url: `https://example.com/${index + 1}`,
+      sourceKind: 'official-docs' as const,
+      method: index === 4 ? 'headless' as const : 'http' as const,
+      summary: `Finding ${index + 1}`,
+      supports: [`Finding ${index + 1}`]
+    }));
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence,
+        workerPass: {}
+      })
+    });
+
+    const result = await webExplore({ query: 'Compare the six sources' });
+
+    expect(result.findings).toEqual(['Finding 1', 'Finding 2', 'Finding 3', 'Finding 4', 'Finding 5']);
+    expect(result.sources).toEqual(evidence.slice(0, 5).map(({ title, url, method }) => ({ title, url, method })));
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3'], ['S4'], ['S5']]);
+    expect(result.evidence?.map((item) => item.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5']);
+    expect(result.presentation?.views.preview).toContain('[Browser] Finding 5');
+    expect(result.presentation?.views.verbose).toContain('Source 5: https://example.com/5');
+    expect(result.presentation?.views.verbose).not.toContain('Source 6: https://example.com/6');
+  });
+
+  it('returns bounded excerpts with available source metadata', async () => {
+    const supports = Array.from({ length: 3 }, (_, index) => `passage ${index}: ${'x'.repeat(1000)}`);
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'answer' },
+        evidence: Array.from({ length: 5 }, (_, index) => ({
+          title: `Source ${index}`, url: `https://example.com/${index}`, sourceKind: 'official-docs', method: 'http',
+          summary: `Finding ${index}`, supports, sectionAnchor: 'relevant', retrievedAt: '2026-10-17T00:00:00.000Z', truncated: false
+        })),
+        workerPass: {}
+      })
+    });
+
+    const result = await webExplore({ query: 'question' });
+
+    expect(result.evidence).toHaveLength(5);
+    expect(result.evidence?.[0]?.excerpts[0]).toEqual({ text: supports[0].slice(0, 900), anchor: 'relevant' });
+    expect(result.evidence?.[0]?.retrievedAt).toBe('2026-10-17T00:00:00.000Z');
+    expect(result.evidence?.[0]?.truncated).toBe(true);
+    expect(result.evidence?.flatMap((item) => item.excerpts).reduce((sum, item) => sum + item.text.length, 0)).toBeLessThanOrEqual(10000);
+    expect(result.evidence?.[4]?.excerpts.length).toBeGreaterThan(0);
+    expect(result.findingSourceIds?.every((ids, index) => ids[0] === result.evidence?.[index]?.id)).toBe(true);
+  });
+
+  it('passes progress events from the workflow to its caller', async () => {
+    const onProgress = vi.fn();
+    const explore = vi.fn(async ({ onProgress: emit }: { onProgress?: (event: ResearchProgress) => void }) => {
+      emit?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+    });
+    const webExplore = createWebExploreTool({ explore });
+
+    await webExplore({ query: 'example', onProgress });
+
+    expect(onProgress).toHaveBeenCalledWith({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete' }));
+  });
+  it('retains presentation stats on a terminal workflow error', async () => {
+    const presentationStats = { searches: 1, executedQueries: ['q'], pagesRead: 0, failedReads: 1, methods: {} };
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({ decision: { action: 'research-again' }, evidence: [], workerPass: {}, terminalFailure: { code: 'SEARCH_FAILED', message: 'failed' }, metadata: { searchPasses: 1, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false, presentationStats } })
+    });
+    const onProgress = vi.fn();
+    const result = await webExplore({ query: 'q', onProgress });
+    expect(result.status).toBe('error');
+    expect(result.metadata?.presentationStats).toEqual(presentationStats);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'complete', state: 'settled' }));
+  });
   it('returns clean findings, sources, and no caveat when evidence is sufficient', async () => {
     const webExplore = createWebExploreTool({
       explore: vi.fn().mockResolvedValue({
@@ -225,7 +369,7 @@ describe('web_explore tool', () => {
     expect(JSON.stringify(result)).not.toContain('lowValueOutcomes');
     expect(JSON.stringify(result)).not.toContain('suggestedHeadlessUrl');
     expect(result.findings).toEqual(['Community/practical context: A concise summary.']);
-    expect(result.presentation?.views.preview).toContain('- [web_fetch] Community/practical context: A concise summary.');
+    expect(result.presentation?.views.preview).toContain('- [HTTP] Community/practical context: A concise summary.');
   });
 });
 
@@ -256,5 +400,84 @@ describe('web_explore cancellation (#59)', () => {
     const controller = new AbortController();
     await createWebExploreTool({ explore })({ query: 'q', signal: controller.signal });
     expect(explore).toHaveBeenCalledWith({ query: 'q', signal: controller.signal });
+  });
+});
+
+describe('web_explore terminal source preservation', () => {
+  it('keeps earlier required evidence and reports required failures when later work terminates', async () => {
+    const direct = { title: 'Direct', url: 'https://example.test/final', requestedUrl: 'https://example.test/requested', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Direct finding', supports: ['Direct finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+      decision: { action: 'research-again' }, evidence: [direct], requiredSourceEvidence: [direct],
+      requiredSourceFailures: [{ url: 'https://example.test/bad', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'unreadable' }],
+      workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'worker stopped' }
+    }) })({ query: 'read links' });
+    expect(result.status).toBe('error');
+    expect(result.sources).toEqual([expect.objectContaining({ requestedUrl: 'https://example.test/requested' })]);
+    expect(result.evidence?.[0]).toMatchObject({ url: 'https://example.test/final' });
+    expect(result.presentation?.views.compact).toContain('Required source not read');
+  });
+
+  it('retains requested URL identity for a redirected required source', async () => {
+    const source = { title: 'Final', url: 'https://example.test/final', requestedUrl: 'https://example.test/requested', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Final evidence', supports: ['Final evidence'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [source], requiredSourceEvidence: [source], workerPass: {} }) })({ query: 'read source' });
+    expect(result.sources).toEqual([expect.objectContaining({ url: source.url, requestedUrl: source.requestedUrl })]);
+    expect(result.evidence?.[0]?.url).toBe(source.url);
+  });
+
+  it('includes two required sources before ranked discretionary findings and keeps source IDs aligned', async () => {
+    const required = [1, 2].map((n) => ({ title: `Required ${n}`, url: `https://required.test/${n}`, requestedUrl: `https://input.test/${n}`, sourceKind: 'official-docs' as const, method: 'http' as const, summary: `Required ${n}`, supports: [`Required ${n}`] }));
+    const discretionary = { title: 'Ranked', url: 'https://ranked.test', sourceKind: 'community' as const, method: 'http' as const, summary: 'Ranked finding', supports: ['Ranked finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [...required, discretionary], requiredSourceEvidence: required, workerPass: {} }) })({ query: 'compare' });
+    expect(result.sources.map((item) => item.url)).toEqual([...required.map((item) => item.url), discretionary.url]);
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2'], ['S3']]);
+  });
+
+  it('keeps search evidence when a required item has no requested URL', async () => {
+    const required = { title: 'Direct', url: 'https://direct.test', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Direct finding', supports: ['Direct finding'] };
+    const searched = { title: 'Searched', url: 'https://search.test', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Search finding', supports: ['Search finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [required, searched], requiredSourceEvidence: [required], workerPass: {} }) })({ query: 'research' });
+    expect(result.sources.map((item) => item.url)).toEqual([required.url, searched.url]);
+    expect(result.findings).toEqual(['Direct finding', 'Search finding']);
+    expect(result.findingSourceIds).toEqual([['S1'], ['S2']]);
+  });
+
+  it('reports a terminal required failure before its error when there are no findings', async () => {
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({ decision: { action: 'research-again' }, evidence: [], requiredSourceFailures: [{ url: 'https://bad.test', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'cannot read' }], workerPass: {}, terminalFailure: { code: 'UPSTREAM', message: 'stopped' } }) })({ query: 'read' });
+    expect(result.findings).toEqual([]);
+    const compact = result.presentation?.views.compact ?? '';
+    expect(compact.indexOf('Required source not read')).toBeLessThan(compact.indexOf('Research failed'));
+  });
+});
+
+describe('web_explore output redaction', () => {
+  it('redacts direct URL credentials and secret params in the success shape and views', async () => {
+    const direct = { title: 'Guide', url: 'https://example.test/guide?token=abc&id=5', requestedUrl: 'https://bob:pw@example.test/guide?token=abc&id=5', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'Guide finding', supports: ['Guide finding'] };
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+      decision: { action: 'answer' }, evidence: [direct], requiredSourceEvidence: [direct], workerPass: {}
+    }) })({ query: 'read the guide' });
+    expect(result.sources[0]).toMatchObject({ url: 'https://example.test/guide?token=REDACTED&id=5', requestedUrl: 'https://example.test/guide?token=REDACTED&id=5' });
+    expect(result.evidence?.[0]).toMatchObject({ requestedUrl: 'https://example.test/guide?token=REDACTED&id=5' });
+    expect(result.presentation?.views.verbose).not.toContain('bob');
+    expect(result.presentation?.views.verbose).not.toContain('token=abc');
+    expect(result.presentation?.views.verbose).toContain('id=5');
+    expect(result.findings).toEqual(['Guide finding']);
+  });
+
+  it('redacts required failure URLs, messages and error text on the terminal path', async () => {
+    const url = 'https://alice:secret@example.com/doc?token=secret&id=7';
+    const result = await createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+      decision: { action: 'research-again' }, evidence: [], workerPass: {},
+      requiredSourceFailures: [{ url, reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: `Direct URL could not be read reliably: ${url}` }],
+      metadata: { searchPasses: 0, requiredSourceFailures: [{ url, reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: `Direct URL could not be read reliably: ${url}` }] } as never,
+      terminalFailure: { code: 'WORKER_FAILED', message: `Stopped while reading ${url}` }
+    }) })({ query: 'read the link' });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('alice');
+    expect(serialized).not.toContain('secret');
+    expect(serialized).not.toContain('token=secret');
+    expect(result.requiredSourceFailures?.[0]).toMatchObject({ url: 'https://example.com/doc?token=REDACTED&id=7' });
+    expect(result.requiredSourceFailures?.[0]?.message).toContain('id=7');
+    expect(result.metadata?.requiredSourceFailures?.[0]?.url).toBe('https://example.com/doc?token=REDACTED&id=7');
+    expect(result.presentation?.views.compact).toContain('id=7');
   });
 });

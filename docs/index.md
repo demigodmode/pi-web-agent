@@ -22,7 +22,9 @@ Internally it can:
 - evaluate source quality, diversity, bot-checks, unreadable threads, and possible conflicts
 - stop with a specific caveat when the evidence is thin or uneven
 
-In `preview` or `verbose` mode, you can still see which internal reader produced each finding, for example `[web_fetch]`, `[web_fetch_headless]`, or one of the special-content readers like `[github]`. That gives you transparency without exposing a bunch of low-level public tools.
+Preview shows up to three plain findings. Verbose also shows sources, evidence,
+and how each source was read, such as `[HTTP]`, `[Browser]`, or a special-content
+reader like `[GitHub]`, `[PDF]`, or `[YouTube]`.
 
 ## What you get right now
 
@@ -32,10 +34,10 @@ Right now it gives you:
 
 - one public web research tool: `web_explore`
 - compact-by-default transcript output
-- preview/verbose modes that show internal research provenance
+- preview mode with up to three plain findings, plus verbose provenance and retrieval detail
 - a `/web-agent` settings UI for presentation and backend config
 - direct-link and forum/thread-aware research handling
-- keyless GitHub, PDF, and YouTube readers that pull the real content behind those links
+- keyless public GitHub content plus PDF and YouTube readers that pull the real content behind those links
 - questions about a pasted GitHub repo answered from a clone of its code, with commit-pinned citations
 - Esc cancels a running research pass, and one page failing to load doesn't fail the run
 - local-browser headless rendering with managed Chromium fallback

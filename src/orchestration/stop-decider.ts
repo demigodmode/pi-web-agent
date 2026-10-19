@@ -1,6 +1,6 @@
 import type { ResearchEvidence } from './research-types.js';
 import type { EvidenceQualityReport } from './evidence-quality.js';
-import { hasOfficialEvidence, strongEvidenceCount } from './evidence-ranker.js';
+import { hasOfficialEvidence } from './evidence-ranker.js';
 
 export type ResearchStepDecision =
   | { action: 'answer' }
@@ -29,17 +29,19 @@ function shouldSearchForBetterQuality({
   evidence,
   quality,
   passIndex,
-  maxPasses
+  maxPasses,
+  opinionQuestion
 }: {
   evidence: ResearchEvidence[];
   quality?: EvidenceQualityReport;
   passIndex: number;
   maxPasses: number;
+  opinionQuestion: boolean;
 }) {
   if (!quality) return false;
   if (passIndex + 1 >= maxPasses) return false;
-  if (quality.flags.hasOnlyCommunityEvidence) return true;
-  if (quality.flags.hasLowDiversity && !hasOfficialDocsAndApi(evidence)) return true;
+  if (quality.flags.hasOnlyCommunityEvidence && !opinionQuestion) return true;
+  if (quality.flags.hasLowDiversity && !hasOfficialDocsAndApi(evidence) && !evidence.some((item) => item.sourceKind === 'unknown') && !opinionQuestion) return true;
   return false;
 }
 
@@ -50,7 +52,8 @@ export function decideNextResearchStep({
   maxPasses,
   headlessAttempts,
   maxHeadlessAttempts,
-  quality
+  quality,
+  opinionQuestion = false
 }: {
   evidence: ResearchEvidence[];
   suggestedHeadlessUrls: string[];
@@ -59,10 +62,13 @@ export function decideNextResearchStep({
   headlessAttempts: number;
   maxHeadlessAttempts: number;
   quality?: EvidenceQualityReport;
+  opinionQuestion?: boolean;
 }): ResearchStepDecision {
-  const strongEnough = strongEvidenceCount(evidence) >= 2 && hasOfficialEvidence(evidence);
+  const communityEvidence = evidence.every((item) => item.sourceKind === 'community' || item.sourceKind === 'issue-thread' || item.sourceKind === 'official-discussion');
+  const strongEnough = new Set(evidence.map((item) => item.url)).size >= 2 &&
+    (hasOfficialEvidence(evidence) || evidence.some((item) => item.sourceKind === 'unknown') || (opinionQuestion && communityEvidence));
 
-  if (strongEnough && shouldSearchForBetterQuality({ evidence, quality, passIndex, maxPasses })) {
+  if (strongEnough && shouldSearchForBetterQuality({ evidence, quality, passIndex, maxPasses, opinionQuestion })) {
     return { action: 'search-again' };
   }
 

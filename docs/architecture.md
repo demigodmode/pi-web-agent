@@ -31,7 +31,10 @@ The lower-level capabilities still exist in code, but they are internal steps no
 - headless fetch is for selected browser-rendered reads
 - orchestration decides when enough evidence exists and when source-quality concerns need another pass or a caveat
 
-Keeping those responsibilities separate still matters. It lets the package show provenance like `[web_fetch]`, `[web_fetch_headless]`, `[github]`, `[pdf]`, or `[youtube]` in preview/verbose output without forcing the outer model to manually chain those steps.
+Keeping those responsibilities separate still matters. It lets the package show
+provenance like `[HTTP]`, `[Browser]`, `[GitHub]`, `[PDF]`, or
+`[YouTube]` in verbose output without forcing the outer model to manually
+chain those steps. Preview keeps only plain findings.
 
 ## Special-content readers
 
@@ -39,13 +42,13 @@ A GitHub, PDF, or YouTube link handled as a generic web page is mostly useless: 
 
 A resolver sits in front of the fetcher (wired in `src/backends/factory.ts`). For each URL it asks the readers whether they handle it; the first match reads it and everything else falls through to the normal HTTP → headless path. PDFs served without a `.pdf` extension are also caught after the fetch, by content type.
 
-Each reader returns the same shape as a normal fetch, so ranking, evidence, and presentation downstream don't know or care where the text came from. They're keyless: GitHub uses the raw/API endpoints (`GITHUB_TOKEN` just raises the rate limit), PDFs go through unpdf, YouTube pulls the caption track. When a reader can't get anything useful (a scanned PDF with no text layer, a video with no captions), it returns a caveat instead of throwing, and the research loop treats it like any other weak read.
+Each reader returns the same shape as a normal fetch, so ranking, evidence, and presentation downstream don't know or care where the text came from. Public GitHub content is keyless; private GitHub files, issues, pull requests, and READMEs need `GITHUB_TOKEN` or `gh auth login`. PDFs go through unpdf, and YouTube pulls the caption track. When a reader can't get anything useful (a scanned PDF with no text layer, a video with no captions), it returns a caveat instead of throwing, and the research loop treats it like any other weak read.
 
 ## Repo research
 
 A repo or folder link typed into the question takes a different path from the lightweight README reader. `src/repo/` resolves the link to one commit through the GitHub API, clones it at depth 1 over HTTPS into a per-session cache, and searches the files locally with plain keyword matching. The result goes back as the same fetch-shaped response, so ranking and presentation treat it like any other read.
 
-Git runs with its own isolated environment: no system or user git config, only HTTPS allowed, and the token goes in as an HTTP header rather than on the command line. The cache lives in a per-user private folder in the temp directory and is closed when the session ends. When the repo can't be read (too big, no `git`, clone timeout, not found, rate limit), the research run stops with that reason instead of falling back to the README. When the search stops early on a large repo, `src/repo/repo-research.ts` adds a note saying only part of it was searched.
+Git runs with its own isolated environment: no system or user git config, only HTTPS allowed, and the token goes in as an HTTP header rather than on the command line. The cache lives in a per-user private folder in the temp directory and is closed when the session ends. When one required repo cannot be read (too big, no `git`, clone timeout, not found, rate limit), its failure remains explicit and the repo is never replaced with a README. Later direct links in the same request can still be read. When the search stops early on a large repo, `src/repo/repo-research.ts` adds a note saying only part of it was searched.
 
 ## Cancellation
 
@@ -63,6 +66,6 @@ A bot-check page should not become a source.
 
 A same-host or community-only source set should not get treated like broad corroboration.
 
-And if more evidence is needed, the model should call `web_explore` again with a narrower query instead of dropping into shell commands or raw HTTP calls.
+If more evidence is needed, a narrower follow-up `web_explore` call keeps the ranking, citations, and caveats. The extension doesn't stop Pi from using its other tools, though: `gh`, `git`, or anything the user asks for are still fair game for repository, issue, and pull request work.
 
 Those boundaries make failures easier to understand and make it harder for the package to lie by accident.

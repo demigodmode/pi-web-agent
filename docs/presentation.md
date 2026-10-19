@@ -26,10 +26,10 @@ If you want more detail inline, switch modes in `/web-agent` settings instead of
 `web_explore` can be shown in one visible mode at a time:
 
 - `compact`: the shortest useful summary
-- `preview`: findings with internal provenance
-- `verbose`: findings, sources, caveats, and internal provenance
+- `preview`: up to three plain findings
+- `verbose`: findings, sources, evidence, caveats, and retrieval details
 
-These modes control terminal display. The model receives the findings, source citations, and caveats in every mode, including `compact`.
+These modes control terminal display. The model receives the same full findings, evidence, citations, caveats, and required-source notices in every mode, including `compact`.
 
 The important part is that these are not stacked on top of each other.
 
@@ -39,11 +39,27 @@ If a result is shown in `preview`, you get the preview body instead of a compact
 
 Out of the box, `web_explore` uses `compact`.
 
-Example compact output:
+Each call has a stable heading. Pi owns the outer shell and `⎿` marker; they
+are shown here as terminal context, rather than text emitted by the extension:
 
 ```text
-Reviewed 3 sources · synthesized answer with 3 findings
+web_explore ("Vitest coverage configuration")
+  ⎿ 3 searches · 4 pages read · 8s
 ```
+
+While research runs, Pi replaces one activity line with the latest meaningful
+step. It does not append a growing event log or show page text:
+
+```text
+web_explore ("Vitest coverage configuration")
+  ⎿ Reading: vitest.dev/guide/coverage · 2 reads started
+```
+
+`searches` counts logical search requests that actually started. `pages read`
+counts distinct readable documents that completed successfully, including a
+direct URL or repository read where applicable. A fallback does not turn one
+logical search into several searches, and retries or redirects do not turn one
+document into several pages. The elapsed time is measured for this call.
 
 If no useful evidence was found, compact output says that plainly:
 
@@ -51,18 +67,45 @@ If no useful evidence was found, compact output says that plainly:
 No usable evidence found
 ```
 
-## Preview and verbose provenance
-
-Preview and verbose modes show the internal reader that produced each finding:
+When a direct source the user supplied cannot be read, every mode preserves that failure instead of presenting unrelated findings as a review of that source:
 
 ```text
-- [web_fetch] Official docs say ...
-- [web_fetch_headless] Rendered page says ...
-
-Internal research: web_search ×2, web_fetch ×5, web_fetch_headless ×1
+Required source not read: https://github.com/owner/repo/issues/42. GitHub resource was not found or may require access. The requirements of this source were not checked.
 ```
 
-Those labels are internal provenance. They do not mean `web_search`, `web_fetch`, or `web_fetch_headless` are public tools in normal use.
+Use a follow-up after fixing access or narrowing the source. A failed required source is never represented as reviewed.
+
+Required-source notices appear before findings in compact, preview, and verbose
+views. They name the requested URL, explain the failure, and say that its
+requirements were not checked. Other partial evidence gets a short limitation
+in compact and preview; verbose retains the fuller caveat and diagnostics.
+
+## Preview and verbose detail
+
+Preview keeps the result short by showing at most three plain findings. This is
+an intentional reduction: it omits reader labels, remaining findings, source
+lists, and internal retrieval detail.
+
+```text
+web_explore ("Vitest coverage configuration")
+  ⎿ 3 searches · 4 pages read · 8s
+
+    Findings
+      • Vitest supports V8 and Istanbul coverage providers.
+      • Coverage thresholds can be set in the test configuration.
+      • Provider behavior differs for some source transforms.
+```
+
+Verbose keeps the full terminal detail: executed queries, all findings, sources,
+evidence, caveats, backend attempts, and a successful-read breakdown. Its
+method labels include HTTP, Browser, Firecrawl, GitHub, PDF, YouTube, and
+Repository. `Repository` means local repository research; it is distinct from
+the GitHub reader. The Queries section is absent when the run only read direct
+sources.
+
+Expanding a result in Pi opens its verbose view regardless of the inline mode.
+Saved results retain the presentation mode selected when they ran. Results from
+older sessions use the available legacy presentation as a fallback.
 
 ## The fastest way to change it
 
@@ -185,7 +228,7 @@ Backend provider, URL, and fallback settings are usually easier to edit through 
 A good practical rule:
 
 - use `compact` if you mostly want clean transcripts
-- use `preview` if you want findings plus internal provenance
+- use `preview` if you want up to three plain findings
 - use `verbose` if you want sources and caveats inline too
 
 For most people, `compact` as the default is probably right. Use `preview` or `verbose` when you are debugging research behavior or want to inspect what happened under the hood.

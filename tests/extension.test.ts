@@ -1,7 +1,166 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Text } from '@earendil-works/pi-tui';
 import extension from '../src/extension.js';
+import { createWebExploreTool } from '../src/tools/web-explore.js';
+import { createResearchOrchestrator } from '../src/orchestration/research-orchestrator.js';
 
 describe('Pi extension entrypoint', () => {
+  it('renders a call heading with active theme colors', () => {
+    const registerTool = vi.fn();
+    extension({ registerTool, registerCommand: vi.fn(), on: vi.fn() } as never);
+
+    const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
+    const fg = vi.fn((_color: string, text: string) => text);
+    const heading = webExplore.renderCall(
+      { query: ' Vitest\ncoverage ' },
+      { fg },
+      { argsComplete: true }
+    ) as Text;
+
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore ("Vitest coverage")');
+    expect(fg).toHaveBeenCalledWith('toolTitle', 'web_explore');
+    expect(fg).toHaveBeenCalledWith('muted', ' ("Vitest coverage")');
+  });
+
+  it('renders a readable fallback call heading while arguments stream', () => {
+    const registerTool = vi.fn();
+    extension({ registerTool, registerCommand: vi.fn(), on: vi.fn() } as never);
+
+    const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
+    const heading = webExplore.renderCall({}, { fg: (_color: string, text: string) => text }, { argsComplete: false }) as Text;
+
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore (…)');
+  });
+
+  it('renders the same call heading without any live workflow state', () => {
+    const registerTool = vi.fn();
+    extension({ registerTool, registerCommand: vi.fn(), on: vi.fn() } as never);
+
+    const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
+    const heading = webExplore.renderCall(
+      { query: 'Review https://alice:secret@example.com/docs?token=secret now' },
+      { fg: (_color: string, text: string) => text },
+      { argsComplete: true, lastComponent: undefined }
+    ) as Text;
+
+    expect(heading.render(120).join('\n').trimEnd()).toBe('web_explore ("Review example.com/docs now")');
+  });
+
+  it('sends short progress updates through Pi without exposing evidence text', async () => {
+    const updates = vi.fn();
+    const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      onProgress?.({ phase: 'fetch', searches: 1, fetches: 2, headless: 0 });
+      return { status: 'ok' as const, findings: ['Secret extracted evidence'], sources: [] };
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(updates.mock.calls)).toContain('Searching');
+    expect(JSON.stringify(updates.mock.calls)).not.toContain('Secret extracted evidence');
+  });
+
+  it('keeps researching when the Pi progress callback throws', async () => {
+    const injected = vi.fn(async ({ onProgress }: { onProgress?: (event: { phase: string; searches: number; fetches: number; headless: number }) => void }) => {
+      onProgress?.({ phase: 'search', searches: 1, fetches: 0, headless: 0 });
+      return { status: 'ok' as const, findings: [], sources: [] };
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+
+    await expect(tools[0].execute('call-1', { query: 'example' }, undefined, () => { throw new Error('display gone'); })).resolves.toMatchObject({ isError: false });
+  });
+  it('shows the complete prompt once through the normal web_explore tool path', async () => {
+    const updates = vi.fn();
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({ decision: { action: 'answer' }, evidence: [], workerPass: {} })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates.mock.calls.map(([update]) => update.content[0].text).filter((text: string) => text === 'Research complete.')).toHaveLength(1);
+  });
+  it('shows a fetch target and its claimed read count through the normal web_explore tool path', async () => {
+    const updates = vi.fn();
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn(async ({ onProgress }) => {
+        onProgress?.({ phase: 'fetch', state: 'started', target: 'https://alice:secret@example.com/guide?token=secret', searches: 1, fetches: 2, headless: 0 });
+        return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+      })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    expect(updates.mock.calls.map(([update]) => update.content[0].text)).toContain('Reading: example.com/guide · 2 reads started');
+  });
+  it('replaces out-of-order settled fetch targets with aggregate readable documents', async () => {
+    const updates = vi.fn();
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn(async ({ onProgress }) => {
+        for (const [index, target] of ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'].entries()) {
+          onProgress?.({ phase: 'fetch', state: 'started', target, searches: 1, fetches: index + 1, headless: 0, pagesRead: 0 });
+        }
+        for (const [pagesRead, target] of ['https://example.com/c', 'https://example.com/a', 'https://example.com/b'].entries()) {
+          onProgress?.({ phase: 'fetch', state: 'settled', target, searches: 1, fetches: 3, headless: 0, pagesRead: pagesRead + 1 });
+        }
+        return { decision: { action: 'answer' as const }, evidence: [], workerPass: {} };
+      })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    await tools[0].execute('call-1', { query: 'example' }, undefined, updates);
+
+    const settled = updates.mock.calls.map(([update]) => update.content[0].text).filter((text: string) => /pages? read/u.test(text));
+    expect(settled).toEqual(['1 page read · 3 reads started', '2 pages read · 3 reads started', '3 pages read · 3 reads started']);
+    expect(settled.join('\n')).not.toContain('example.com');
+  });
+  it('coalesces repeated live activity and ignores worker updates after caller cancellation', async () => {
+    let emit: ((event: { phase: 'search'; state: 'started'; target: string; searches: number; fetches: number; headless: number }) => void) | undefined;
+    const injected = vi.fn(({ onProgress, signal }: { onProgress?: typeof emit; signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
+      emit = onProgress;
+      signal?.addEventListener('abort', () => reject(new DOMException('Operation aborted', 'AbortError')), { once: true });
+    }));
+    const tools: any[] = [];
+    const controller = new AbortController();
+    const updates = vi.fn();
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: injected } as never);
+    const pending = tools[0].execute('call-1', { query: 'example' }, controller.signal, updates);
+    const rejected = expect(pending).rejects.toThrow('Operation aborted');
+    await vi.waitFor(() => expect(emit).toBeDefined());
+    emit?.({ phase: 'search', state: 'started', target: 'example', searches: 1, fetches: 0, headless: 0 });
+    emit?.({ phase: 'search', state: 'started', target: 'example', searches: 1, fetches: 0, headless: 0 });
+    controller.abort();
+    emit?.({ phase: 'search', state: 'started', target: 'late evidence text', searches: 1, fetches: 0, headless: 0 });
+    await rejected;
+    const texts = updates.mock.calls.map(([update]) => update.content[0].text);
+    expect(texts.filter((text: string) => text === 'Searching: example')).toHaveLength(1);
+    expect(texts).toContain('Cancelled');
+    expect(texts).not.toContain('Searching: late evidence text');
+  });
+
+  it('passes one injected clock start time through to each simultaneous execution', async () => {
+    const starts: number[] = [];
+    const tools: any[] = [];
+    let time = 10;
+    extension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreNow: () => ++time,
+      __webExploreTool: vi.fn(async ({ startedAt }) => {
+        starts.push(startedAt);
+        return { status: 'ok', findings: [], sources: [] };
+      })
+    } as never);
+    await Promise.all([tools[0].execute('a', { query: 'one' }), tools[0].execute('b', { query: 'two' })]);
+    expect(starts).toEqual([11, 12]);
+  });
   it('reuses the configured web_explore workflow while backend config is unchanged', async () => {
     vi.resetModules();
     const createResearchWorkflow = vi.fn().mockReturnValue({
@@ -169,10 +328,13 @@ describe('Pi extension entrypoint', () => {
     expect(Object.keys(webExplore.parameters.properties)).toEqual(['query']);
   });
 
-  it('adds a short research hint that web_explore handles research internally', async () => {
+  it('does not restrict Pi tools', () => {
     const handlers = new Map<string, Function>();
+    const registeredTools: any[] = [];
     const pi = {
-      registerTool: vi.fn(),
+      registerTool: vi.fn((tool) => {
+        registeredTools.push(tool);
+      }),
       registerCommand: vi.fn(),
       on: vi.fn((eventName: string, handler: Function) => {
         handlers.set(eventName, handler);
@@ -181,22 +343,19 @@ describe('Pi extension entrypoint', () => {
 
     extension(pi as never);
 
-    const beforeAgentStart = handlers.get('before_agent_start');
-    expect(beforeAgentStart).toBeDefined();
-
-    const result = await beforeAgentStart!(
-      {
-        prompt: 'Find current Vitest coverage docs and summarize V8 setup.',
-        images: [],
-        systemPrompt: 'Base system prompt'
-      },
-      {}
+    expect(handlers.has('before_agent_start')).toBe(false);
+    const tool = registeredTools.find((item) => item.name === 'web_explore');
+    expect(tool.description).toBe(
+      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
+      'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Include every link the user supplied, unchanged, in the query: links in the query are read directly (GitHub issues and pull requests through the API, GitHub repositories cloned and searched), and reported if they cannot be read. ' +
+      'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.'
     );
-
-    expect(result.systemPrompt).toContain('use web_explore');
-    expect(result.systemPrompt).toContain('handles search, fetch, source ranking, and headless escalation internally');
-    expect(result.systemPrompt).toContain('call web_explore again with a narrower query');
-    expect(result.systemPrompt).toContain('do not use shell/network commands');
+    expect(tool.description).toContain('Prefer this for ordinary web research');
+    expect(tool.description).toContain('Include every link the user supplied, unchanged, in the query');
+    expect(tool.description).toContain('git and gh');
+    expect(tool.parameters.properties.query.description).toBe('Web research question. Include any links the user gave, unchanged.');
+    expect(tool.description).not.toContain('do not use shell/network commands');
   });
 
   it('does not register a context hook that injects reminder text into the visible session', () => {
@@ -225,8 +384,11 @@ describe('Pi extension entrypoint', () => {
       },
       __webExploreTool: vi.fn().mockResolvedValue({
         status: 'ok',
+        durationMs: 550,
         findings: ['A concise finding.'],
         sources: [{ title: 'Source', url: 'https://example.com', method: 'http' }],
+        findingSourceIds: [['S1']],
+        evidence: [{ id: 'S1', title: 'Source', url: 'https://example.com', method: 'http', excerpts: [{ text: 'The source passage that supports the finding.', anchor: 'details' }], truncated: false }],
         presentation: {
           mode: 'compact',
           views: {
@@ -246,9 +408,15 @@ describe('Pi extension entrypoint', () => {
 
     // The model receives the actual findings, not the compact count line.
     expect(result.content[0].text).toContain('A concise finding.');
+    expect(result.content[0].text).toContain('[S1] A concise finding.');
+    expect(result.content[0].text).toContain('The source passage that supports the finding.');
+    expect(result.content[0].text).toContain('[S1] Source: https://example.com');
     expect(result.content[0].text).not.toContain('Reviewed');
+    expect(result.content[0].text).not.toContain('550');
     // The compact terminal view is carried separately for the renderer.
     expect(result.details.terminalText).toBe('Reviewed 1 sources · synthesized answer with 1 findings');
+    expect(result.details.selectedMode).toBe('compact');
+    expect(result.details.terminalTextExpanded).toBe('Findings\n- A concise finding.');
     // renderResult (terminal) shows the compact view, not the full findings.
     const rendered = webExplore
       .renderResult(result, { expanded: false, isPartial: false }, {}, {})
@@ -257,6 +425,127 @@ describe('Pi extension entrypoint', () => {
     expect(rendered).toContain('Reviewed 1 sources');
     expect(rendered).not.toContain('A concise finding.');
   }, 15000);
+
+  it('keeps successful direct evidence in model content when later research terminates', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'error',
+        findings: ['Direct source finding.'],
+        sources: [{ title: 'Direct source', url: 'https://final.example/doc', requestedUrl: 'https://input.example/doc', method: 'http' }],
+        findingSourceIds: [['S1']],
+        evidence: [{ id: 'S1', title: 'Direct source', url: 'https://final.example/doc', method: 'http', excerpts: [{ text: 'Direct supporting passage.' }], truncated: false }],
+        requiredSourceFailures: [{ url: 'https://failed.example/issue', reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: 'Could not read issue.' }],
+        error: { code: 'WORKER_FAILED', message: 'Later research stopped.' },
+        presentation: { mode: 'compact', views: { compact: 'terminal' } }
+      })
+    };
+    extension(pi as never);
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'links' });
+    const text = result.content[0].text as string;
+    expect(text).toContain('Required source not read: https://failed.example/issue');
+    expect(text).toContain('[S1] Direct source finding.');
+    expect(text).toContain('[S1] Direct source: https://final.example/doc');
+    expect(text).toContain('Direct supporting passage.');
+    expect(text).toContain('Research failed: Later research stopped.');
+    expect(text.indexOf('Required source not read')).toBeLessThan(text.indexOf('[S1] Direct source finding.'));
+    expect(text.indexOf('[S1] Direct source finding.')).toBeLessThan(text.indexOf('Research failed:'));
+    expect(text).not.toContain('[S2]');
+  });
+
+  it('sends an unreadable direct-source caveat to the model when no evidence was usable', async () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'The direct URL could not be read.'
+      })
+    };
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const result = await webExplore.execute('tool-call-1', { query: 'https://example.com/unreadable' });
+
+    expect(result.content[0].text).toContain('The direct URL could not be read.');
+    expect(result.details.terminalText).toBe('web_explore result');
+  });
+
+  it('puts a required-source failure before the empty-result caveat in model content', async () => {
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'Evidence is partial: one or more linked sources could not be read reliably.',
+        requiredSourceFailures: [{
+          url: 'https://github.com/acme/private/issues/14',
+          reason: 'read-failed',
+          code: 'GITHUB_FETCH_FAILED',
+          message: 'GitHub resource was not found or is inaccessible.'
+        }]
+      })
+    } as never);
+
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'Read issue 14' });
+    const modelText = result.content[0].text as string;
+    expect(modelText).toMatch(/^Required source not read: https:\/\/github\.com\/acme\/private\/issues\/14\./);
+    expect(modelText).toContain('The requirements of this source were not checked.');
+    expect(modelText).toContain('No usable evidence found.');
+    expect(modelText.indexOf('Required source not read')).toBeLessThan(modelText.indexOf('No usable evidence found.'));
+  });
+
+  it('sanitizes terminal and bidi formatting controls in persisted legacy presentation views', () => {
+    const tools: any[] = [];
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn()
+    };
+    const osc = '\u001b]8;;https://example.com\u0007linked\u001b]8;;\u0007';
+    const bidi = '\u202d\u202e\u2066\u2069';
+
+    extension(pi as never);
+
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const persistedResult = {
+      details: {
+        presentation: {
+          views: {
+            compact: `Legacy \u001b[31mcompact ${bidi}${osc}`,
+            verbose: `Legacy first line\r\nLegacy second line ${bidi}${osc}`
+          }
+        }
+      }
+    };
+    const compact = webExplore
+      .renderResult(persistedResult, { expanded: false, isPartial: false }, {}, {})
+      .render(120)
+      .join('\n');
+    const verboseLines = webExplore
+      .renderResult(persistedResult, { expanded: true, isPartial: false }, {}, {})
+      .render(120);
+    const verbose = verboseLines.join('\n');
+
+    for (const output of [compact, verbose]) {
+      expect(output).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]/);
+      expect(output).not.toContain('\u001b');
+    }
+    expect(verboseLines.map((line: string) => line.trimEnd())).toEqual([
+      'Legacy first line',
+      'Legacy second line linked'
+    ]);
+  });
 
   it('falls back to built-in defaults when the store cannot load config', async () => {
     const tools: any[] = [];
@@ -421,6 +710,190 @@ describe('Pi extension entrypoint', () => {
     await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
   });
 
+  it('closes a workflow whose config load completes during session shutdown', async () => {
+    vi.resetModules();
+    let resolveConfig!: (value: unknown) => void;
+    let releaseRun!: () => void;
+    const configLoaded = new Promise<unknown>((resolve) => { resolveConfig = resolve; });
+    const workflow = {
+      run: vi.fn(() => new Promise((resolve) => { releaseRun = () => resolve(answer); })),
+      close: vi.fn(async () => undefined)
+    };
+    const createResearchWorkflow = vi.fn(() => workflow);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    const firstCache = { close: vi.fn(async () => undefined) };
+    const secondCache = { close: vi.fn(async () => undefined) };
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: vi.fn().mockReturnValueOnce(firstCache).mockReturnValue(secondCache),
+      __presentationConfigStore: {
+        load: vi.fn().mockImplementationOnce(() => configLoaded).mockResolvedValue({
+          effectiveConfig: { defaultMode: 'compact', tools: {} },
+          effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+        })
+      }
+    };
+
+    dynamicExtension(pi as never);
+    const execution = tools.find((tool) => tool.name === 'web_explore').execute('call-1', { query: 'x' });
+    await vi.waitFor(() => expect(pi.__presentationConfigStore.load).toHaveBeenCalledTimes(1));
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'new' });
+    resolveConfig({
+      effectiveConfig: { defaultMode: 'compact', tools: {} },
+      effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }
+    });
+
+    await vi.waitFor(() => expect(workflow.run).toHaveBeenCalledTimes(1));
+    expect(workflow.close).not.toHaveBeenCalled();
+    releaseRun();
+    await execution;
+    await shutdown;
+
+    expect(createResearchWorkflow).toHaveBeenCalledWith(expect.objectContaining({ repoCache: firstCache }));
+    expect(workflow.close).toHaveBeenCalledTimes(1);
+    expect(firstCache.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a workflow after configuration finishes beyond the shutdown grace period', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    let resolveConfig!: (value: unknown) => void;
+    const configLoaded = new Promise<unknown>((resolve) => { resolveConfig = resolve; });
+    const workflow = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    const createResearchWorkflow = vi.fn(() => workflow);
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    const firstCache = { close: vi.fn(async () => undefined) };
+    const secondCache = { close: vi.fn(async () => undefined) };
+    const pi = {
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: vi.fn().mockReturnValueOnce(firstCache).mockReturnValue(secondCache),
+      __presentationConfigStore: { load: vi.fn().mockImplementationOnce(() => configLoaded) }
+    };
+
+    try {
+      dynamicExtension(pi as never);
+      const execution = tools.find((tool) => tool.name === 'web_explore').execute('call-1', { query: 'x' });
+      await vi.waitFor(() => expect(pi.__presentationConfigStore.load).toHaveBeenCalledTimes(1));
+      const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'new' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await shutdown;
+
+      resolveConfig({ effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } } });
+      await expect(execution).rejects.toThrow('session has ended');
+      expect(createResearchWorkflow).not.toHaveBeenCalled();
+      expect(firstCache.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for detached workflow work before closing the session repo cache', async () => {
+    vi.resetModules();
+    let releaseClose!: () => void;
+    const workflow = {
+      run: vi.fn().mockResolvedValue(answer),
+      close: vi.fn(() => new Promise<void>((resolve) => { releaseClose = resolve; }))
+    };
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow: vi.fn(() => workflow) }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+    await tools[0].execute('call-1', { query: 'x' });
+
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    await vi.waitFor(() => expect(workflow.close).toHaveBeenCalledTimes(1));
+    expect(closeCache).not.toHaveBeenCalled();
+    releaseClose();
+    await shutdown;
+    expect(closeCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes session shutdown when workflow close never settles', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const close = vi.fn(() => new Promise<void>(() => undefined));
+    vi.doMock('../src/orchestration/index.js', () => ({
+      createResearchWorkflow: vi.fn(() => ({ run: vi.fn().mockResolvedValue(answer), close }))
+    }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+
+    try {
+      await tools[0].execute('call-1', { query: 'x' });
+      const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(closeCache).toHaveBeenCalledTimes(1);
+      await shutdown;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for a replaced workflow before closing its session repo cache', async () => {
+    vi.resetModules();
+    let releaseRun!: () => void;
+    const first = {
+      run: vi.fn(() => new Promise((resolve) => { releaseRun = () => resolve(answer); })),
+      close: vi.fn(async () => undefined)
+    };
+    const second = { run: vi.fn().mockResolvedValue(answer), close: vi.fn(async () => undefined) };
+    vi.doMock('../src/orchestration/index.js', () => ({
+      createResearchWorkflow: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second)
+    }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const closeCache = vi.fn(async () => undefined);
+    const handlers: Record<string, (event: unknown) => Promise<void>> = {};
+    const tools: any[] = [];
+    let backend = 'duckduckgo';
+    dynamicExtension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(),
+      on: vi.fn((event: string, handler: (event: unknown) => Promise<void>) => { handlers[event] = handler; }),
+      __repoCacheFactory: () => ({ close: closeCache }),
+      __presentationConfigStore: configStore(() => ({ search: { provider: backend }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } }))
+    } as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const inFlight = webExplore.execute('call-1', { query: 'first' });
+    await vi.waitFor(() => expect(first.run).toHaveBeenCalledTimes(1));
+    backend = 'brave';
+    await webExplore.execute('call-2', { query: 'second' });
+
+    const shutdown = handlers.session_shutdown({ type: 'session_shutdown', reason: 'quit' });
+    expect(first.close).not.toHaveBeenCalled();
+    expect(closeCache).not.toHaveBeenCalled();
+    releaseRun();
+    await inFlight;
+    await shutdown;
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(second.close).toHaveBeenCalledTimes(1);
+    expect(closeCache).toHaveBeenCalledTimes(1);
+  });
+
   it('owns the repo cache: shutdown awaits its close, and the next session gets a fresh one', async () => {
     vi.resetModules();
     const { mkdtempSync, existsSync, rmSync } = await import('node:fs');
@@ -477,5 +950,81 @@ describe('Pi extension entrypoint', () => {
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
+  });
+});
+
+describe('web_explore credential redaction through the registered tool', () => {
+  it('keeps userinfo and token values out of model text, terminal views, and saved details', async () => {
+    const url = 'https://alice:secret@example.com/doc?token=secret&id=7';
+    const tools: any[] = [];
+    const webExplore = createWebExploreTool({
+      explore: vi.fn().mockResolvedValue({
+        decision: { action: 'research-again' },
+        evidence: [],
+        workerPass: {},
+        requiredSourceFailures: [{ url, reason: 'read-failed', code: 'DIRECT_SOURCE_READ_FAILED', message: `Direct URL could not be read reliably: ${url}` }],
+        terminalFailure: { code: 'WORKER_FAILED', message: `Stopped while reading ${url}` }
+      })
+    });
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: webExplore } as never);
+
+    const result = await tools[0].execute('call-1', { query: 'links' });
+    const text = result.content[0].text as string;
+    const saved = JSON.stringify(result.details);
+    for (const output of [text, saved]) {
+      expect(output).not.toContain('alice');
+      expect(output).not.toContain('secret');
+      expect(output).not.toContain('token=secret');
+      expect(output).toContain('id=7');
+    }
+    expect(result.details.presentation.views.compact).toContain('id=7');
+  });
+});
+
+describe('web_explore redaction on the real orchestrator path', () => {
+  it('keeps a failed compare link credentials out of caveat, views, and saved details', async () => {
+    const url = 'https://alice:pw@example.com/a?token=secret&id=1';
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url: target }: { url: string }) => target.includes('other.example')
+        ? { status: 'ok' as const, url: target, content: { title: 'Other', text: 'Other product details that are readable.' }, metadata: { method: 'http' as const, cacheHit: false } }
+        : { status: 'needs_headless' as const, url: target, metadata: { method: 'http' as const, cacheHit: false } }),
+      headlessFetch: vi.fn(async () => { throw new Error('reader timeout'); })
+    });
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __webExploreTool: createWebExploreTool({ explore: orchestrator as never }) } as never);
+
+    const result = await tools[0].execute('call-1', { query: `Compare ${url} with https://other.example/b` });
+    const text = result.content[0].text as string;
+    const outputs = [text, JSON.stringify(result.details), Object.values(result.details.presentation.views).join('\n')];
+    expect(result.details.caveat).toContain('comparison evidence is missing for https://example.com/a?token=REDACTED&id=1');
+    for (const output of outputs) {
+      expect(output).not.toContain('alice');
+      expect(output).not.toContain('pw@');
+      expect(output).not.toContain('token=secret');
+    }
+    expect(text).toContain('id=1');
+    expect(JSON.stringify(result.details)).toContain('id=1');
+  });
+});
+
+describe('web_explore result rendering', () => {
+  function renderer() {
+    const tools: any[] = [];
+    extension({ registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn() } as never);
+    const tool = tools.find((item) => item.name === 'web_explore');
+    return (toolResult: unknown, expanded = false) => (tool.renderResult(toolResult, { expanded }) as Text).render(120).join('\n').trimEnd();
+  }
+
+  it('shows Cancelled for an aborted call instead of the generic fallback', () => {
+    const render = renderer();
+    expect(render({ content: [{ type: 'text', text: 'This operation was aborted' }], details: undefined, isError: true })).toBe('Cancelled');
+    expect(render({ content: [{ type: 'text', text: 'Operation aborted' }], details: undefined, isError: true }, true)).toBe('Cancelled');
+  });
+
+  it('keeps the terse fallback for other errors and never shows model text', () => {
+    const render = renderer();
+    expect(render({ content: [{ type: 'text', text: 'Some findings the model would read' }], details: undefined, isError: true })).toBe('web_explore result');
+    expect(render({ content: [{ type: 'text', text: 'Research failed: Search backend is down.' }], details: undefined, isError: true })).toBe('web_explore result');
   });
 });

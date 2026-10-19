@@ -18,6 +18,34 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [1.15.0] - 2026-10-19
+### Added
+- The GitHub reader can use `GITHUB_TOKEN` or `gh auth login` to read private files, issues, pull requests, and READMEs.
+
+### Changed
+- The `web_explore` call shows its query as the heading, one activity line updates while it works, and the result starts with a summary like `2 searches · 4 pages read · 9s`. Preview shows up to three findings. Verbose has the queries, sources, excerpts and a breakdown of how each page was read. Notices about links that couldn't be read show in every mode.
+- The extension no longer tells Pi to avoid shell commands for web research. Pi can use `gh` or other tools when the task calls for them; `web_explore` remains available for web research.
+- If a supplied link cannot be read, `web_explore` reports that link and adds a caveat to the answer. It continues reading later links.
+- Up to eight links in one question are read directly, three of them repos (it used to refuse a third repo). Extra links are listed in the result instead of being dropped.
+- Results keep up to three relevant passages per source, with source IDs, headings and truncation marked, instead of a one-line summary. Excerpts stay under 10,000 characters in total.
+- Unfamiliar sites are no longer labeled as community sources by default, and how a page was read (PDF, GitHub, browser) is kept separate from how much to trust it. Research can stop on solid evidence from sites it doesn't recognize instead of always hunting for official docs.
+- A compare question isn't treated as done after reading one link. Follow-up searches go after what's still missing (versions, API behavior, user experience, the other thing being compared) instead of repeating the same query variants.
+- Each run has an overall limit of 120 seconds, 5 searches and 20 page reads, plus one read for each link in the question. Up to three pages are read at once (one per site at a time), pages already fetched aren't fetched again, and pages that finished before the deadline are kept.
+
+### Fixed
+- GitHub issue and pull request results say when some comments were not read.
+- Every finding points at the source it came from. A fifth finding used to end up without one.
+- Questions about what people think of something are treated as opinion questions, so community threads can answer them instead of triggering more searches for official docs.
+- Closing a Pi session no longer waits forever on research that never finishes.
+- Control characters and escape codes in page text are removed before they reach the terminal.
+- If the selected search provider isn't set up (missing key, rejected key, used-up quota), `web_explore` now says so and points to `/web-agent doctor`, instead of quietly returning nothing.
+- A question that's only links ("read https://...") just reads them now, without also searching for the link text.
+- Follow-up searches no longer stack a second `site:` onto a query that already has one, and questions mentioning "edge cases" stop getting sent to Microsoft's docs.
+- The tool description asks the model to keep the user's links in its query, so they actually get read directly.
+
+### Breaking
+- None.
+
 ## [1.14.1] - 2026-10-04
 ### Added
 - None.

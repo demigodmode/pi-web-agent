@@ -2,8 +2,6 @@ import type { ResearchEvidence } from './research-types.js';
 
 function sourceRank(sourceKind: ResearchEvidence['sourceKind']) {
   switch (sourceKind) {
-    case 'primary-content':
-      return -1;
     case 'official-docs':
       return 0;
     case 'official-api':
@@ -12,12 +10,14 @@ function sourceRank(sourceKind: ResearchEvidence['sourceKind']) {
       return 2;
     case 'issue-thread':
       return 3;
-    case 'community':
+    case 'unknown':
       return 4;
-    case 'package-page':
+    case 'community':
       return 5;
-    default:
+    case 'package-page':
       return 6;
+    default:
+      return 7;
   }
 }
 
