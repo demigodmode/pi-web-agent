@@ -55,6 +55,12 @@ web_explore ("Vitest coverage configuration")
   ⎿ Reading: vitest.dev/guide/coverage · 2 reads started
 ```
 
+Links you put in the question show which one is being read, since they all count toward a known total:
+
+```text
+  ⎿ Reading link 3 of 8: example.com/ · 5 reads started
+```
+
 `searches` counts logical search requests that actually started. `pages read`
 counts distinct readable documents that completed successfully, including a
 direct URL or repository read where applicable. A fallback does not turn one
