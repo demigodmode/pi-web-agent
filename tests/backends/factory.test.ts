@@ -1224,6 +1224,63 @@ describe('backend factory guard proxy wiring', () => {
     expect(deps.createGuardProxy).not.toHaveBeenCalled();
   });
 
+  it('hands the configured browser path to the headless launcher', async () => {
+    const proxy = {
+      url: 'http://127.0.0.1:9',
+      client: vi.fn(() => ({ server: 'http://127.0.0.1:9', username: 'u', password: 'p' })),
+      sequence: () => 0,
+      refusalsSince: () => [],
+      close: async () => undefined
+    };
+    const resolveBrowser = vi.fn(async () => ({
+      ok: true as const,
+      executablePath: '/opt/configured/chrome',
+      browser: 'configured' as const,
+      source: 'config' as const
+    }));
+    const launchBrowser = vi.fn(async () => {
+      throw new Error('launch stub');
+    });
+
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, headless: { provider: 'local-browser', executablePath: '/opt/configured/chrome' } },
+      {
+        ...offlineNetworkDeps(),
+        createGuardProxy: vi.fn(async () => proxy),
+        resolveBrowser,
+        launchBrowser: launchBrowser as never
+      }
+    );
+
+    await backends.headlessFetch({ url: 'https://example.com/page' });
+
+    expect(resolveBrowser).toHaveBeenCalledWith({ configuredPath: '/opt/configured/chrome' });
+    expect(launchBrowser).toHaveBeenCalledWith(expect.objectContaining({ executablePath: '/opt/configured/chrome' }));
+  });
+
+  it('reports a missing configured browser path without launching a browser', async () => {
+    const launchBrowser = vi.fn();
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, headless: { provider: 'local-browser', executablePath: '/opt/missing/chrome' } },
+      {
+        ...offlineNetworkDeps(),
+        resolveBrowser: async () => ({
+          ok: false as const,
+          error: {
+            code: 'CONFIGURED_BROWSER_NOT_FOUND' as const,
+            message: 'Configured browser path was not found: /opt/missing/chrome (from backends.headless.executablePath)'
+          }
+        }),
+        launchBrowser: launchBrowser as never
+      }
+    );
+
+    const result = await backends.headlessFetch({ url: 'https://example.com/page' });
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'CONFIGURED_BROWSER_NOT_FOUND' } });
+    expect(launchBrowser).not.toHaveBeenCalled();
+  });
+
   it('starts one guard proxy, once, with the upstream proxy and trust setting', async () => {
     const proxy = {
       url: 'http://127.0.0.1:9',

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { checkBackendHealth } from '../../src/backends/doctor.js';
+import { browserDoctorLines, checkBackendHealth } from '../../src/backends/doctor.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 
 describe('backend doctor checks', () => {
@@ -506,5 +506,61 @@ describe('backend doctor checks', () => {
       'http://host:8080/search?q=pi-web-agent-doctor&format=json',
       expect.any(Object)
     );
+  });
+});
+
+describe('browser doctor line', () => {
+  it('shows an auto-detected browser with its source', () => {
+    expect(browserDoctorLines({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium', source: 'auto' })).toEqual([
+      'browser: chromium /usr/bin/chromium (auto)'
+    ]);
+  });
+
+  it('flags a sandboxed find and says how to fix it', () => {
+    expect(browserDoctorLines({
+      ok: true,
+      executablePath: '/var/lib/flatpak/exports/bin/org.chromium.Chromium',
+      browser: 'chromium',
+      source: 'auto',
+      sandboxed: true
+    })).toEqual([
+      'browser: chromium /var/lib/flatpak/exports/bin/org.chromium.Chromium (auto, sandboxed; may not start under Playwright, set backends.headless.executablePath if headless fails)'
+    ]);
+  });
+
+  it('names the config source for a configured path', () => {
+    expect(browserDoctorLines({ ok: true, executablePath: '/opt/chrome', browser: 'configured', source: 'config' })).toEqual([
+      'browser: configured /opt/chrome (config)'
+    ]);
+  });
+
+  it('names the env var for a configured path', () => {
+    expect(browserDoctorLines({ ok: true, executablePath: '/opt/chrome', browser: 'configured', source: 'env' })).toEqual([
+      'browser: configured /opt/chrome (PI_WEB_AGENT_BROWSER_PATH)'
+    ]);
+  });
+
+  it('adds setup guidance when nothing is found', () => {
+    const [line] = browserDoctorLines({
+      ok: false,
+      error: { code: 'BROWSER_NOT_FOUND', message: 'No compatible local browser was found for headless fetch.' }
+    });
+
+    expect(line).toContain('browser: missing (BROWSER_NOT_FOUND)');
+    expect(line).toContain('backends.headless.executablePath');
+    expect(line).toContain('PI_WEB_AGENT_BROWSER_PATH');
+    expect(line).toContain("install Playwright's Chromium");
+  });
+
+  it('warns with the source when a configured path is missing', () => {
+    expect(browserDoctorLines({
+      ok: false,
+      error: {
+        code: 'CONFIGURED_BROWSER_NOT_FOUND',
+        message: 'Configured browser path was not found: /opt/gone (from PI_WEB_AGENT_BROWSER_PATH)'
+      }
+    })).toEqual([
+      'browser: warning, Configured browser path was not found: /opt/gone (from PI_WEB_AGENT_BROWSER_PATH)'
+    ]);
   });
 });
