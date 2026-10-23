@@ -19,7 +19,7 @@ function normalizeWhitespace(value: string) {
 
 const SITE_OPERATOR_TOKEN = /^(-?)site:([a-z0-9.-]+(?:\/\S*)?)$/i;
 const URL_TOKEN = /^["'(\[]*https?:\/\//i;
-const SITE_HOST = '[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:\\/[^\\s()]*)?';
+const SITE_HOST = '[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:\\/[^\\s(),;\'"]*)?';
 const SITE_OR_CHAIN = `site:${SITE_HOST}(?:\\s+or\\s+site:${SITE_HOST})+`;
 /** Two or more positive site: operators joined by OR, optionally wrapped in one pair of parens. */
 const SITE_OR_GROUP = new RegExp(`(^|\\s)(?:\\(\\s*(${SITE_OR_CHAIN})\\s*\\)|(${SITE_OR_CHAIN}))(?=$|[\\s,;.!?])`, 'gi');

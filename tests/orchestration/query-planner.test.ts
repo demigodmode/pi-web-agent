@@ -402,6 +402,48 @@ describe('planSearchQueries OR-grouped site operators', () => {
     });
   }
 
+  it('does not let a site path swallow a comma-attached exclusion', () => {
+    const originalQuery = 'site:a.com OR site:b.com/docs,-site:c.com hooks';
+    for (const passIndex of [1, 2]) {
+      for (const gap of gaps) {
+        const queries = planSearchQueries({ originalQuery, passIndex, previousQueries: [], gaps: [gap] });
+        expect(queries.length, `${passIndex} ${gap}`).toBeGreaterThan(0);
+        for (const query of queries) {
+          expect(query.split('(site:a.com OR site:b.com/docs)').length - 1, query).toBe(1);
+          const remainder = query.replace('(site:a.com OR site:b.com/docs)', ' ');
+          expect(remainder.split(' ').filter((token) => token === '-site:c.com'), query).toHaveLength(1);
+          expect(query, query).not.toContain('-site:c.com)');
+          expect(remainder, query).not.toMatch(/[(),]/);
+        }
+      }
+    }
+  });
+
+  it('does not let a site path swallow a semicolon-attached operator', () => {
+    const originalQuery = 'site:a.com OR site:b.com/docs;-site:c.com hooks';
+    for (const gap of gaps) {
+      const queries = planSearchQueries({ originalQuery, passIndex: 1, previousQueries: [], gaps: [gap] });
+      for (const query of queries) {
+        expect(query.split('(site:a.com OR site:b.com/docs)').length - 1, query).toBe(1);
+        expect(query, query).not.toContain('b.com/docs;');
+      }
+    }
+  });
+
+  it('does not merge a positive site: after a comma into the group', () => {
+    const queries = planSearchQueries({ originalQuery: 'site:a.com OR site:b.com/docs,site:c.com hooks', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      expect(query.split('(site:a.com OR site:b.com/docs)').length - 1, query).toBe(1);
+      expect(query, query).not.toContain('site:c.com');
+    }
+  });
+
+  it('still reads a comma-free path inside the group', () => {
+    const queries = planSearchQueries({ originalQuery: 'site:a.com/x OR site:b.com/docs hooks', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toBe('(site:a.com/x OR site:b.com/docs) hooks official docs');
+  });
+
   it('puts the group in place of the site a variant would add', () => {
     const queries = planSearchQueries({ originalQuery: '(site:a.com OR site:b.com) hooks', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
     expect(queries[0]).toBe('(site:a.com OR site:b.com) hooks official docs');
