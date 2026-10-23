@@ -935,6 +935,10 @@ export function handleSettingsShortcut(data: string): { action: 'cancel' | 'rese
   return undefined;
 }
 
+function resetPromptText(scope: PresentationScope, path: string): string {
+  return `Reset ${scope} settings? This deletes ${path}. Press Ctrl+R again to confirm, Esc to cancel.`;
+}
+
 async function openActionMenu(ctx: any): Promise<WebAgentAction | undefined> {
   return ctx.ui.custom((tui: any, theme: any, _kb: unknown, done: (value: WebAgentAction | undefined) => void) => {
     const container = new Container();
@@ -1019,16 +1023,21 @@ async function openPresentationSettingsUi(
   return ctx.ui.custom((_tui: unknown, theme: any, _kb: unknown, done: (value: SettingsUiResult) => void) => {
     let state = createSettingsDraftState(loaded, initialScope);
     let settingsList: SettingsList;
+    let resetPending = false;
 
     const container = new Container();
     container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent · presentation')), 1, 1));
-    container.addChild(
-      new Text(
-        theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope · Esc cancel'),
-        1,
-        2
-      )
-    );
+    const hint = new Text(theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope (press twice) · Esc cancel'), 1, 2);
+    container.addChild(hint);
+
+    const updateHint = () => {
+      hint.setText(
+        resetPending
+          ? theme.fg('warning', resetPromptText(state.scope, loaded[state.scope].path))
+          : theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope (press twice) · Esc cancel')
+      );
+      container.invalidate();
+    };
 
     const rebuildSettingsList = () => {
       if (settingsList) {
@@ -1059,13 +1068,24 @@ async function openPresentationSettingsUi(
       handleInput: (data: string) => {
         const shortcut = handleSettingsShortcut(data);
 
+        if (resetPending) {
+          // Any key other than a second Ctrl+R just drops the pending reset.
+          resetPending = false;
+          updateHint();
+          if (shortcut?.action === 'reset') {
+            done({ action: 'reset', scope: state.scope });
+          }
+          return;
+        }
+
         if (shortcut?.action === 'cancel') {
           done({ action: 'cancel' });
           return;
         }
 
         if (shortcut?.action === 'reset') {
-          done({ action: 'reset', scope: state.scope });
+          resetPending = true;
+          updateHint();
           return;
         }
 
@@ -1089,16 +1109,21 @@ async function openBackendSettingsUi(
     let state = createSettingsDraftState(loaded, initialScope);
     let settingsList: SettingsList;
     let urlEditorOpen = false;
+    let resetPending = false;
 
     const container = new Container();
     container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent · backends')), 1, 1));
-    container.addChild(
-      new Text(
-        theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope · Esc cancel · API keys stay in env vars'),
-        1,
-        2
-      )
-    );
+    const hint = new Text(theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope (press twice) · Esc cancel · API keys stay in env vars'), 1, 2);
+    container.addChild(hint);
+
+    const updateHint = () => {
+      hint.setText(
+        resetPending
+          ? theme.fg('warning', resetPromptText(state.scope, loaded[state.scope].path))
+          : theme.fg('muted', 'Ctrl+S save · Ctrl+R reset scope (press twice) · Esc cancel · API keys stay in env vars')
+      );
+      container.invalidate();
+    };
 
     const rebuildSettingsList = () => {
       if (settingsList) {
@@ -1139,13 +1164,24 @@ async function openBackendSettingsUi(
 
         const shortcut = handleSettingsShortcut(data);
 
+        if (resetPending) {
+          // Any key other than a second Ctrl+R just drops the pending reset.
+          resetPending = false;
+          updateHint();
+          if (shortcut?.action === 'reset') {
+            done({ action: 'reset', scope: state.scope });
+          }
+          return;
+        }
+
         if (shortcut?.action === 'cancel') {
           done({ action: 'cancel' });
           return;
         }
 
         if (shortcut?.action === 'reset') {
-          done({ action: 'reset', scope: state.scope });
+          resetPending = true;
+          updateHint();
           return;
         }
 
@@ -1253,6 +1289,19 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
       if (action === 'reset') {
         const scope = parseScopeToken(maybeScope) ?? 'project';
+
+        if (ctx.hasUI) {
+          const loaded = await load();
+          const confirmed = await ctx.ui.confirm(
+            `Reset ${scope} settings?`,
+            `This deletes ${loaded[scope].path}, including presentation and backend settings.`
+          );
+          if (!confirmed) {
+            ctx.ui.notify('Reset cancelled.', 'info');
+            return;
+          }
+        }
+
         await reset(scope);
         ctx.ui.notify(`Reset ${scope} config`, 'info');
         return;

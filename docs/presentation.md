@@ -148,10 +148,10 @@ From either settings screen you can:
 Keyboard shortcuts in the settings UI:
 
 - `Ctrl+S` saves edits to the selected scope
-- `Ctrl+R` immediately deletes the selected scope's entire config file, including both presentation and backend settings, without confirmation
+- `Ctrl+R` resets the selected scope: the first press asks, a second press deletes that scope's entire config file (presentation and backend settings both), and Esc or any other key cancels
 - `Esc` discards unsaved edits and closes settings
 
-The reset menu entries and `/web-agent reset project` or `/web-agent reset global` also delete the whole scope file. Reset confirmation is deferred to a release after 1.14.1 in [issue #98](https://github.com/demigodmode/pi-web-agent/issues/98).
+The reset menu entries and `/web-agent reset project` or `/web-agent reset global` also delete the whole scope file, after a confirmation dialog. Without an interactive UI, the typed command resets straight away.
 
 While an inline backend URL editor is open, its keys take precedence: Enter accepts the field edit and Esc cancels that edit. Return to the settings screen before using Ctrl+S to save the scope.
 

@@ -1,4 +1,5 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { initTheme } from '@earendil-works/pi-coding-agent';
 import {
   applySettingsValue,
   buildBackendSettingsItems,
@@ -2122,5 +2123,193 @@ describe('browser path settings', () => {
 
     component.handleInput?.('\r');
     expect(selected).toBe('');
+  });
+});
+
+describe('settings reset confirmation', () => {
+  beforeAll(() => initTheme('dark', false));
+
+  const resetFixture = {
+    global: { path: '/global/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: {} },
+    project: { path: '/project/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: {} },
+    effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+    effectiveBackends: DEFAULT_BACKEND_CONFIG
+  };
+
+  // Opens the section menu, then drives the chosen settings screen with the given keys.
+  async function runSettingsScreen(section: 'presentation' | 'backends', keys: string[]) {
+    let handler: any;
+    const reset = vi.fn();
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue(resetFixture),
+      save,
+      saveBackends,
+      reset
+    });
+
+    let screen = '';
+    const custom = vi.fn(async (factory: any) => {
+      if (custom.mock.calls.length === 1) return section;
+
+      let result: unknown;
+      const component = factory(
+        { requestRender: vi.fn() },
+        { fg: (_style: string, text: string) => text, bold: (text: string) => text },
+        {},
+        (value: unknown) => {
+          result = value;
+        }
+      );
+      for (const key of keys) {
+        component.handleInput(key);
+      }
+      screen = component.render(200).join('\n');
+      return result;
+    });
+
+    await handler('settings', { ui: { custom, notify: vi.fn() } });
+
+    return { reset, save, saveBackends, screen: () => screen };
+  }
+
+  const ctrlR = '\u0012';
+  const esc = '\u001b';
+
+  describe.each(['presentation', 'backends'] as const)('%s screen', (section) => {
+    it('a single Ctrl+R does not delete and shows the confirmation prompt', async () => {
+      const { reset, screen } = await runSettingsScreen(section, [ctrlR]);
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(screen()).toContain('Reset project settings?');
+      expect(screen()).toContain('/project/config.json');
+      expect(screen()).toContain('Press Ctrl+R again to confirm, Esc to cancel.');
+    });
+
+    it('Ctrl+R twice resets the selected scope', async () => {
+      const { reset } = await runSettingsScreen(section, [ctrlR, ctrlR]);
+
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(reset).toHaveBeenCalledWith('project');
+    });
+
+    it('Ctrl+R then Esc does not delete', async () => {
+      const { reset, save, saveBackends } = await runSettingsScreen(section, [ctrlR, esc]);
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(saveBackends).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+R then another key does not delete', async () => {
+      const { reset, save, saveBackends } = await runSettingsScreen(section, [ctrlR, 'x']);
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(saveBackends).not.toHaveBeenCalled();
+    });
+
+    it('a Ctrl+R after cancelling starts the confirmation over instead of deleting', async () => {
+      const { reset } = await runSettingsScreen(section, [ctrlR, esc, ctrlR]);
+
+      expect(reset).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('reset command confirmation', () => {
+  const resetFixture = {
+    global: { path: '/global/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: {} },
+    project: { path: '/project/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: {} },
+    effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+    effectiveBackends: DEFAULT_BACKEND_CONFIG
+  };
+
+  function registerHandler() {
+    let handler: any;
+    const reset = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue(resetFixture),
+      save: vi.fn(),
+      reset
+    });
+    return { handler, reset };
+  }
+
+  it('deletes the menu-selected scope only after the confirm dialog says yes', async () => {
+    const { handler, reset } = registerHandler();
+    const confirm = vi.fn().mockResolvedValue(true);
+    const notify = vi.fn();
+    const custom = vi.fn().mockResolvedValue('reset-global');
+
+    await handler('', { hasUI: true, ui: { custom, confirm, notify } });
+
+    expect(confirm).toHaveBeenCalledWith(
+      'Reset global settings?',
+      'This deletes /global/config.json, including presentation and backend settings.'
+    );
+    expect(reset).toHaveBeenCalledWith('global');
+    expect(notify).toHaveBeenCalledWith('Reset global config', 'info');
+  });
+
+  it('leaves the file alone when the menu reset is declined', async () => {
+    const { handler, reset } = registerHandler();
+    const confirm = vi.fn().mockResolvedValue(false);
+    const notify = vi.fn();
+    const custom = vi.fn().mockResolvedValue('reset-project');
+
+    await handler('', { hasUI: true, ui: { custom, confirm, notify } });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(reset).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith('Reset cancelled.', 'info');
+  });
+
+  it('confirms a typed reset when a UI is available and resets on yes', async () => {
+    const { handler, reset } = registerHandler();
+    const confirm = vi.fn().mockResolvedValue(true);
+
+    await handler('reset project', { hasUI: true, ui: { confirm, notify: vi.fn() } });
+
+    expect(confirm).toHaveBeenCalledWith(
+      'Reset project settings?',
+      'This deletes /project/config.json, including presentation and backend settings.'
+    );
+    expect(reset).toHaveBeenCalledWith('project');
+  });
+
+  it('does not reset a typed reset that is declined', async () => {
+    const { handler, reset } = registerHandler();
+    const confirm = vi.fn().mockResolvedValue(false);
+    const notify = vi.fn();
+
+    await handler('reset project', { hasUI: true, ui: { confirm, notify } });
+
+    expect(reset).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith('Reset cancelled.', 'info');
+  });
+
+  it('keeps the typed reset unchanged without a UI', async () => {
+    const { handler, reset } = registerHandler();
+    const confirm = vi.fn();
+    const notify = vi.fn();
+
+    await handler('reset global', { hasUI: false, ui: { confirm, notify } });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(reset).toHaveBeenCalledWith('global');
+    expect(notify).toHaveBeenCalledWith('Reset global config', 'info');
   });
 });
