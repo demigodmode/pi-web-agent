@@ -11,6 +11,7 @@ import { createBraveSearchTool } from '../search/brave.js';
 import { createYouComSearchTool } from '../search/youcom.js';
 import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
+import { createParallelSearchTool } from '../search/parallel.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { createGoogleSerpSearchTool } from '../search/google-serp.js';
@@ -50,6 +51,7 @@ export type BackendFactoryDeps = {
   createBraveSearch?: typeof createBraveSearchTool;
   createYouComSearch?: typeof createYouComSearchTool;
   createExaSearch?: typeof createExaSearchTool;
+  createParallelSearch?: typeof createParallelSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
   createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
@@ -161,6 +163,7 @@ export function createBackendSet(
   const createBraveSearch = deps.createBraveSearch ?? createBraveSearchTool;
   const createYouComSearch = deps.createYouComSearch ?? createYouComSearchTool;
   const createExaSearch = deps.createExaSearch ?? createExaSearchTool;
+  const createParallelSearch = deps.createParallelSearch ?? createParallelSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
   const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
@@ -297,6 +300,8 @@ export function createBackendSet(
         return createYouComSearch({ apiKey: process.env.YDC_API_KEY, fetchImpl });
       case 'exa':
         return createExaSearch({ apiKey: process.env.EXA_API_KEY, fetchImpl });
+      case 'parallel':
+        return createParallelSearch({ fetchImpl });
       case 'tavily':
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
       case 'google-serp': {

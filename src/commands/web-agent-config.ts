@@ -340,7 +340,7 @@ export function buildBackendSettingsItems(
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp']
     },
     {
       id: 'backend:search:baseUrl',
@@ -606,7 +606,7 @@ export function applySettingsValue(
     }
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'google-serp')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'parallel' || newValue === 'google-serp')) {
     const oldProvider = currentBackends.search.provider as SearchProviderName;
     currentBackends.search.provider = newValue as SearchProviderName;
 

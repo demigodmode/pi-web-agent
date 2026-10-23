@@ -14,6 +14,8 @@ export type JsonSearchProviderOptions = {
   fetchImpl?: typeof fetch;
   now?: () => number;
   request: (query: string) => { url: string; init?: RequestInit };
+  /** Reads a body that is not plain JSON, e.g. the SSE framing an MCP endpoint may answer with. */
+  decodeBody?: (parts: { text: string; headers: Headers }) => unknown;
   /** Returns undefined when the body does not have the documented shape. */
   normalize: (json: unknown) => Normalized | undefined;
   /** A 200 that is empty only because the provider degraded (e.g. SearXNG engines suspended). */
@@ -70,16 +72,18 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
       return error('FETCH_FAILED', `${label} search request failed: HTTP ${response.status}`, classifyHttpFailure(name, parts, now()));
     }
 
+    const body = parts.json === undefined ? options.decodeBody?.(parts) : parts.json;
+
     // A 2xx whose body reports the failure: still a provider failure, and the kind
     // matters to the fallback policy (#55), so it must not collapse into bad_response.
     // Checked before normalizing: an error envelope with an empty (or partially filled)
     // `organic` array would otherwise be reported as a successful, empty search.
-    const envelope = parts.json === undefined ? undefined : options.bodyFailure?.(parts.json);
+    const envelope = body === undefined ? undefined : options.bodyFailure?.(body);
     if (envelope) {
       return error('FETCH_FAILED', `${label} search request failed: ${envelope.message}.`, envelope.failure);
     }
 
-    const normalized = parts.json === undefined ? undefined : options.normalize(parts.json);
+    const normalized = body === undefined ? undefined : options.normalize(body);
     if (!normalized) {
       return error('BAD_RESPONSE', `${label} returned a response that did not match the expected format.`, {
         kind: 'bad_response',
@@ -92,7 +96,7 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
         httpStatus: response.status
       });
     }
-    if (normalized.results.length === 0 && options.isDegradedEmpty?.(parts.json)) {
+    if (normalized.results.length === 0 && options.isDegradedEmpty?.(body)) {
       return error('BAD_RESPONSE', `${label} returned no results because some of its sources were unavailable.`, {
         kind: 'bad_response',
         httpStatus: response.status

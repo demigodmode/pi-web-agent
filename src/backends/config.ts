@@ -24,7 +24,7 @@ export type ProxyConfig = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'google-serp';
+  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp';
   /** Endpoint of the selected provider. Under fanout, give the other endpoint-backed providers their own entry in baseUrls. */
   baseUrl?: string;
   /** Per-provider endpoints, so one endpoint-backed provider never has to reuse another's baseUrl (see resolveSearchBaseUrl). */
@@ -237,7 +237,7 @@ function extractFirecrawlOptions(value: unknown): FirecrawlOptions | undefined {
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
-const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
+const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp'];
 
 /** Providers that talk to an endpoint the user configures in backends.search.baseUrl. */
 export const BASE_URL_SEARCH_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'google-serp'];
@@ -282,7 +282,7 @@ export function resolveSearchBaseUrl(search: SearchBackendConfig, provider: Sear
 }
 
 /** Providers a duckduckgo fallback can fall back from. */
-export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
+export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp'];
 
 export function usableSearchProviders(
   search: SearchBackendConfig,
@@ -296,6 +296,8 @@ export function usableSearchProviders(
   if (env.EXA_API_KEY?.trim()) usable.push('exa');
   if (env.TAVILY_API_KEY?.trim()) usable.push('tavily');
   if (resolveSearchBaseUrl(search, 'google-serp') && env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY?.trim()) usable.push('google-serp');
+  // Parallel is keyless but opt-in: existing implicit fanout sets must stay unchanged.
+  if (search.provider === 'parallel' || search.fanout?.providers?.includes('parallel')) usable.push('parallel');
   return usable;
 }
 

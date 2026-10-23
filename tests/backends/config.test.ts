@@ -118,7 +118,7 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, or google-serp');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, parallel, or google-serp');
   });
 
   it('accepts youcom search provider with duckduckgo fallback', () => {

@@ -8,7 +8,7 @@ That is partly for code health, but mostly because this package gets worse fast 
 
 - `src/extension.ts` wires the package into Pi and registers the public `web_explore` tool
 - `src/tools/` contains tool adapters and internal tool-shaped helpers
-- `src/search/` holds search backend logic for DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, and Google SERP
+- `src/search/` holds search backend logic for DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, and Google SERP
 - `src/readers/` handles special-content URLs (GitHub, PDF, YouTube) in front of the plain fetcher
 - `src/fetch/` handles HTTP and headless fetch logic, including the network guard and the local guard proxy that every model-chosen connection goes through
 - `src/repo/` handles repo research: parsing typed GitHub links, the git runner, the per-session clone cache, and the keyword code search
@@ -25,7 +25,7 @@ The public model-facing web research surface is `web_explore`.
 
 The lower-level capabilities still exist in code, but they are internal steps now:
 
-- search is for discovery, whether it comes from DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, or Google SERP
+- search is for discovery, whether it comes from DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, or Google SERP
 - special-content readers handle GitHub, PDF, and YouTube URLs before the plain fetcher sees them
 - HTTP fetch is for plain page reads
 - headless fetch is for selected browser-rendered reads

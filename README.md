@@ -95,6 +95,7 @@ Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Sw
 | You.com | search (hosted) | `YDC_API_KEY` |
 | Exa | search (hosted) | `EXA_API_KEY` |
 | Tavily | search (hosted) | `TAVILY_API_KEY` |
+| Parallel | search (hosted) | select `parallel`, keyless |
 | Google SERP | search (hosted) | base URL + `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` |
 | Firecrawl | fetch (self-hosted) | base URL + `PI_WEB_AGENT_FIRECRAWL_API_KEY` |
 | GitHub reader | content | public content is keyless; private content needs `GITHUB_TOKEN` or `gh auth login` |
