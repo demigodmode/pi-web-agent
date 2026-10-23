@@ -19,6 +19,8 @@ The format is intentionally simple and release-oriented.
 - Browser detection finds more installs: per-user Windows and macOS installs, the Windows registry, Spotlight, and Flatpak, Snap and Nix locations on Linux. Doctor shows where the browser came from (#109).
 - Follow-up searches keep an OR'd group like `(site:a.com OR site:b.com)` intact instead of keeping only the first site (#106).
 - When nothing usable is found, the result says so once instead of twice (#111).
+- If the browser path you set doesn't exist, reading a link that needs the browser now says so in the result instead of a generic read failure.
+- Updated undici to 8.12.3 (and its nested 7.x copy to 7.30.1) to pick up security fixes.
 
 ### Breaking
 - None.
