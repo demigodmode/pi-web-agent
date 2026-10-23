@@ -19,7 +19,7 @@ Internally, `web_explore` can do a few things:
 - read HTTP/HTTPS links from the prompt before search
 - strip common tracking params from direct links
 - plan search queries
-- run web search through the configured search backend: DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, or Google SERP
+- run web search through the configured search backend: DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, or Google SERP
 - optionally fan search across multiple configured providers at once when fanout is enabled, dedupe and rerank the merged results
 - read GitHub, PDF, and YouTube links through dedicated readers instead of scraping the page
 - clone and search a GitHub repo when you paste a repo or folder link

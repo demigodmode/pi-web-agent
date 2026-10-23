@@ -66,7 +66,7 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, and Google SERP
+- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, and Google SERP
 - edit the search endpoint URL (SearXNG or Google SERP)
 - enable a hosted/SearXNG → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
@@ -325,7 +325,7 @@ Run `/web-agent doctor`, then ask a research question such as:
 Find current official docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The built-in adapter calls `web_search` at `https://search.parallel.ai/mcp` with a single JSON-RPC `tools/call` POST, sent through the same search provider and proxy settings as every other backend. It adds no MCP client dependency, so you do not need a separate Pi MCP extension either. Parallel supplies source discovery; `web_explore` still reads pages through the configured fetch backend and network guard, ranks evidence, and writes the answer. The adapter does not use Parallel's `web_fetch` tool or read API keys.
+The built-in adapter calls `web_search` at `https://search.parallel.ai/mcp` with a single JSON-RPC `tools/call` POST, sent through the same search provider and proxy settings as every other backend. It adds no MCP client dependency, so you do not need a separate Pi MCP extension either. Parallel supplies source discovery; `web_explore` still reads pages through the configured fetch backend and network guard, ranks evidence, and writes the answer. The adapter does not use Parallel's `web_fetch` tool or read API keys. Each request carries a random session ID that pi-web-agent creates when Pi starts, so Parallel can count free-tier usage per session; it changes every time Pi restarts and isn't tied to your account.
 
 DuckDuckGo remains the default. Selecting Parallel leaves failures visible unless you explicitly set `"fallback": "duckduckgo"`. Parallel only participates in fanout when it is the selected provider or you explicitly include `"parallel"` in `backends.search.fanout.providers`; existing automatic provider sets do not gain it.
 
@@ -622,7 +622,7 @@ Then try a normal research prompt:
 Find current docs for configuring Vitest coverage with the v8 provider.
 ```
 
-The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, Exa, Tavily, Google SERP, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
+The model should still use `web_explore`; it should not need separate SearXNG, Brave, You.com, Exa, Tavily, Parallel, Google SERP, or Firecrawl tool calls. If your prompt includes an HTTP/HTTPS URL, `web_explore` reads that URL before spending search passes.
 
 ## Troubleshooting
 
@@ -653,7 +653,7 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, Tavily, or Google SERP to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
+`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, Tavily, Parallel, or Google SERP to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
 
 
 ## Clear inherited backend settings
