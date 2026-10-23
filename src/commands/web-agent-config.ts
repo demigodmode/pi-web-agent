@@ -1289,6 +1289,19 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
       if (action === 'reset') {
         const scope = parseScopeToken(maybeScope) ?? 'project';
+
+        if (ctx.hasUI) {
+          const loaded = await load();
+          const confirmed = await ctx.ui.confirm(
+            `Reset ${scope} settings?`,
+            `This deletes ${loaded[scope].path}, including presentation and backend settings.`
+          );
+          if (!confirmed) {
+            ctx.ui.notify('Reset cancelled.', 'info');
+            return;
+          }
+        }
+
         await reset(scope);
         ctx.ui.notify(`Reset ${scope} config`, 'info');
         return;
