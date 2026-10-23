@@ -137,7 +137,7 @@ The settings UI currently has two sections:
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
 
-In either settings screen, Ctrl+S saves and Esc discards unsaved edits. Ctrl+R immediately deletes the selected scope's whole config file, including both presentation and backend settings, without confirmation. Reset menu entries do the same. Confirmation is deferred in [issue #98](https://github.com/demigodmode/pi-web-agent/issues/98).
+In either settings screen, Ctrl+S saves and Esc discards unsaved edits. Ctrl+R resets the selected scope's whole config file, presentation and backend settings both, but only after you press it a second time; Esc cancels. The reset entries in the `/web-agent` menu ask for confirmation before deleting anything.
 
 ## Pi seems to be loading the wrong copy
 
