@@ -162,6 +162,15 @@ describe('buildExplorePresentation', () => {
     expect(compactLines[1]).toContain('https://example.com/limited');
   });
 
+  it('ends a required-source message without punctuation with a single period', () => {
+    const base = { status: 'ok' as const, durationMs: 1_000, findings: [], sources: [], metadata: { searchPasses: 0, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false, presentationStats: { searches: 0, executedQueries: [], pagesRead: 0, failedReads: 1, methods: {} } } };
+    const bare = buildExplorePresentation({ ...base, requiredSourceFailures: [{ url: 'https://x.test/a', code: 'DIRECT_SOURCE_READ_FAILED', message: 'Direct URL could not be read reliably: https://x.test/a', reason: 'read-failed' }] });
+    expect(bare.views.compact).toContain('Required source not read: https://x.test/a. Direct URL could not be read reliably: https://x.test/a. The requirements of this source were not checked.');
+    const punctuated = buildExplorePresentation({ ...base, requiredSourceFailures: [{ url: 'https://x.test/b', code: 'X', message: 'Source could not be read!', reason: 'read-failed' }] });
+    expect(punctuated.views.compact).toContain('Required source not read: https://x.test/b. Source could not be read! The requirements of this source were not checked.');
+    expect(punctuated.views.compact).not.toContain('!.');
+  });
+
   it('keeps the established singular required-source notice in compact mode', () => {
     const presentation = buildExplorePresentation({
       status: 'ok',

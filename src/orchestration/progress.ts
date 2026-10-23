@@ -19,7 +19,7 @@ export function formatResearchProgress(progress: ResearchProgress): string {
     const prefix = `${label}: `;
     return display ? `${prefix}${clipTerminalText(display, Math.max(0, 120 - Array.from(prefix).length - Array.from(suffix).length))}${suffix}` : label;
   };
-  const linkLabel = (verb: string) => progress.position
+  const linkLabel = (verb: string) => progress.position && progress.position.total > 1
     ? `${verb} link ${progress.position.index} of ${progress.position.total}`
     : verb;
   switch (progress.phase) {

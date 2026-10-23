@@ -492,6 +492,8 @@ export function createResearchOrchestrator({
               if (headlessEvidence) {
                 allEvidence.push(headlessEvidence);
                 requiredSourceEvidence.push(headlessEvidence);
+              } else if (headlessResult.error) {
+                requiredFailure(url, 'read-failed', headlessResult.error.code, headlessResult.error.message, headlessResult.error.failure);
               } else {
                 requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', directUnreadableMessage(directResult.url));
               }
@@ -674,6 +676,10 @@ export function createResearchOrchestrator({
             }
             throwIfAborted(signal);
             const headlessEvidence = evidenceFromHeadless(headlessResult, query);
+            // A missing configured browser is the one headless error the user can fix, so it goes in as a gap instead of vanishing.
+            if (!headlessEvidence && headlessResult.error?.code === 'CONFIGURED_BROWSER_NOT_FOUND') {
+              allGaps.push({ kind: 'fetch-failed', message: headlessResult.error.message });
+            }
             if (headlessEvidence) {
               allEvidence.push(headlessEvidence);
               const updatedRanked = rankEvidence(allEvidence.filter((item) => item.sourceKind !== 'package-page'));

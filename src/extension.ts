@@ -8,7 +8,7 @@ import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presenta
 import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
-import { sanitizeTerminalText } from './presentation/explore-display-text.js';
+import { endWithPeriod, sanitizeTerminalText } from './presentation/explore-display-text.js';
 import { searchUnavailableNotices } from './presentation/explore-presentation.js';
 import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
@@ -50,7 +50,7 @@ function isCancelledResult(toolResult: { content?: unknown; details?: unknown })
 function serializeForModel(result: WebExploreResponse): string {
   const searchNotices = searchUnavailableNotices(result);
   const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
-    `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
+    `Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`
   );
   const terminalError = result.status === 'error'
     ? `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`
