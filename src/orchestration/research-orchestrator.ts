@@ -260,11 +260,11 @@ export function createResearchOrchestrator({
         maxHeadless: 2 + Math.min(8, typedUrls.filter((url) => !parseRepoUrl(url)).length)
       });
       const presentationStats = createPresentationStats();
-      const emit = (phase: ResearchProgress['phase'], state?: ResearchProgress['state'], target?: string) => {
+      const emit = (phase: ResearchProgress['phase'], state?: ResearchProgress['state'], target?: string, position?: ResearchProgress['position']) => {
         if (!onProgress) return;
         const { searches, fetches, headless } = budget.snapshot();
         const stats = presentationStats.snapshot();
-        try { onProgress({ phase, ...(state ? { state } : {}), ...(target ? { target } : {}), searches, fetches, headless, pagesRead: stats.pagesRead, failedReads: stats.failedReads }); } catch { /* Progress is observational. */ }
+        try { onProgress({ phase, ...(state ? { state } : {}), ...(target ? { target } : {}), ...(position ? { position } : {}), searches, fetches, headless, pagesRead: stats.pagesRead, failedReads: stats.failedReads }); } catch { /* Progress is observational. */ }
       };
       const intent = classifyResearchIntent(query);
       const opinionQuestion = isOpinionQuestion(query);
@@ -388,26 +388,34 @@ export function createResearchOrchestrator({
         acceptedRepoUrls.add(url);
         return true;
       });
-      let acceptedSources = 0;
-      let acceptedRepos = 0;
+      // Decided up front so each started line can say "link N of M".
+      const acceptedLinks: string[] = [];
+      let acceptedRepoLinks = 0;
+      for (const url of typedUrls) {
+        const repoTarget = parseRepoUrl(url);
+        if (repoTarget && !acceptedRepoUrls.has(url)) continue;
+        if (acceptedLinks.length >= 8 || (repoTarget && acceptedRepoLinks >= REPO_MAX_TYPED_REPOS)) continue;
+        acceptedLinks.push(url);
+        if (repoTarget) acceptedRepoLinks++;
+      }
+      const linkPositions = new Map(acceptedLinks.map((url, offset) => [url, { index: offset + 1, total: acceptedLinks.length }]));
       for (const url of typedUrls) {
         const repoTarget = parseRepoUrl(url);
         const repo = researchRepo && repoTarget;
         // Repo aliases are already represented by the first spelling.
         if (repoTarget && !acceptedRepoUrls.has(url)) continue;
-        if (acceptedSources >= 8 || (repoTarget && acceptedRepos >= REPO_MAX_TYPED_REPOS)) {
+        const linkPosition = linkPositions.get(url);
+        if (!linkPosition) {
           requiredFailure(url, 'limit', 'DIRECT_SOURCE_LIMIT', 'Source limit reached; use a follow-up call for this URL.');
           continue;
         }
-        acceptedSources++;
-        if (repoTarget) acceptedRepos++;
         if (repo) {
           throwIfAborted(signal);
           if (!budget.claimFetch(url)) {
             requiredFailure(url, budget.deadlineReached() ? 'deadline-unvisited' : 'limit', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_LIMIT', budget.deadlineReached() ? 'Source deadline reached before this URL could be read.' : 'Source limit reached; use a follow-up call for this URL.');
             continue;
           }
-          emit('fetch', 'started', url);
+          emit('fetch', 'started', url, linkPosition);
           let researched: RepoResearchResult;
           try {
             researched = await budget.wait(researchRepo!({ url, query, signal: budget.signal }));
@@ -438,7 +446,7 @@ export function createResearchOrchestrator({
           requiredFailure(url, budget.deadlineReached() ? 'deadline-unvisited' : 'limit', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_LIMIT', budget.deadlineReached() ? 'Source deadline reached before this URL could be read.' : 'Source limit reached; use a follow-up call for this URL.');
           continue;
         }
-        emit('fetch', 'started', url);
+        emit('fetch', 'started', url, linkPosition);
         let directResult: WebFetchResponse;
         try {
           directResult = await budget.wait(fetchDirect({ url, query, signal: budget.signal }));
@@ -462,7 +470,7 @@ export function createResearchOrchestrator({
           }
           if (!isTerminalFailure(failureOf(directResult)) && shouldRetryDirectWithHeadless(directResult, directEvidence)) {
             if (directHeadlessAttempts < 8 && budget.claimHeadless()) {
-              emit('headless', 'started', directResult.url);
+              emit('headless', 'started', directResult.url, linkPosition);
               directHeadlessAttempts++;
               attemptedHeadlessUrls.add(directResult.url);
               throwIfAborted(signal);
