@@ -43,7 +43,11 @@ export type FetchBackendConfig = {
   fallback?: 'http';
   options?: FirecrawlOptions;
 };
-export type HeadlessBackendConfig = { provider: 'local-browser' };
+export type HeadlessBackendConfig = {
+  provider: 'local-browser';
+  /** Local Chromium-family binary to launch instead of auto-detection. */
+  executablePath?: string;
+};
 
 export type NetworkConfig = {
   /** CIDR ranges exempted from the private-address guard (#53). */
@@ -87,6 +91,7 @@ export const CLEARABLE_BACKEND_PATHS = [
   'network',
   'network.allowRanges',
   'network.trustProxyDns',
+  'headless.executablePath',
 ] as const;
 
 export type BackendClearPath = typeof CLEARABLE_BACKEND_PATHS[number];
@@ -112,7 +117,7 @@ export type BackendConfigFile = {
     cleared?: unknown;
     search?: { provider?: unknown; baseUrl?: unknown; baseUrls?: unknown; keyHeader?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
-    headless?: { provider?: unknown };
+    headless?: { provider?: unknown; executablePath?: unknown };
     proxy?: { url?: unknown; username?: unknown; password?: unknown };
     network?: { allowRanges?: unknown; trustProxyDns?: unknown };
   };
@@ -389,6 +394,11 @@ export function extractBackendConfigOverride(
     override.headless = { provider: 'local-browser' };
   }
 
+  // A blank value is kept so validation can flag it, the same way baseUrls does.
+  if (typeof backends?.headless?.executablePath === 'string') {
+    override.headless = { ...(override.headless ?? {}), executablePath: backends.headless.executablePath.trim() };
+  }
+
   const proxy = extractProxyConfig(backends?.proxy);
   if (proxy) {
     override.proxy = proxy;
@@ -417,6 +427,10 @@ export function validateBackendConfig(config: BackendConfig): string[] {
 
   if (config.search.keyHeader !== undefined && !config.search.keyHeader.trim()) {
     issues.push('search keyHeader must not be empty when provided');
+  }
+
+  if (config.headless.executablePath !== undefined && !config.headless.executablePath.trim()) {
+    issues.push('backends.headless.executablePath must not be empty when provided');
   }
 
   if (config.proxy && config.proxy.url.trim() !== '') {
