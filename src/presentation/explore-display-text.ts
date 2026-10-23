@@ -1,5 +1,11 @@
 const HEADING_QUERY_LIMIT = 96;
 
+/** Ends a message with a period unless it already ends in sentence punctuation. */
+export function endWithPeriod(text: string): string {
+  const trimmed = text.trimEnd();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 /** Removes terminal control sequences while preserving ordinary presentation newlines and tabs. */
 export function sanitizeTerminalText(text: string): string {
   return text

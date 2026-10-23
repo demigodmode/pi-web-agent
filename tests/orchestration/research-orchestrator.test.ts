@@ -76,6 +76,34 @@ describe('research orchestrator types', () => {
     expect(result.requiredSourceEvidence).toContainEqual(expect.objectContaining({ requestedUrl: 'https://example.test/two' }));
   });
 
+  it('reports the headless browser error for a required direct URL instead of the generic read message', async () => {
+    const message = 'Configured browser path was not found: /nope/chromium (from backends.headless.executablePath)';
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'CONFIGURED_BROWSER_NOT_FOUND', message } }))
+    }).run({ query: 'Read https://browser.test/page' });
+    expect(result.requiredSourceFailures).toEqual([expect.objectContaining({ url: 'https://browser.test/page', code: 'CONFIGURED_BROWSER_NOT_FOUND', message })]);
+  });
+
+  it('keeps the generic direct read message when the headless retry has no error', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'Empty', text: '   ' }, metadata: { method: 'headless' as const, cacheHit: false } }))
+    }).run({ query: 'Read https://browser.test/empty' });
+    expect(result.requiredSourceFailures).toEqual([expect.objectContaining({ url: 'https://browser.test/empty', code: 'DIRECT_SOURCE_READ_FAILED', message: 'Direct URL could not be read reliably: https://browser.test/empty' })]);
+  });
+
+  it('surfaces a configured browser error from a discretionary headless retry as a gap', async () => {
+    const message = 'Configured browser path was not found: /nope/chromium (from backends.headless.executablePath)';
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: ['q'], evidence: [], gaps: [], lowValueOutcomes: [], suggestedHeadlessUrl: 'https://browser.test/dynamic', exhaustedBudget: false })) },
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'CONFIGURED_BROWSER_NOT_FOUND', message } }))
+    }).run({ query: 'research dynamic page' });
+    expect(result.workerPass.gaps).toContainEqual({ kind: 'fetch-failed', message });
+  });
+
   it('deduplicates a direct redirect with the same worker candidate in presentation stats', async () => {
     const finalUrl = 'https://example.test/final';
     const worker = { run: vi.fn(async ({ presentationStats }: { presentationStats?: PresentationStatsCollector }) => {

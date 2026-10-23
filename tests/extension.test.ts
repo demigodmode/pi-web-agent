@@ -477,6 +477,29 @@ describe('Pi extension entrypoint', () => {
     expect(result.details.terminalText).toBe('web_explore result');
   });
 
+  it('shows the configured browser error and a single period in model content for a required link', async () => {
+    const message = 'Configured browser path was not found: /nope/chromium (from backends.headless.executablePath)';
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: createWebExploreTool({
+        explore: createResearchOrchestrator({
+          worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+          fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+          headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'CONFIGURED_BROWSER_NOT_FOUND', message } }))
+        })
+      })
+    } as never);
+
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-browser', { query: 'Read https://browser.test/page' });
+    const modelText = result.content[0].text as string;
+    expect(modelText).toContain('Configured browser path was not found');
+    expect(modelText).toContain(`Required source not read: https://browser.test/page. ${message}. The requirements of this source were not checked.`);
+    expect(modelText).not.toContain('..');
+  });
+
   it('puts a required-source failure before the empty-result caveat in model content', async () => {
     const tools: any[] = [];
     extension({

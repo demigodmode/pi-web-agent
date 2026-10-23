@@ -27,6 +27,17 @@ describe('formatResearchProgress', () => {
     })).toBe('Rendering link 2 of 2: example.com/app');
   });
 
+  it('drops the link counter when the query has a single link', () => {
+    expect(formatResearchProgress({
+      phase: 'fetch', state: 'started', target: 'https://example.com/only?token=secret', position: { index: 1, total: 1 },
+      searches: 1, fetches: 1, headless: 0
+    })).toBe('Reading: example.com/only · 1 read started');
+    expect(formatResearchProgress({
+      phase: 'headless', state: 'started', target: 'https://example.com/app', position: { index: 1, total: 1 },
+      searches: 1, fetches: 1, headless: 1
+    })).toBe('Rendering: example.com/app');
+  });
+
   it('keeps search and unnumbered fetch activity without a position', () => {
     expect(formatResearchProgress({ phase: 'fetch', state: 'started', target: 'https://example.com/?p=1', searches: 1, fetches: 1, headless: 0 }))
       .toBe('Reading: example.com/ · 1 read started');
