@@ -215,10 +215,45 @@ describe('browser detection locations', () => {
     expect(findAppBundle).not.toHaveBeenCalled();
   });
 
-  it('parses the (Default) REG_SZ value only', () => {
+  it('parses the registry value by its type token, whatever the label says', () => {
     expect(parseRegDefaultValue('    (Default)    REG_SZ    C:\\Apps\\chrome.exe\r\n')).toBe('C:\\Apps\\chrome.exe');
-    expect(parseRegDefaultValue('    Path    REG_SZ    C:\\x.exe')).toBeUndefined();
-    expect(parseRegDefaultValue('    (Default)    REG_EXPAND_SZ    C:\\x.exe')).toBeUndefined();
+    expect(parseRegDefaultValue('    (par défaut)    REG_SZ    C:\\Apps\\chrome.exe\r\n')).toBe('C:\\Apps\\chrome.exe');
+    expect(parseRegDefaultValue('    (Standard)    REG_SZ    C:\\Apps\\msedge.exe\r\n')).toBe('C:\\Apps\\msedge.exe');
+    expect(parseRegDefaultValue('    (Predeterminado)    REG_SZ    C:\\Apps\\brave.exe\r\n')).toBe('C:\\Apps\\brave.exe');
+  });
+
+  it('expands %VAR% only for REG_EXPAND_SZ values', () => {
+    const env = { ProgramFiles: 'C:\\Program Files' };
+    expect(parseRegDefaultValue('    (Default)    REG_EXPAND_SZ    %ProgramFiles%\\Google\\Chrome\\chrome.exe', env)).toBe(
+      'C:\\Program Files\\Google\\Chrome\\chrome.exe'
+    );
+    expect(parseRegDefaultValue('    (Default)    REG_SZ    %ProgramFiles%\\x.exe', env)).toBe('%ProgramFiles%\\x.exe');
+  });
+
+  it('unwraps a quoted path and drops trailing arguments', () => {
+    expect(parseRegDefaultValue('    (Default)    REG_SZ    "C:\\Apps\\chrome.exe" --flag')).toBe('C:\\Apps\\chrome.exe');
+    expect(parseRegDefaultValue('    (Default)    REG_SZ    "C:\\Apps\\chrome.exe"')).toBe('C:\\Apps\\chrome.exe');
+  });
+
+  it('skips lines without a value and returns undefined for empty or garbage output', () => {
+    expect(parseRegDefaultValue('    (Default)    REG_SZ    \r\n    (Default)    REG_SZ    C:\\x.exe')).toBe('C:\\x.exe');
+    expect(parseRegDefaultValue('')).toBeUndefined();
+    expect(parseRegDefaultValue('ERROR: The system was unable to find the specified registry key or value.')).toBeUndefined();
+    expect(parseRegDefaultValue('    Path    REG_DWORD    0x1')).toBeUndefined();
+  });
+
+  it('reads a localized French App Paths entry through the resolver', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'win32',
+      env: {},
+      fileExists: filesystem(['D:/Chrome/chrome.exe']),
+      queryRegistry: async (key: string) =>
+        key.startsWith('HKEY_CURRENT_USER') && key.endsWith('chrome.exe')
+          ? '\r\n' + key + '\r\n    (par défaut)    REG_SZ    D:/Chrome/chrome.exe\r\n'
+          : ''
+    });
+
+    expect(result).toMatchObject({ ok: true, executablePath: 'D:/Chrome/chrome.exe', browser: 'chrome' });
   });
 
   it('detects Chrome from the macOS user Applications folder', async () => {
@@ -454,5 +489,65 @@ describe('browser path precedence', () => {
         message: 'Configured browser path was not found: /opt/missing/chrome (from PI_WEB_AGENT_BROWSER_PATH)'
       }
     });
+  });
+});
+
+describe('sandboxed installs rank last', () => {
+  it('prefers native chromium over a flatpak chrome', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'linux',
+      env: {},
+      homeDir: '/home/me',
+      fileExists: filesystem(['/usr/bin/chromium', '/var/lib/flatpak/exports/bin/com.google.Chrome'])
+    });
+
+    expect(result).toEqual({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium', source: 'auto' });
+  });
+
+  it('uses a flatpak chrome when it is the only install, and marks it sandboxed', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'linux',
+      env: {},
+      homeDir: '/home/me',
+      fileExists: filesystem(['/var/lib/flatpak/exports/bin/com.google.Chrome'])
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      executablePath: '/var/lib/flatpak/exports/bin/com.google.Chrome',
+      browser: 'chrome',
+      source: 'auto',
+      sandboxed: true
+    });
+  });
+
+  it('prefers a native chrome on PATH over a snap chromium', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'linux',
+      env: { PATH: '/opt/x/bin' },
+      fileExists: filesystem(['/opt/x/bin/google-chrome', '/snap/bin/chromium'])
+    });
+
+    expect(result).toEqual({ ok: true, executablePath: '/opt/x/bin/google-chrome', browser: 'chrome', source: 'auto' });
+  });
+
+  it('uses a snap chromium when it is the only install (Ubuntu)', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'linux',
+      env: {},
+      fileExists: filesystem(['/snap/bin/chromium'])
+    });
+
+    expect(result).toEqual({ ok: true, executablePath: '/snap/bin/chromium', browser: 'chromium', source: 'auto', sandboxed: true });
+  });
+
+  it('treats a PATH entry inside a flatpak exports dir as sandboxed', async () => {
+    const result = await resolveBrowserExecutable({
+      platform: 'linux',
+      env: { PATH: '/var/lib/flatpak/exports/bin' },
+      fileExists: filesystem(['/var/lib/flatpak/exports/bin/chromium', '/usr/bin/brave-browser'])
+    });
+
+    expect(result).toEqual({ ok: true, executablePath: '/usr/bin/brave-browser', browser: 'brave', source: 'auto' });
   });
 });

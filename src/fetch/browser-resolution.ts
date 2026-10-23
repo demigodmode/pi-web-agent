@@ -234,21 +234,44 @@ async function withLookupDeadline(lookup: () => Promise<string>): Promise<string
   }
 }
 
-/** Reads the (Default) REG_SZ value from `reg query <key> /ve` output. */
-export function parseRegDefaultValue(output: string): string | undefined {
-  const match = output.match(/^\s*\(Default\)\s+REG_SZ\s+(.+?)\s*$/m);
-  if (!match) return undefined;
-  return match[1].replace(/^"(.*)"$/, '$1');
+function expandEnvVars(value: string, env: LookupEnv): string {
+  return value.replace(/%([^%]+)%/g, (whole, name: string) => {
+    const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === name.toUpperCase());
+    return key && env[key] !== undefined ? (env[key] as string) : whole;
+  });
+}
+
+/**
+ * Reads the default value from `reg query <key> /ve` output. The label is
+ * localized, so the line is found by its type token instead.
+ */
+export function parseRegDefaultValue(output: string, env: LookupEnv = {}): string | undefined {
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/\s(REG_SZ|REG_EXPAND_SZ)\s+(.+)$/);
+    if (!match) continue;
+
+    let value = match[2].trim();
+    if (value.startsWith('"')) {
+      const end = value.indexOf('"', 1);
+      value = end > 0 ? value.slice(1, end) : value.slice(1);
+    }
+    value = value.trim();
+    if (!value) continue;
+
+    return match[1] === 'REG_EXPAND_SZ' ? expandEnvVars(value, env) : value;
+  }
+  return undefined;
 }
 
 async function findRegisteredPath(
   registryName: string,
+  env: LookupEnv,
   queryRegistry: (key: string) => Promise<string>,
   fileExists: (path: string) => Promise<boolean>
 ): Promise<string | undefined> {
   for (const hive of ['HKEY_CURRENT_USER', 'HKEY_LOCAL_MACHINE']) {
     const output = await withLookupDeadline(() => queryRegistry(`${hive}\\${REGISTRY_APP_PATHS}\\${registryName}`));
-    const path = output ? parseRegDefaultValue(output) : undefined;
+    const path = output ? parseRegDefaultValue(output, env) : undefined;
     if (path && (await fileExists(path))) return path;
   }
   return undefined;
@@ -320,22 +343,23 @@ export async function resolveBrowserExecutable({
     ...(isSandboxedPath(executablePath) ? { sandboxed: true as const } : {})
   });
 
-  for (const candidate of candidates) {
-    for (const path of candidate.paths) {
-      if (await fileExists(path)) return found(candidate, path);
-    }
-  }
+  // Native installs come first. Flatpak exports and snap wrappers only win when
+  // nothing native exists, so a broken sandboxed launcher never shadows a working browser.
+  const probes = [
+    ...candidates.flatMap((candidate) => candidate.paths.map((path) => ({ candidate, path }))),
+    ...candidates.flatMap((candidate) =>
+      getPathCommandCandidates(candidate.commands, platform, env).map((path) => ({ candidate, path }))
+    )
+  ];
 
-  for (const candidate of candidates) {
-    for (const path of getPathCommandCandidates(candidate.commands, platform, env)) {
-      if (await fileExists(path)) return found(candidate, path);
-    }
+  for (const { candidate, path } of probes) {
+    if (!isSandboxedPath(path) && (await fileExists(path))) return found(candidate, path);
   }
 
   if (platform === 'win32') {
     for (const candidate of candidates) {
       if (!candidate.registryName) continue;
-      const path = await findRegisteredPath(candidate.registryName, queryRegistry, fileExists);
+      const path = await findRegisteredPath(candidate.registryName, env, queryRegistry, fileExists);
       if (path) return found(candidate, path);
     }
   }
@@ -346,6 +370,10 @@ export async function resolveBrowserExecutable({
       const path = await findBundlePath(candidate.bundle, findAppBundle, fileExists);
       if (path) return found(candidate, path);
     }
+  }
+
+  for (const { candidate, path } of probes) {
+    if (isSandboxedPath(path) && (await fileExists(path))) return found(candidate, path);
   }
 
   return {
