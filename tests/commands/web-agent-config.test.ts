@@ -774,7 +774,7 @@ describe('web-agent config commands', () => {
     const browser: BrowserResolutionResult = {
       ok: true,
       executablePath: '/usr/bin/chromium',
-      browser: 'chromium'
+      browser: 'chromium', source: 'auto'
     };
 
     registerWebAgentConfigCommands(pi as never, {
@@ -818,7 +818,7 @@ describe('web-agent config commands', () => {
       })
     };
     registerWebAgentConfigCommands(pi as never, {
-      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium', source: 'auto' }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
       load: vi.fn().mockResolvedValue({ effectiveConfig: DEFAULT_PRESENTATION_CONFIG, effectiveBackends: DEFAULT_BACKEND_CONFIG }),
@@ -843,7 +843,7 @@ describe('web-agent config commands', () => {
       resolveBrowser: vi.fn().mockResolvedValue({
         ok: true,
         executablePath: '/usr/bin/chromium',
-        browser: 'chromium'
+        browser: 'chromium', source: 'auto'
       }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
@@ -885,7 +885,7 @@ describe('web-agent config commands', () => {
           headless: { provider: 'local-browser' }
         }
       }),
-      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium', source: 'auto' }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
       checkRepoResearch: vi.fn().mockResolvedValue('repo research: git 2.55.0, no GitHub login (public repos only)')
@@ -924,7 +924,7 @@ describe('web-agent config commands', () => {
     await handler('doctor', { ui: { notify } });
 
     expect(notify.mock.calls[0][0]).toContain('browser: missing');
-    expect(notify.mock.calls[0][0]).toContain('Install Chrome, Chromium, Edge, or Brave');
+    expect(notify.mock.calls[0][0]).toContain('Set backends.headless.executablePath or PI_WEB_AGENT_BROWSER_PATH');
   });
 
   it('hides credentials from unparseable proxy urls in doctor and show output', async () => {
@@ -954,7 +954,7 @@ describe('web-agent config commands', () => {
           proxy: { url: 'http://u:secretpw@[broken' }
         }
       }),
-      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium', source: 'auto' }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
       checkBackends: vi.fn().mockResolvedValue([]),
@@ -1152,7 +1152,7 @@ describe('web-agent config commands', () => {
       resolveBrowser: vi.fn().mockResolvedValue({
         ok: true,
         executablePath: '/usr/bin/chromium',
-        browser: 'chromium'
+        browser: 'chromium', source: 'auto'
       }),
       runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
       checkTypebox: vi.fn().mockResolvedValue(true),
@@ -2042,7 +2042,7 @@ describe('settings endpoints after switching providers', () => {
           effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
           effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' }, proxy: { url } }
         }),
-        resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium' }),
+        resolveBrowser: vi.fn().mockResolvedValue({ ok: true, executablePath: '/usr/bin/chromium', browser: 'chromium', source: 'auto' }),
         runtime: { nodeVersion: 'v24.0.0', platform: 'linux', arch: 'x64' },
         checkTypebox: vi.fn().mockResolvedValue(true),
         checkBackends: vi.fn().mockResolvedValue([]),
@@ -2055,5 +2055,72 @@ describe('settings endpoints after switching providers', () => {
       await handler('show', { ui: { notify } });
       for (const [text] of notify.mock.calls) expect(String(text)).not.toContain('secret');
     }
+  });
+});
+
+describe('browser path settings', () => {
+  const theme = { fg: (_style: string, text: string) => text, bold: (text: string) => text };
+  const loadedWith = (globalPath: string | undefined, effective: typeof DEFAULT_BACKEND_CONFIG) => ({
+    global: {
+      path: '/global/config.json',
+      exists: true,
+      rawConfig: { tools: {} },
+      rawBackends: globalPath ? { headless: { executablePath: globalPath } } : undefined
+    },
+    project: { path: '/project/config.json', exists: false },
+    effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+    effectiveBackends: effective
+  });
+
+  it('shows the browser path field and the env var reminder in the backend section', () => {
+    const items = buildBackendSettingsItems('project', DEFAULT_BACKEND_CONFIG, theme);
+    const field = items.find((item) => item.id === 'backend:headless:executablePath');
+    const envRow = items.find((item) => item.id === 'backend:env:browserPath');
+
+    expect(field).toMatchObject({ label: 'Browser path', currentValue: 'not set' });
+    expect(field?.submenu).toEqual(expect.any(Function));
+    expect(envRow).toMatchObject({ currentValue: 'PI_WEB_AGENT_BROWSER_PATH' });
+  });
+
+  it('shows the configured browser path as the current value', () => {
+    const backends = { ...DEFAULT_BACKEND_CONFIG, headless: { provider: 'local-browser' as const, executablePath: '/opt/chrome' } };
+    const field = buildBackendSettingsItems('project', backends, theme).find((item) => item.id === 'backend:headless:executablePath');
+
+    expect(field?.currentValue).toBe('/opt/chrome');
+  });
+
+  it('sets the browser path from the inline editor value', () => {
+    const state = createSettingsDraftState(loadedWith(undefined, DEFAULT_BACKEND_CONFIG), 'project');
+    const edited = applySettingsValue(state, 'backend:headless:executablePath', '  /opt/chrome  ');
+
+    expect(edited.backends.headless).toEqual({ provider: 'local-browser', executablePath: '/opt/chrome' });
+  });
+
+  it('clears the browser path when the editor value is empty', () => {
+    const configured = { ...DEFAULT_BACKEND_CONFIG, headless: { provider: 'local-browser' as const, executablePath: '/opt/chrome' } };
+    const state = createSettingsDraftState(loadedWith('/opt/chrome', configured), 'global');
+    const edited = applySettingsValue(state, 'backend:headless:executablePath', '');
+
+    expect(edited.backends.headless).toEqual({ provider: 'local-browser' });
+  });
+
+  it('records a cleared browser path so it overrides the lower layer', () => {
+    const inherited = { ...DEFAULT_BACKEND_CONFIG, headless: { provider: 'local-browser' as const, executablePath: '/opt/chrome' } };
+    const state = createSettingsDraftState(loadedWith(undefined, inherited), 'project');
+    const edited = applySettingsValue(state, 'backend:headless:executablePath', '');
+
+    const override = collapseBackendConfigToOverride(edited.backends, inherited);
+    expect(override.cleared).toContain('headless.executablePath');
+  });
+
+  it('the browser path editor saves an empty value when submitted blank', () => {
+    const editor = createBackendUrlEditor(theme, 'Browser path for headless fetch', '', undefined, (value) => ({ ok: true, value: value.trim() }));
+    let selected: string | undefined = 'unset';
+    const component = editor('not set', (value) => {
+      selected = value;
+    });
+
+    component.handleInput?.('\r');
+    expect(selected).toBe('');
   });
 });
