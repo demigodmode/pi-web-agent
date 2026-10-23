@@ -23,6 +23,25 @@ describe('research orchestrator types', () => {
     expect(result.metadata.presentationStats?.pagesRead).toBe(1);
   });
 
+  it('numbers each direct query link in its started progress event', async () => {
+    const events: ResearchProgress[] = [];
+    await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { text: 'Readable source.' }, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn()
+    }).run({
+      query: 'Compare https://example.test/?p=1 https://example.test/?p=2 https://example.test/?p=3',
+      onProgress: (event) => events.push(event)
+    });
+    const started = events.filter((event) => event.phase === 'fetch' && event.state === 'started');
+    expect(started.map((event) => event.position)).toEqual([
+      { index: 1, total: 3 },
+      { index: 2, total: 3 },
+      { index: 3, total: 3 }
+    ]);
+    expect(events.filter((event) => event.state === 'settled').every((event) => event.position === undefined)).toBe(true);
+  });
+
   it('reports the first successful typed repo read in its settled progress snapshot', async () => {
     const events: ResearchProgress[] = [];
     await createResearchOrchestrator({

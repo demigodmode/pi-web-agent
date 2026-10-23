@@ -27,6 +27,27 @@ describe('research worker', () => {
     expect(result.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('reports search candidate reads without a link position', async () => {
+    const events: Array<{ phase: string; state?: string; position?: unknown }> = [];
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Guide', url: 'https://example.com/guide?p=1', snippet: 'Guide' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://example.com/guide?p=1',
+        content: { title: 'Guide', text: 'Guide text.' },
+        metadata: { method: 'http', cacheHit: false, contentType: 'text/html' }
+      })
+    });
+
+    await worker.run({ query: 'guide', maxSearchRounds: 1, maxFetches: 1, onProgress: (event) => events.push(event) });
+    const fetches = events.filter((event) => event.phase === 'fetch');
+    expect(fetches.length).toBeGreaterThan(0);
+    expect(fetches.every((event) => event.position === undefined)).toBe(true);
+  });
+
   it('does not assign a fresh retrieval time to cached source text', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
