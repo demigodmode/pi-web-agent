@@ -67,7 +67,7 @@
     "cheerio": "^1.1.0",
     "jsdom": "^26.0.0",
     "playwright": "^1.60.0",
-    "undici": "^8.10.2",
+    "undici": "^8.12.3",
     "unpdf": "^1.8.1",
     "youtube-caption-extractor": "^1.10.2"
   },
@@ -76,10 +76,10 @@
     "@earendil-works/pi-tui": "^1.0.0",
     "@types/jsdom": "^21.1.7",
     "@types/node": "^24.0.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "typescript": "^5.8.0",
     "vitepress": "^1.6.4",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -87,7 +87,7 @@
     "typebox": "*"
   },
   "overrides": {
-    "vite": "6.4.3",
+    "vite": "6.4.5",
     "@earendil-works/pi-coding-agent": {
       "brace-expansion": "5.0.12"
     }
