@@ -1,4 +1,5 @@
 import { resolveSearchBaseUrl, type BackendConfig, type FirecrawlOptions, type SearxngOptions } from './config.js';
+import { BROWSER_PATH_CONFIG_KEY, BROWSER_PATH_ENV, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { classifyEnvelopeFailure } from './provider-failure.js';
 import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
 
@@ -51,6 +52,26 @@ function firecrawlDoctorBody(options: FirecrawlOptions = {}) {
     formats: options.formats ?? ['markdown'],
     ...(options.onlyMainContent !== undefined ? { onlyMainContent: options.onlyMainContent } : {})
   };
+}
+
+/** The `browser:` doctor line(s) for a resolution result. */
+export function browserDoctorLines(browser: BrowserResolutionResult): string[] {
+  if (!browser.ok) {
+    if (browser.error.code === 'CONFIGURED_BROWSER_NOT_FOUND') {
+      return [`browser: warning, ${browser.error.message}`];
+    }
+    return [
+      `browser: missing (${browser.error.code}). Set ${BROWSER_PATH_CONFIG_KEY} or ${BROWSER_PATH_ENV}, or install Playwright's Chromium.`
+    ];
+  }
+
+  if (browser.source === 'config') return [`browser: configured ${browser.executablePath} (config)`];
+  if (browser.source === 'env') return [`browser: configured ${browser.executablePath} (${BROWSER_PATH_ENV})`];
+
+  const sandbox = browser.sandboxed
+    ? `, sandboxed; may not start under Playwright, set ${BROWSER_PATH_CONFIG_KEY} if headless fails`
+    : '';
+  return [`browser: ${browser.browser} ${browser.executablePath} (auto${sandbox})`];
 }
 
 export async function checkBackendHealth(

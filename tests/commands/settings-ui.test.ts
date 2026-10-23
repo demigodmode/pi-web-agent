@@ -103,10 +103,10 @@ describe('settings input and persisted presentation inheritance', () => {
       expect(await readFile(file, 'utf8')).toBe(before);
     });
 
-    it.each([['native', '\x12'], ['CSIu', '\x1b[114;5u']] as const)(`resets the project from the real ${section} screen with %s Ctrl+R`, async (_encoding, input) => {
+    it.each([['native', '\x12'], ['CSIu', '\x1b[114;5u']] as const)(`resets the project from the real ${section} screen after two %s Ctrl+R`, async (_encoding, input) => {
       await savePresentationConfigScope(options, 'project', { defaultMode: 'preview', tools: {} });
       const command = commandHarness(options);
-      const { result } = await command.runUi(section, [input]);
+      const { result } = await command.runUi(section, [input, input]);
       expect(result).toEqual({ action: 'reset', scope: 'project' });
       expect(command.reset).toHaveBeenCalledWith('project');
       expect(command.save).not.toHaveBeenCalled();
