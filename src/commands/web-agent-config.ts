@@ -13,7 +13,7 @@ import {
   type BackendConfig,
   type BackendConfigOverride
 } from '../backends/config.js';
-import { checkBackendHealth } from '../backends/doctor.js';
+import { browserDoctorLines, checkBackendHealth } from '../backends/doctor.js';
 import { repoResearchDoctorLine } from '../repo/doctor.js';
 import { parseCidr } from '../fetch/network-guard.js';
 import type { SearchProviderName } from '../types.js';
@@ -46,7 +46,7 @@ import {
   savePresentationConfigScope,
   type LoadedPresentationConfig
 } from '../presentation/config-store.js';
-import { resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
+import { BROWSER_PATH_ENV, resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { createProxyFetch } from '../fetch/proxy-fetch.js';
 import { checkJitiCompat } from '../jiti-compat.js';
 import { getLatestChangelogEntry } from '../changelog-notice.js';
@@ -64,7 +64,7 @@ type CommandDeps = {
   save?: (scope: PresentationScope, config: PresentationConfigOverride) => Promise<void>;
   saveBackends?: (scope: PresentationScope, config: BackendConfigOverride) => Promise<void>;
   reset?: (scope: PresentationScope) => Promise<void>;
-  resolveBrowser?: () => Promise<BrowserResolutionResult>;
+  resolveBrowser?: (options?: { configuredPath?: string }) => Promise<BrowserResolutionResult>;
   runtime?: { nodeVersion: string; platform: string; arch: string };
   checkTypebox?: () => Promise<boolean>;
   checkJitiCompat?: () => { pending: string[] };
@@ -216,7 +216,7 @@ function formatBackendSummary(config: BackendConfig = DEFAULT_BACKEND_CONFIG) {
   return [
     searchSuffix ? `${searchBase} ${searchSuffix}` : searchBase,
     fetchSuffix ? `${fetchBase} ${fetchSuffix}` : fetchBase,
-    `headless: ${config.headless.provider}`,
+    `headless: ${config.headless.provider}${config.headless.executablePath ? ` (${config.headless.executablePath})` : ''}`,
     config.proxy ? `proxy: ${stripProxyCredentials(config.proxy.url)}` : undefined
   ]
     .filter(Boolean)
@@ -254,6 +254,11 @@ function buildPresentationSettingsItems(scope: PresentationScope, config: Presen
       values: ['inherit', 'compact', 'preview', 'verbose']
     }))
   ];
+}
+
+/** Browser path is a local file path, so only blank and surrounding whitespace are checked here. */
+export function validateBrowserPath(value: string): { ok: true; value: string } {
+  return { ok: true, value: value.trim() };
 }
 
 export function createBackendUrlEditor(
@@ -415,6 +420,19 @@ export function buildBackendSettingsItems(
       label: 'Firecrawl API key',
       currentValue: 'env var',
       values: ['env var']
+    },
+    {
+      id: 'backend:headless:executablePath',
+      label: 'Browser path',
+      currentValue: backends.headless.executablePath ?? 'not set',
+      // Empty by default: pressing enter on an unset path must not quietly point at a guessed binary.
+      submenu: createBackendUrlEditor(theme, 'Browser path for headless fetch', '', onUrlEditorOpenChange, validateBrowserPath)
+    },
+    {
+      id: 'backend:env:browserPath',
+      label: 'Browser path env var',
+      currentValue: BROWSER_PATH_ENV,
+      values: [BROWSER_PATH_ENV]
     },
     {
       id: 'backend:proxy:url',
@@ -700,6 +718,15 @@ export function applySettingsValue(
       currentBackends.fetch.baseUrl = newValue.trim();
     } else {
       delete currentBackends.fetch.baseUrl;
+    }
+  }
+
+  if (id === 'backend:headless:executablePath') {
+    if (newValue.trim()) {
+      currentBackends.headless = { ...currentBackends.headless, executablePath: newValue.trim() };
+    } else {
+      const { executablePath: _executablePath, ...headless } = currentBackends.headless;
+      currentBackends.headless = headless;
     }
   }
 
@@ -1138,7 +1165,8 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
   const save = deps.save ?? ((scope, config) => savePresentationConfigScope({}, scope, config));
   const saveBackends = deps.saveBackends ?? ((scope, config) => saveBackendConfigScope({}, scope, config));
   const reset = deps.reset ?? ((scope) => resetPresentationConfigScope({}, scope));
-  const resolveBrowser = deps.resolveBrowser ?? (() => resolveBrowserExecutable({}));
+  const resolveBrowser = deps.resolveBrowser ?? ((options?: { configuredPath?: string }) =>
+    resolveBrowserExecutable({ configuredPath: options?.configuredPath }));
   const runtime = deps.runtime ?? {
     nodeVersion: process.version,
     platform: process.platform,
@@ -1178,11 +1206,12 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       }
 
       if (action === 'doctor') {
-        const [typeboxOk, browser, loaded] = await Promise.all([checkTypebox(), resolveBrowser(), load()]);
+        const [typeboxOk, loaded] = await Promise.all([checkTypebox(), load()]);
         const backendConfig = loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG;
         const backendIssues = validateBackendConfig(backendConfig);
         const backendHealth = await checkBackends(backendConfig);
         const repoResearchLine = await checkRepoResearch();
+        const browser = await resolveBrowser({ configuredPath: backendConfig.headless.executablePath });
         const lines = [
           'pi-web-agent: loaded',
           `runtime: node ${runtime.nodeVersion} ${runtime.platform} ${runtime.arch}`,
@@ -1196,13 +1225,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           repoResearchLine
         ];
 
-        if (browser.ok) {
-          lines.push(`browser: ${browser.browser} ${browser.executablePath}`);
-        } else {
-          lines.push(`browser: missing (${browser.error.code})`);
-          lines.push(browser.error.message);
-          lines.push('Install Chrome, Chromium, Edge, or Brave and run /web-agent doctor again.');
-        }
+        lines.push(...browserDoctorLines(browser));
 
         ctx.ui.notify(lines.join('\n'), 'info');
         return;

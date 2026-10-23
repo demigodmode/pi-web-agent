@@ -103,7 +103,9 @@ If none is found, `web_explore` tries Playwright-managed Chromium with `headless
 
 Doctor's `managed Chromium fallback configured` line reports configuration, not whether a managed browser is installed or can launch. A missing local browser can therefore appear alongside that line.
 
-If you configured an explicit browser path and it is missing, doctor/fetch will still report that as a configuration problem instead of silently ignoring it.
+If you have a browser installed and doctor still says `browser: missing`, it's installed somewhere detection doesn't look. Set **Browser path** in `/web-agent` settings (`backends.headless.executablePath`) or `PI_WEB_AGENT_BROWSER_PATH` to the browser's executable. If that path doesn't exist, doctor and headless reads report it as a configuration problem instead of quietly falling back.
+
+A `sandboxed` note on the browser line means a Flatpak or Snap install. Those sometimes refuse to start under Playwright; point the browser path at a regular install if headless reads fail.
 
 ## `/web-agent` did something unexpected
 

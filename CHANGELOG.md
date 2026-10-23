@@ -7,13 +7,13 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- You can point headless reads at a specific browser with **Browser path** in settings (`backends.headless.executablePath`) or `PI_WEB_AGENT_BROWSER_PATH` (#109).
 
 ### Changed
 - None.
 
 ### Fixed
-- None.
+- Browser detection finds more installs: per-user Windows and macOS installs, the Windows registry, Spotlight, and Flatpak, Snap and Nix locations on Linux. Doctor shows where the browser came from (#109).
 
 ### Breaking
 - None.
