@@ -303,6 +303,32 @@ Equivalent config:
 
 Tavily only improves source discovery. `web_explore` still fetches pages, ranks evidence, handles headless fallback, and writes caveats itself.
 
+## Parallel Search MCP
+
+Choose **Settings → Backends → Search backend → parallel** for free web search through [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp), with no account or API key. Anonymous search uses Fast mode and is intended for exploration and light use; usage limits apply.
+
+Equivalent config:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "parallel"
+    }
+  }
+}
+```
+
+Run `/web-agent doctor`, then ask a research question such as:
+
+```text
+Find current official docs for configuring Vitest coverage with the v8 provider.
+```
+
+The built-in adapter calls `web_search` at `https://search.parallel.ai/mcp` with a single JSON-RPC `tools/call` POST, sent through the same search provider and proxy settings as every other backend. It adds no MCP client dependency, so you do not need a separate Pi MCP extension either. Parallel supplies source discovery; `web_explore` still reads pages through the configured fetch backend and network guard, ranks evidence, and writes the answer. The adapter does not use Parallel's `web_fetch` tool or read API keys.
+
+DuckDuckGo remains the default. Selecting Parallel leaves failures visible unless you explicitly set `"fallback": "duckduckgo"`. Parallel only participates in fanout when it is the selected provider or you explicitly include `"parallel"` in `backends.search.fanout.providers`; existing automatic provider sets do not gain it.
+
 ## Firecrawl fetch
 
 To use Firecrawl for page reading, choose **Settings → Backends**, set fetch provider to `firecrawl`, and enter the base URL. The equivalent config is:

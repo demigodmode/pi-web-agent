@@ -78,6 +78,18 @@ describe('createJsonSearchProvider', () => {
     }
   });
 
+  it('reads a body that is not plain JSON through decodeBody', async () => {
+    const response = () => new Response('data: {"results":[{"title":"T","url":"https://x.test/"}]}\n\n', {
+      headers: { 'content-type': 'text/event-stream' }
+    });
+    const decodeBody = ({ text }: { text: string }) => JSON.parse(text.slice('data: '.length));
+    expect(await provider(vi.fn(response) as any)({ query: 'q' })).toMatchObject({ error: { code: 'BAD_RESPONSE' } });
+    expect(await provider(vi.fn(response) as any, { decodeBody })({ query: 'q' })).toMatchObject({
+      status: 'ok',
+      results: [{ title: 'T', url: 'https://x.test/' }]
+    });
+  });
+
   it('treats a degraded empty response as bad_response', async () => {
     const result = await provider(vi.fn(async () => json({ results: [], degraded: true })) as any, {
       isDegradedEmpty: (body) => (body as { degraded?: boolean }).degraded === true

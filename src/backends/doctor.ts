@@ -1,5 +1,6 @@
 import { resolveSearchBaseUrl, type BackendConfig, type FirecrawlOptions, type SearxngOptions } from './config.js';
 import { classifyEnvelopeFailure } from './provider-failure.js';
+import { createParallelSearchTool } from '../search/parallel.js';
 import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
 
 function withTimeout(timeoutMs: number) {
@@ -154,6 +155,15 @@ export async function checkBackendHealth(
       } finally {
         timeout.done();
       }
+    }
+  } else if (config.search.provider === 'parallel') {
+    const timeout = withTimeout(timeoutMs);
+    try {
+      const result = await createParallelSearchTool({ fetchImpl })({ query: 'pi-web-agent web research', signal: timeout.signal });
+      lines.push(result.status === 'ok' ? 'search backend: parallel ok' :
+        `search backend: parallel warning (${result.error?.message ?? 'unexpected response'})`);
+    } finally {
+      timeout.done();
     }
   } else if (config.search.provider === 'tavily') {
     const apiKey = process.env.TAVILY_API_KEY;
