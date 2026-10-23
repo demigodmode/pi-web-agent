@@ -19,6 +19,10 @@ function normalizeWhitespace(value: string) {
 
 const SITE_OPERATOR_TOKEN = /^(-?)site:([a-z0-9.-]+(?:\/\S*)?)$/i;
 const URL_TOKEN = /^["'(\[]*https?:\/\//i;
+const SITE_HOST = '[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:\\/[^\\s()]*)?';
+const SITE_OR_CHAIN = `site:${SITE_HOST}(?:\\s+or\\s+site:${SITE_HOST})+`;
+/** Two or more positive site: operators joined by OR, optionally wrapped in one pair of parens. */
+const SITE_OR_GROUP = new RegExp(`(^|\\s)(?:\\(\\s*(${SITE_OR_CHAIN})\\s*\\)|(${SITE_OR_CHAIN}))(?=$|[\\s,;.!?])`, 'gi');
 
 /** A whitespace token's core: wrapping quotes and brackets off, trailing punctuation off. */
 function tokenCore(piece: string) {
@@ -28,29 +32,42 @@ function tokenCore(piece: string) {
 /**
  * Splits the query into plain words and site: operators. A URL is always words. An operator
  * is removed with its surrounding punctuation, so no comma or bracket is left behind.
+ * An OR'd group of positive operators is one positive, kept as "(site:a OR site:b)".
  */
 function parseSiteOperators(query: string) {
   const words: string[] = [];
   const positives: string[] = [];
   const negatives: string[] = [];
-  for (const raw of normalizeWhitespace(query).split(' ')) {
-    if (!raw) continue;
-    if (URL_TOKEN.test(raw)) {
-      words.push(raw);
-      continue;
+  const parseText = (text: string) => {
+    for (const raw of text.split(' ')) {
+      if (!raw) continue;
+      if (URL_TOKEN.test(raw)) {
+        words.push(raw);
+        continue;
+      }
+      const pieces = raw.split(',');
+      const matches = pieces.map((piece) => tokenCore(piece).match(SITE_OPERATOR_TOKEN));
+      if (!matches.some(Boolean)) {
+        words.push(raw);
+        continue;
+      }
+      pieces.forEach((piece, index) => {
+        const match = matches[index];
+        if (match) (match[1] ? negatives : positives).push(`${match[1]}site:${match[2]}`);
+        else if (piece.trim()) words.push(piece.trim());
+      });
     }
-    const pieces = raw.split(',');
-    const matches = pieces.map((piece) => tokenCore(piece).match(SITE_OPERATOR_TOKEN));
-    if (!matches.some(Boolean)) {
-      words.push(raw);
-      continue;
-    }
-    pieces.forEach((piece, index) => {
-      const match = matches[index];
-      if (match) (match[1] ? negatives : positives).push(`${match[1]}site:${match[2]}`);
-      else if (piece.trim()) words.push(piece.trim());
-    });
+  };
+  const normalized = normalizeWhitespace(query);
+  let cursor = 0;
+  for (const match of normalized.matchAll(SITE_OR_GROUP)) {
+    const inner = match[2] ?? match[3];
+    const start = match.index + match[1].length;
+    parseText(normalized.slice(cursor, start));
+    positives.push(`(${inner.split(/\s+or\s+/i).map((operator) => `site:${operator.slice('site:'.length)}`).join(' OR ')})`);
+    cursor = match.index + match[0].length;
   }
+  parseText(normalized.slice(cursor));
   return { words, positives, negatives };
 }
 

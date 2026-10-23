@@ -364,3 +364,51 @@ describe('planSearchQueries site operator tokens', () => {
     }
   }
 });
+
+describe('planSearchQueries OR-grouped site operators', () => {
+  const gaps = [
+    'Need supported version details.',
+    'Need exact API behavior.',
+    'Sources disagree about the recommendation.',
+    'Need user experience.',
+    'Need official docs.',
+    'Need implementation references.',
+    'Need comparison evidence for target: Vue'
+  ];
+  const cases: Array<{ originalQuery: string; group: string; excluded?: string }> = [
+    { originalQuery: '(site:a.com OR site:b.com) hooks', group: '(site:a.com OR site:b.com)' },
+    { originalQuery: 'site:a.com OR site:b.com hooks', group: '(site:a.com OR site:b.com)' },
+    { originalQuery: '(site:a.com OR site:b.com OR site:c.com) hooks', group: '(site:a.com OR site:b.com OR site:c.com)' },
+    { originalQuery: '(site:a.com or site:b.com) hooks', group: '(site:a.com OR site:b.com)' },
+    { originalQuery: '(site:a.com OR site:b.com) hooks -site:c.com', group: '(site:a.com OR site:b.com)', excluded: 'c.com' }
+  ];
+
+  for (const { originalQuery, group, excluded } of cases) {
+    it(`keeps the group from "${originalQuery}" intact on every follow-up`, () => {
+      for (const passIndex of [1, 2]) {
+        for (const gap of gaps) {
+          const queries = planSearchQueries({ originalQuery, passIndex, previousQueries: [], gaps: [gap] });
+          expect(queries.length, `${passIndex} ${gap}`).toBeGreaterThan(0);
+          for (const query of queries) {
+            expect(query.split(group).length - 1, query).toBe(1);
+            const remainder = query.split(group).join(' ');
+            expect(remainder, query).not.toMatch(/\bor\b/i);
+            expect(remainder, query).not.toMatch(/[()]/);
+            expect(remainder, query).not.toMatch(/(^|\s)site:/i);
+            if (excluded) expect(remainder.split(' ').filter((token) => token === `-site:${excluded}`), query).toHaveLength(1);
+          }
+        }
+      }
+    });
+  }
+
+  it('puts the group in place of the site a variant would add', () => {
+    const queries = planSearchQueries({ originalQuery: '(site:a.com OR site:b.com) hooks', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toBe('(site:a.com OR site:b.com) hooks official docs');
+  });
+
+  it('keeps a lone OR that is not between site operators as words', () => {
+    const queries = planSearchQueries({ originalQuery: 'React or Vue site:react.dev', passIndex: 1, previousQueries: [], gaps: ['Need official docs.'] });
+    expect(queries[0]).toBe('site:react.dev React or Vue official docs');
+  });
+});
