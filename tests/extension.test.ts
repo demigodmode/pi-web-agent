@@ -505,6 +505,46 @@ describe('Pi extension entrypoint', () => {
     expect(modelText.indexOf('Required source not read')).toBeLessThan(modelText.indexOf('No usable evidence found.'));
   });
 
+  it('says the no-evidence result once in model content', async () => {
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'No usable sources were found.'
+      })
+    } as never);
+
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'nothing here' });
+    const modelText = result.content[0].text as string;
+    expect(modelText).toBe('No usable evidence found.');
+    expect(modelText.match(/No usable/g)).toHaveLength(1);
+  });
+
+  it('keeps a specific caveat next to the no-evidence line in model content', async () => {
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      __webExploreTool: vi.fn().mockResolvedValue({
+        status: 'ok',
+        findings: [],
+        sources: [],
+        caveat: 'Evidence is partial: one or more linked sources could not be read reliably.'
+      })
+    } as never);
+
+    const result = await tools.find((tool) => tool.name === 'web_explore').execute('tool-call-1', { query: 'nothing here' });
+    const modelText = result.content[0].text as string;
+    expect(modelText).toContain('No usable evidence found.');
+    expect(modelText).toContain('Evidence is partial: one or more linked sources could not be read reliably.');
+  });
+
   it('sanitizes terminal and bidi formatting controls in persisted legacy presentation views', () => {
     const tools: any[] = [];
     const pi = {
