@@ -1,4 +1,5 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { initTheme } from '@earendil-works/pi-coding-agent';
 import {
   applySettingsValue,
   buildBackendSettingsItems,
@@ -2122,5 +2123,103 @@ describe('browser path settings', () => {
 
     component.handleInput?.('\r');
     expect(selected).toBe('');
+  });
+});
+
+describe('settings reset confirmation', () => {
+  beforeAll(() => initTheme('dark', false));
+
+  const resetFixture = {
+    global: { path: '/global/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: {} },
+    project: { path: '/project/config.json', exists: true, rawConfig: { tools: {} }, rawBackends: {} },
+    effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+    effectiveBackends: DEFAULT_BACKEND_CONFIG
+  };
+
+  // Opens the section menu, then drives the chosen settings screen with the given keys.
+  async function runSettingsScreen(section: 'presentation' | 'backends', keys: string[]) {
+    let handler: any;
+    const reset = vi.fn();
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const pi = {
+      registerCommand: vi.fn((_name: string, command: any) => {
+        handler = command.handler;
+      })
+    };
+
+    registerWebAgentConfigCommands(pi as never, {
+      load: vi.fn().mockResolvedValue(resetFixture),
+      save,
+      saveBackends,
+      reset
+    });
+
+    let screen = '';
+    const custom = vi.fn(async (factory: any) => {
+      if (custom.mock.calls.length === 1) return section;
+
+      let result: unknown;
+      const component = factory(
+        { requestRender: vi.fn() },
+        { fg: (_style: string, text: string) => text, bold: (text: string) => text },
+        {},
+        (value: unknown) => {
+          result = value;
+        }
+      );
+      for (const key of keys) {
+        component.handleInput(key);
+      }
+      screen = component.render(200).join('\n');
+      return result;
+    });
+
+    await handler('settings', { ui: { custom, notify: vi.fn() } });
+
+    return { reset, save, saveBackends, screen: () => screen };
+  }
+
+  const ctrlR = '\u0012';
+  const esc = '\u001b';
+
+  describe.each(['presentation', 'backends'] as const)('%s screen', (section) => {
+    it('a single Ctrl+R does not delete and shows the confirmation prompt', async () => {
+      const { reset, screen } = await runSettingsScreen(section, [ctrlR]);
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(screen()).toContain('Reset project settings?');
+      expect(screen()).toContain('/project/config.json');
+      expect(screen()).toContain('Press Ctrl+R again to confirm, Esc to cancel.');
+    });
+
+    it('Ctrl+R twice resets the selected scope', async () => {
+      const { reset } = await runSettingsScreen(section, [ctrlR, ctrlR]);
+
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(reset).toHaveBeenCalledWith('project');
+    });
+
+    it('Ctrl+R then Esc does not delete', async () => {
+      const { reset, save, saveBackends } = await runSettingsScreen(section, [ctrlR, esc]);
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(saveBackends).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+R then another key does not delete', async () => {
+      const { reset, save, saveBackends } = await runSettingsScreen(section, [ctrlR, 'x']);
+
+      expect(reset).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+      expect(saveBackends).not.toHaveBeenCalled();
+    });
+
+    it('a Ctrl+R after cancelling starts the confirmation over instead of deleting', async () => {
+      const { reset } = await runSettingsScreen(section, [ctrlR, esc, ctrlR]);
+
+      expect(reset).not.toHaveBeenCalled();
+    });
   });
 });
