@@ -136,7 +136,7 @@ Presentation modes:
 - `preview`: slightly richer bounded view
 - `verbose`: fuller bounded view
 
-Modes change the terminal display; the model receives findings, sources, and caveats in every mode. In settings, Ctrl+S saves, Esc discards edits, and Ctrl+R immediately deletes the whole selected scope's config file, including both presentation and backend settings, without confirmation. Confirmation is deferred in [#98](https://github.com/demigodmode/pi-web-agent/issues/98).
+Modes change the terminal display; the model receives findings, sources, and caveats in every mode. In settings, Ctrl+S saves, Esc discards edits, and Ctrl+R (pressed twice) resets the selected scope's whole config file, presentation and backend settings both.
 
 ## Docs
 

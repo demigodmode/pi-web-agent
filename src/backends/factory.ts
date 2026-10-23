@@ -2,6 +2,7 @@ import { createFirecrawlFetcher } from '../fetch/firecrawl-fetch.js';
 import { createHttpFetcher } from '../fetch/http-fetch.js';
 import { createProxyFetch, resolveProxyCredentials } from '../fetch/proxy-fetch.js';
 import { headlessFetch } from '../fetch/headless-fetch.js';
+import type { BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { createGuardedFetch } from '../fetch/guarded-fetch.js';
 import { startGuardProxy, type GuardProxy, type GuardProxyOptions } from '../fetch/guard-proxy.js';
 import { createGuardProxyFetch, type GuardProxyFetch } from '../fetch/guard-proxy-fetch.js';
@@ -73,7 +74,12 @@ export type BackendFactoryDeps = {
   repoGitEnv?: GitEnv;
   /** Test seam: the fetch used for GitHub API metadata. */
   repoApiFetch?: typeof fetch;
+  /** Test seams for the headless browser: detection and launch. */
+  resolveBrowser?: (options?: { configuredPath?: string }) => Promise<BrowserResolutionResult>;
+  launchBrowser?: HeadlessFetchOptions['launchBrowser'];
 };
+
+type HeadlessFetchOptions = NonNullable<Parameters<typeof headlessFetch>[1]>;
 
 /** A selected endpoint-backed provider with no endpoint: instead of throwing, it reports the gap once. */
 function invalidConfiguredSearch(backend: SearchProviderName, message: string) {
@@ -387,7 +393,15 @@ export function createBackendSet(
   });
 
   const headlessPage = ({ url, query, signal }: ResearchFetchInput) =>
-    headlessFetch(url, { query, signal, guard: networkGuard, guardProxy: getGuardProxy });
+    headlessFetch(url, {
+      query,
+      signal,
+      guard: networkGuard,
+      guardProxy: getGuardProxy,
+      configuredPath: config.headless.executablePath,
+      ...(deps.resolveBrowser ? { resolveBrowser: deps.resolveBrowser } : {}),
+      ...(deps.launchBrowser ? { launchBrowser: deps.launchBrowser } : {})
+    });
 
   const repoCache = deps.repoCache;
   const repoResearch = repoCache

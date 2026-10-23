@@ -16,6 +16,34 @@ describe('formatResearchProgress', () => {
     })).toBe('Reading: example.com/path · 2 reads started');
   });
 
+  it('numbers direct query links when a position is given', () => {
+    expect(formatResearchProgress({
+      phase: 'fetch', state: 'started', target: 'https://example.com/?p=5&token=secret', position: { index: 3, total: 8 },
+      searches: 1, fetches: 5, headless: 0
+    })).toBe('Reading link 3 of 8: example.com/ · 5 reads started');
+    expect(formatResearchProgress({
+      phase: 'headless', state: 'started', target: 'https://example.com/app?token=secret', position: { index: 2, total: 2 },
+      searches: 1, fetches: 2, headless: 1
+    })).toBe('Rendering link 2 of 2: example.com/app');
+  });
+
+  it('keeps search and unnumbered fetch activity without a position', () => {
+    expect(formatResearchProgress({ phase: 'fetch', state: 'started', target: 'https://example.com/?p=1', searches: 1, fetches: 1, headless: 0 }))
+      .toBe('Reading: example.com/ · 1 read started');
+    expect(formatResearchProgress({ phase: 'headless', state: 'started', target: 'https://example.com/?p=1', searches: 1, fetches: 1, headless: 1 }))
+      .toBe('Rendering: example.com/');
+  });
+
+  it('clips numbered link activity to 120 visible characters', () => {
+    const text = formatResearchProgress({
+      phase: 'fetch', state: 'started', target: `https://example.com/${'x'.repeat(200)}`, position: { index: 10, total: 10 },
+      searches: 1, fetches: 12, headless: 0
+    });
+    expect(Array.from(text)).toHaveLength(120);
+    expect(text.startsWith('Reading link 10 of 10: example.com/')).toBe(true);
+    expect(text.endsWith(' · 12 reads started')).toBe(true);
+  });
+
   it('shows a rendering target and claimed read count', () => {
     expect(formatResearchProgress({ phase: 'headless', state: 'started', target: 'https://example.com/app', searches: 1, fetches: 2, headless: 1 })).toBe('Rendering: example.com/app');
     expect(formatResearchProgress({ phase: 'fetch', state: 'settled', searches: 1, fetches: 2, headless: 0 })).toBe('2 reads started');

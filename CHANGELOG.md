@@ -7,13 +7,17 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- You can point headless reads at a specific browser with **Browser path** in settings (`backends.headless.executablePath`) or `PI_WEB_AGENT_BROWSER_PATH` (#109).
 
 ### Changed
-- None.
+- Ctrl+R in the settings screens asks first: the first press shows what it would delete, a second press resets, Esc cancels. The reset entries in the `/web-agent` menu ask through a confirmation dialog too (#98).
+- When several links are in one question, the live line says which one it's on, like `Reading link 3 of 8: example.com/` (#104).
+- CI and release workflows moved to the Node 24 versions of the GitHub actions (#110).
 
 ### Fixed
-- None.
+- Browser detection finds more installs: per-user Windows and macOS installs, the Windows registry, Spotlight, and Flatpak, Snap and Nix locations on Linux. Doctor shows where the browser came from (#109).
+- Follow-up searches keep an OR'd group like `(site:a.com OR site:b.com)` intact instead of keeping only the first site (#106).
+- When nothing usable is found, the result says so once instead of twice (#111).
 
 ### Breaking
 - None.
