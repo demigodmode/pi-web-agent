@@ -7,6 +7,7 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- Parallel as a search backend: keyless and opt-in, select `parallel` under Settings → Backends. Thanks to @georgeatparallel (#102, closes #43).
 - You can point headless reads at a specific browser with **Browser path** in settings (`backends.headless.executablePath`) or `PI_WEB_AGENT_BROWSER_PATH` (#109).
 
 ### Changed

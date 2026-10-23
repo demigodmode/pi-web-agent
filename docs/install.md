@@ -47,7 +47,7 @@ If yours is somewhere else, point at it directly. Either set **Browser path** in
 
 or set `PI_WEB_AGENT_BROWSER_PATH` in the environment where Pi runs. The config setting wins over the environment variable, and either one wins over auto-detection. A path that doesn't exist is reported as an error rather than skipped.
 
-Flatpak and Snap browsers are detected, but their sandbox wrappers don't always start under Playwright. If headless reads fail with one of those, set the path to a regular install instead.
+Flatpak and Snap browsers are detected, but only used when no regular install is found, because their sandbox wrappers don't always start under Playwright. If headless reads fail with one of those, set the path to a regular install instead.
 
 If none is detected, `web_explore` tries Playwright-managed Chromium with `headless: true`. That browser must already be installed; installing pi-web-agent does not download it. Firefox/Safari-only systems can still use search and plain HTTP reads.
 
