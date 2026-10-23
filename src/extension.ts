@@ -8,7 +8,7 @@ import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presenta
 import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
-import { sanitizeTerminalText } from './presentation/explore-display-text.js';
+import { endWithPeriod, sanitizeTerminalText } from './presentation/explore-display-text.js';
 import { searchUnavailableNotices } from './presentation/explore-presentation.js';
 import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
@@ -50,7 +50,7 @@ function isCancelledResult(toolResult: { content?: unknown; details?: unknown })
 function serializeForModel(result: WebExploreResponse): string {
   const searchNotices = searchUnavailableNotices(result);
   const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
-    `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
+    `Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`
   );
   const terminalError = result.status === 'error'
     ? `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`
@@ -58,7 +58,9 @@ function serializeForModel(result: WebExploreResponse): string {
   if (result.findings.length === 0 && result.sources.length === 0) {
     return terminalError
       ? [...searchNotices, ...requiredNotices, terminalError].filter(Boolean).join('\n\n')
-      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', result.caveat].filter(Boolean).join('\n\n');
+      // "No usable evidence found." already says what the no-sources caveat would repeat.
+      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', result.caveat === 'No usable sources were found.' ? undefined : result.caveat]
+        .filter(Boolean).join('\n\n');
   }
   const linked = (result.evidence?.length ?? 0) > 0;
   const findings = result.findings.map((finding, index) => {

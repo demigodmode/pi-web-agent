@@ -41,7 +41,7 @@ Right now it gives you:
 - questions about a pasted GitHub repo answered from a clone of its code, with commit-pinned citations
 - Esc cancels a running research pass, and one page failing to load doesn't fail the run
 - local-browser headless rendering with managed Chromium fallback
-- optional hosted discovery through Brave, You.com, Exa, Tavily, or a Google SERP endpoint without changing the public `web_explore` tool
+- optional hosted discovery through Brave, You.com, Exa, Tavily, Parallel, or a Google SERP endpoint without changing the public `web_explore` tool
 - bounded research behavior that is willing to say when evidence was weak, narrow, blocked, or cautionary
 
 ## Start here

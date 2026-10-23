@@ -33,7 +33,21 @@ That checks whether the package loaded and reports the configured search, fetch,
 
 ## Browser rendering
 
-Headless rendering first tries a local Chromium-family browser. Supported local browsers are Chrome, Chromium, Edge, and Brave when they can be detected on Windows, macOS, or Linux.
+Headless rendering first tries a local Chromium-family browser: Chrome, Chromium, Edge, or Brave. It looks in the usual install folders on each OS, including per-user installs on Windows (`%LOCALAPPDATA%`) and macOS (`~/Applications`), the Windows registry and Spotlight on macOS, plus Flatpak, Snap and Nix locations and common command names on PATH on Linux.
+
+If yours is somewhere else, point at it directly. Either set **Browser path** in `/web-agent` settings, which saves `backends.headless.executablePath`:
+
+```json
+{
+  "backends": {
+    "headless": { "provider": "local-browser", "executablePath": "/opt/chromium/chrome" }
+  }
+}
+```
+
+or set `PI_WEB_AGENT_BROWSER_PATH` in the environment where Pi runs. The config setting wins over the environment variable, and either one wins over auto-detection. A path that doesn't exist is reported as an error rather than skipped.
+
+Flatpak and Snap browsers are detected, but only used when no regular install is found, because their sandbox wrappers don't always start under Playwright. If headless reads fail with one of those, set the path to a regular install instead.
 
 If none is detected, `web_explore` tries Playwright-managed Chromium with `headless: true`. That browser must already be installed; installing pi-web-agent does not download it. Firefox/Safari-only systems can still use search and plain HTTP reads.
 
@@ -46,7 +60,7 @@ node -e "const path = require('node:path'); require('node:child_process').execFi
 
 Adjust the directory for a project or custom installation. This resolves the Playwright dependency from that package directory, including a nested copy, so the browser matches the version Pi will load. If a package update changes Playwright, rerun the command. Linux also needs the browser's system libraries; see [Playwright's browser installation and system requirements](https://playwright.dev/docs/browsers#install-system-dependencies).
 
-Doctor detects local browsers. Its `managed Chromium fallback configured` line describes the fallback configuration; it does not check that the managed browser exists or can launch.
+Doctor's `browser:` line shows which browser it found and why: `(auto)`, `(config)`, or `(PI_WEB_AGENT_BROWSER_PATH)`. Its `managed Chromium fallback configured` line describes the fallback configuration; it does not check that the managed browser exists or can launch.
 
 ## Work from the repo locally
 

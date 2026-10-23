@@ -103,7 +103,9 @@ If none is found, `web_explore` tries Playwright-managed Chromium with `headless
 
 Doctor's `managed Chromium fallback configured` line reports configuration, not whether a managed browser is installed or can launch. A missing local browser can therefore appear alongside that line.
 
-If you configured an explicit browser path and it is missing, doctor/fetch will still report that as a configuration problem instead of silently ignoring it.
+If you have a browser installed and doctor still says `browser: missing`, it's installed somewhere detection doesn't look. Set **Browser path** in `/web-agent` settings (`backends.headless.executablePath`) or `PI_WEB_AGENT_BROWSER_PATH` to the browser's executable. If that path doesn't exist, doctor and headless reads report it as a configuration problem instead of quietly falling back.
+
+A `sandboxed` note on the browser line means a Flatpak or Snap install. Those sometimes refuse to start under Playwright; point the browser path at a regular install if headless reads fail.
 
 ## `/web-agent` did something unexpected
 
@@ -135,7 +137,7 @@ The settings UI currently has two sections:
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
 
-In either settings screen, Ctrl+S saves and Esc discards unsaved edits. Ctrl+R immediately deletes the selected scope's whole config file, including both presentation and backend settings, without confirmation. Reset menu entries do the same. Confirmation is deferred in [issue #98](https://github.com/demigodmode/pi-web-agent/issues/98).
+In either settings screen, Ctrl+S saves and Esc discards unsaved edits. Ctrl+R resets the selected scope's whole config file, presentation and backend settings both, but only after you press it a second time; Esc cancels. The reset entries in the `/web-agent` menu ask for confirmation before deleting anything.
 
 ## Pi seems to be loading the wrong copy
 

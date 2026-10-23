@@ -23,6 +23,25 @@ describe('research orchestrator types', () => {
     expect(result.metadata.presentationStats?.pagesRead).toBe(1);
   });
 
+  it('numbers each direct query link in its started progress event', async () => {
+    const events: ResearchProgress[] = [];
+    await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { text: 'Readable source.' }, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn()
+    }).run({
+      query: 'Compare https://example.test/?p=1 https://example.test/?p=2 https://example.test/?p=3',
+      onProgress: (event) => events.push(event)
+    });
+    const started = events.filter((event) => event.phase === 'fetch' && event.state === 'started');
+    expect(started.map((event) => event.position)).toEqual([
+      { index: 1, total: 3 },
+      { index: 2, total: 3 },
+      { index: 3, total: 3 }
+    ]);
+    expect(events.filter((event) => event.state === 'settled').every((event) => event.position === undefined)).toBe(true);
+  });
+
   it('reports the first successful typed repo read in its settled progress snapshot', async () => {
     const events: ResearchProgress[] = [];
     await createResearchOrchestrator({
@@ -55,6 +74,34 @@ describe('research orchestrator types', () => {
     expect(fetchDirect).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.test/two' }));
     expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://example.test/one', reason: 'read-failed' }));
     expect(result.requiredSourceEvidence).toContainEqual(expect.objectContaining({ requestedUrl: 'https://example.test/two' }));
+  });
+
+  it('reports the headless browser error for a required direct URL instead of the generic read message', async () => {
+    const message = 'Configured browser path was not found: /nope/chromium (from backends.headless.executablePath)';
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'CONFIGURED_BROWSER_NOT_FOUND', message } }))
+    }).run({ query: 'Read https://browser.test/page' });
+    expect(result.requiredSourceFailures).toEqual([expect.objectContaining({ url: 'https://browser.test/page', code: 'CONFIGURED_BROWSER_NOT_FOUND', message })]);
+  });
+
+  it('keeps the generic direct read message when the headless retry has no error', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'ok' as const, url, content: { title: 'Empty', text: '   ' }, metadata: { method: 'headless' as const, cacheHit: false } }))
+    }).run({ query: 'Read https://browser.test/empty' });
+    expect(result.requiredSourceFailures).toEqual([expect.objectContaining({ url: 'https://browser.test/empty', code: 'DIRECT_SOURCE_READ_FAILED', message: 'Direct URL could not be read reliably: https://browser.test/empty' })]);
+  });
+
+  it('surfaces a configured browser error from a discretionary headless retry as a gap', async () => {
+    const message = 'Configured browser path was not found: /nope/chromium (from backends.headless.executablePath)';
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: ['q'], evidence: [], gaps: [], lowValueOutcomes: [], suggestedHeadlessUrl: 'https://browser.test/dynamic', exhaustedBudget: false })) },
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'CONFIGURED_BROWSER_NOT_FOUND', message } }))
+    }).run({ query: 'research dynamic page' });
+    expect(result.workerPass.gaps).toContainEqual({ kind: 'fetch-failed', message });
   });
 
   it('deduplicates a direct redirect with the same worker candidate in presentation stats', async () => {

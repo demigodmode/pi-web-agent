@@ -1,7 +1,7 @@
 import type { FetchMethod, WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
-import { clipTerminalText, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
+import { clipTerminalText, endWithPeriod, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
 
 export { sanitizeTerminalText } from './explore-display-text.js';
 
@@ -32,7 +32,7 @@ export function searchUnavailableNotices(result: Pick<WebExploreResponse, 'searc
 
 function buildLegacyExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   const notices = (result.requiredSourceFailures ?? []).map((failure) =>
-    sanitizeTerminalText(`Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`)
+    sanitizeTerminalText(`Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`)
   );
   const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
   if (result.status === 'error') {
@@ -134,11 +134,11 @@ function summaryLine(result: WebExploreResponse) {
 function requiredNotices(result: WebExploreResponse, compact = false) {
   const failures = result.requiredSourceFailures ?? [];
   if (!compact) return failures.map((failure) => sanitizeTerminalText(
-    `Required source not read: ${failure.url}. ${failure.message} The requirements of this source were not checked.`
+    `Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`
   ));
   const grouped = new Map<string, { message: string; urls: string[] }>();
   for (const failure of failures) {
-    const message = sanitizeTerminalText(failure.message);
+    const message = sanitizeTerminalText(endWithPeriod(failure.message));
     const key = `${failure.reason}\u0000${message}`;
     const group = grouped.get(key) ?? { message, urls: [] };
     group.urls.push(sanitizeTerminalText(failure.url));

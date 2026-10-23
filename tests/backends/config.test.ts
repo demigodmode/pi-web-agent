@@ -118,7 +118,7 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, or google-serp');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, parallel, or google-serp');
   });
 
   it('accepts youcom search provider with duckduckgo fallback', () => {
@@ -722,5 +722,60 @@ describe('network config', () => {
         network: { trustProxyDns: true }
       })
     ).not.toContain('backends.network.trustProxyDns has no effect without backends.proxy');
+  });
+});
+
+describe('headless browser path config', () => {
+  it('parses and trims backends.headless.executablePath', () => {
+    expect(extractBackendConfigOverride({
+      backends: { headless: { provider: 'local-browser', executablePath: '  /usr/bin/chromium  ' } }
+    }).headless).toEqual({ provider: 'local-browser', executablePath: '/usr/bin/chromium' });
+  });
+
+  it('ignores a non-string executablePath', () => {
+    expect(extractBackendConfigOverride({
+      backends: { headless: { provider: 'local-browser', executablePath: 42 } }
+    }).headless).toEqual({ provider: 'local-browser' });
+  });
+
+  it('keeps a blank executablePath so validation reports it', () => {
+    const override = extractBackendConfigOverride({ backends: { headless: { executablePath: '   ' } } });
+    expect(override.headless).toEqual({ executablePath: '' });
+
+    const config = mergeBackendConfigLayers(DEFAULT_BACKEND_CONFIG, override);
+    expect(validateBackendConfig(config)).toContain('backends.headless.executablePath must not be empty when provided');
+  });
+
+  it('lets a project layer override the global browser path', () => {
+    const config = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      extractBackendConfigOverride({ backends: { headless: { executablePath: '/global/chrome' } } }),
+      extractBackendConfigOverride({ backends: { headless: { executablePath: '/project/chrome' } } })
+    );
+
+    expect(config.headless).toEqual({ provider: 'local-browser', executablePath: '/project/chrome' });
+  });
+
+  it('keeps the global browser path when the project layer does not set one', () => {
+    const config = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      extractBackendConfigOverride({ backends: { headless: { executablePath: '/global/chrome' } } }),
+      extractBackendConfigOverride({ backends: { search: { provider: 'duckduckgo' } } })
+    );
+
+    expect(config.headless.executablePath).toBe('/global/chrome');
+  });
+
+  it('clears an inherited browser path with the cleared list', () => {
+    const cleared = extractBackendConfigOverride({ backends: { cleared: ['headless.executablePath'] } });
+    expect(cleared.cleared).toEqual(['headless.executablePath']);
+
+    const config = mergeBackendConfigLayers(
+      DEFAULT_BACKEND_CONFIG,
+      extractBackendConfigOverride({ backends: { headless: { executablePath: '/global/chrome' } } }),
+      cleared
+    );
+
+    expect(config.headless).toEqual({ provider: 'local-browser' });
   });
 });

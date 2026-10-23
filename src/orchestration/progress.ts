@@ -4,6 +4,8 @@ export type ResearchProgress = {
   phase: 'search' | 'fetch' | 'headless' | 'complete';
   state?: 'started' | 'settled';
   target?: string;
+  /** Set for direct query links so the started line can say which one is being read. */
+  position?: { index: number; total: number };
   searches: number;
   fetches: number;
   headless: number;
@@ -17,6 +19,9 @@ export function formatResearchProgress(progress: ResearchProgress): string {
     const prefix = `${label}: `;
     return display ? `${prefix}${clipTerminalText(display, Math.max(0, 120 - Array.from(prefix).length - Array.from(suffix).length))}${suffix}` : label;
   };
+  const linkLabel = (verb: string) => progress.position && progress.position.total > 1
+    ? `${verb} link ${progress.position.index} of ${progress.position.total}`
+    : verb;
   switch (progress.phase) {
     case 'search': return activity('Searching', progress.target, (target) => safeDisplayQuery(target, 120));
     case 'fetch': {
@@ -26,10 +31,10 @@ export function formatResearchProgress(progress: ResearchProgress): string {
         return `${progress.pagesRead} ${progress.pagesRead === 1 ? 'page' : 'pages'} read · ${reads}`;
       }
       return progress.target
-        ? activity('Reading', progress.target, (target) => safeDisplayUrl(String(target)), ` · ${reads}`)
+        ? activity(linkLabel('Reading'), progress.target, (target) => safeDisplayUrl(String(target)), ` · ${reads}`)
         : reads;
     }
-    case 'headless': return activity('Rendering', progress.target, (target) => safeDisplayUrl(String(target)));
+    case 'headless': return activity(linkLabel('Rendering'), progress.target, (target) => safeDisplayUrl(String(target)));
     case 'complete': return 'Research complete.';
   }
 }

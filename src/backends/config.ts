@@ -24,7 +24,7 @@ export type ProxyConfig = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'google-serp';
+  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp';
   /** Endpoint of the selected provider. Under fanout, give the other endpoint-backed providers their own entry in baseUrls. */
   baseUrl?: string;
   /** Per-provider endpoints, so one endpoint-backed provider never has to reuse another's baseUrl (see resolveSearchBaseUrl). */
@@ -43,7 +43,11 @@ export type FetchBackendConfig = {
   fallback?: 'http';
   options?: FirecrawlOptions;
 };
-export type HeadlessBackendConfig = { provider: 'local-browser' };
+export type HeadlessBackendConfig = {
+  provider: 'local-browser';
+  /** Local Chromium-family binary to launch instead of auto-detection. */
+  executablePath?: string;
+};
 
 export type NetworkConfig = {
   /** CIDR ranges exempted from the private-address guard (#53). */
@@ -87,6 +91,7 @@ export const CLEARABLE_BACKEND_PATHS = [
   'network',
   'network.allowRanges',
   'network.trustProxyDns',
+  'headless.executablePath',
 ] as const;
 
 export type BackendClearPath = typeof CLEARABLE_BACKEND_PATHS[number];
@@ -112,7 +117,7 @@ export type BackendConfigFile = {
     cleared?: unknown;
     search?: { provider?: unknown; baseUrl?: unknown; baseUrls?: unknown; keyHeader?: unknown; fallback?: unknown; options?: unknown; fanout?: unknown };
     fetch?: { provider?: unknown; baseUrl?: unknown; apiKey?: unknown; fallback?: unknown; options?: unknown };
-    headless?: { provider?: unknown };
+    headless?: { provider?: unknown; executablePath?: unknown };
     proxy?: { url?: unknown; username?: unknown; password?: unknown };
     network?: { allowRanges?: unknown; trustProxyDns?: unknown };
   };
@@ -232,7 +237,7 @@ function extractFirecrawlOptions(value: unknown): FirecrawlOptions | undefined {
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
-const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
+const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp'];
 
 /** Providers that talk to an endpoint the user configures in backends.search.baseUrl. */
 export const BASE_URL_SEARCH_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'google-serp'];
@@ -277,7 +282,7 @@ export function resolveSearchBaseUrl(search: SearchBackendConfig, provider: Sear
 }
 
 /** Providers a duckduckgo fallback can fall back from. */
-export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'google-serp'];
+export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp'];
 
 export function usableSearchProviders(
   search: SearchBackendConfig,
@@ -291,6 +296,8 @@ export function usableSearchProviders(
   if (env.EXA_API_KEY?.trim()) usable.push('exa');
   if (env.TAVILY_API_KEY?.trim()) usable.push('tavily');
   if (resolveSearchBaseUrl(search, 'google-serp') && env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY?.trim()) usable.push('google-serp');
+  // Parallel is keyless but opt-in: existing implicit fanout sets must stay unchanged.
+  if (search.provider === 'parallel' || search.fanout?.providers?.includes('parallel')) usable.push('parallel');
   return usable;
 }
 
@@ -389,6 +396,11 @@ export function extractBackendConfigOverride(
     override.headless = { provider: 'local-browser' };
   }
 
+  // A blank value is kept so validation can flag it, the same way baseUrls does.
+  if (typeof backends?.headless?.executablePath === 'string') {
+    override.headless = { ...(override.headless ?? {}), executablePath: backends.headless.executablePath.trim() };
+  }
+
   const proxy = extractProxyConfig(backends?.proxy);
   if (proxy) {
     override.proxy = proxy;
@@ -417,6 +429,10 @@ export function validateBackendConfig(config: BackendConfig): string[] {
 
   if (config.search.keyHeader !== undefined && !config.search.keyHeader.trim()) {
     issues.push('search keyHeader must not be empty when provided');
+  }
+
+  if (config.headless.executablePath !== undefined && !config.headless.executablePath.trim()) {
+    issues.push('backends.headless.executablePath must not be empty when provided');
   }
 
   if (config.proxy && config.proxy.url.trim() !== '') {
