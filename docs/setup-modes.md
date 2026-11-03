@@ -16,7 +16,7 @@ If you want to tune how tool output shows up in the transcript, see [Presentatio
 
 Brave, You.com, Exa, and Tavily are available as hosted search backends, and `google-serp` covers hosted Google SERP vendors (that one also needs a `baseUrl`). Parallel is hosted too but needs no key; select `parallel` to use it.
 
-Each reads its key from the environment (`PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`), then you pick that provider from **Settings → Backends**. They handle source discovery only; `web_explore` still fetches pages, ranks evidence, handles caveats, and synthesizes the answer itself.
+Each reads its key from the environment (`PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `KEENABLE_API_KEY`, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`), then you pick that provider from **Settings → Backends**. They handle source discovery only; `web_explore` still fetches pages, ranks evidence, handles caveats, and synthesizes the answer itself.
 
 Other hosted research providers may be added later, but do not assume every provider-backed path is already wired in.
 

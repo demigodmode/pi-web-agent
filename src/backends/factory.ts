@@ -12,6 +12,7 @@ import { createYouComSearchTool } from '../search/youcom.js';
 import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createParallelSearchTool } from '../search/parallel.js';
+import { createKeenableSearchTool } from '../search/keenable.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { createGoogleSerpSearchTool } from '../search/google-serp.js';
@@ -54,6 +55,7 @@ export type BackendFactoryDeps = {
   createExaSearch?: typeof createExaSearchTool;
   createParallelSearch?: typeof createParallelSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
+  createKeenableSearch?: typeof createKeenableSearchTool;
   createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
   createDegoogSearch?: typeof createDegoogSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
@@ -171,6 +173,7 @@ export function createBackendSet(
   const createExaSearch = deps.createExaSearch ?? createExaSearchTool;
   const createParallelSearch = deps.createParallelSearch ?? createParallelSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
+  const createKeenableSearch = deps.createKeenableSearch ?? createKeenableSearchTool;
   const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
   const createDegoogSearch = deps.createDegoogSearch ?? createDegoogSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
@@ -311,6 +314,8 @@ export function createBackendSet(
         return createParallelSearch({ fetchImpl });
       case 'tavily':
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
+      case 'keenable':
+        return createKeenableSearch({ apiKey: process.env.KEENABLE_API_KEY, fetchImpl });
       case 'google-serp': {
         // Each endpoint-backed provider resolves its own URL, so a fanout set can never
         // point one provider at another's endpoint (or send it the other's key).

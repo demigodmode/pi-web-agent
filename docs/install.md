@@ -139,6 +139,7 @@ Secrets live in the environment, not in config the settings UI writes. The ones 
 - `PI_WEB_AGENT_BRAVE_API_KEY`: Brave search
 - `YDC_API_KEY`: You.com search
 - `EXA_API_KEY`: Exa search
+- `KEENABLE_API_KEY`: Keenable search (opt-in; select `keenable` under Backends)
 - `TAVILY_API_KEY`: Tavily search
 - `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`: Google SERP endpoint search (`baseUrl` + header key, any vendor)
 - `PI_WEB_AGENT_DEGOOG_API_KEY`: degoog search, only if the instance has API-key protection on
