@@ -322,7 +322,7 @@ describe('Pi extension entrypoint', () => {
     const webExplore = registerTool.mock.calls.map((call) => call[0]).find((tool) => tool.name === 'web_explore');
 
     expect(webExplore).toBeDefined();
-    expect(webExplore.description).toContain('Research a web question');
+    expect(webExplore.description).toContain('Search the web and read the best sources');
     expect(webExplore.description).toContain('bounded search/fetch passes');
     expect(webExplore.parameters.properties).toHaveProperty('query');
     expect(Object.keys(webExplore.parameters.properties)).toEqual(['query']);
@@ -345,16 +345,21 @@ describe('Pi extension entrypoint', () => {
 
     expect(handlers.has('before_agent_start')).toBe(false);
     const tool = registeredTools.find((item) => item.name === 'web_explore');
-    expect(tool.description).toBe(
-      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
-      'Prefer this for ordinary web research and narrower follow-up searches. ' +
+    const description =
+      'Search the web and read the best sources, using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
+      'The query is used as the first search as written, so make it a short, specific search request rather than a conversational sentence. ' +
+      'Prefer this for ordinary web research. If the result says something is still open, call again with a narrower query for that part. ' +
       'Include every link the user supplied, unchanged, in the query: links in the query are read directly (GitHub issues and pull requests through the API, GitHub repositories cloned and searched), and reported if they cannot be read. ' +
-      'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.'
-    );
+      'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.';
+    const queryDescription =
+      'Short, specific search request, used as the first search as written. Skip filler like "can you find" or "please". ' +
+      'Keep words that say what you want: "vs" for comparisons, version numbers, "API", "user opinions", "summarize" with a link. ' +
+      'Include any links the user gave, unchanged.';
+    expect(tool.description).toBe(description);
     expect(tool.description).toContain('Prefer this for ordinary web research');
     expect(tool.description).toContain('Include every link the user supplied, unchanged, in the query');
     expect(tool.description).toContain('git and gh');
-    expect(tool.parameters.properties.query.description).toBe('Web research question. Include any links the user gave, unchanged.');
+    expect(tool.parameters.properties.query.description).toBe(queryDescription);
     expect(tool.description).not.toContain('do not use shell/network commands');
   });
 
@@ -1017,6 +1022,74 @@ describe('Pi extension entrypoint', () => {
 });
 
 describe('web_explore credential redaction through the registered tool', () => {
+  it('serializes bounded research context from the registered tool without changing its query', async () => {
+    const secret = 'Widget https://alice:pw@example.test/?token=secret&id=7';
+    const explore = vi.fn(async (_input: { query: string }) => ({
+      decision: { action: 'research-again' as const }, evidence: [], workerPass: {},
+      metadata: {
+        searchPasses: 1, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: true,
+        executedQueries: [secret], openGaps: ['Need supported version details.'],
+        suggestedQueries: [secret + ' release notes']
+      }
+    }));
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreTool: createWebExploreTool({ explore }),
+      __presentationConfigStore: { load: vi.fn(async () => ({ effectiveConfig: { defaultMode: 'compact', tools: {} } })) }
+    } as never);
+
+    const result = await tools[0].execute('context-test', { query: secret });
+    const text = result.content[0].text as string;
+    expect(text).toContain('No usable evidence found.');
+    expect(text).toContain('Searched:');
+    expect(text).toContain('Still open: supported version details');
+    expect(text).toContain('Try next:');
+    for (const output of [text, JSON.stringify(result.details)]) {
+      expect(output).not.toContain('alice');
+      expect(output).not.toContain('pw@');
+      expect(output).not.toContain('token=secret');
+      expect(output).toContain('id=7');
+    }
+    expect(explore.mock.calls[0][0].query).toBe(secret);
+  });
+
+  it('keeps notices, evidence, and terminal errors ordered around serialized context', async () => {
+    const secret = 'Widget https://alice:pw@example.test/?token=secret&id=7';
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreTool: createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+        decision: { action: 'research-again' }, workerPass: {}, terminalFailure: { code: 'STOPPED', message: 'Stopped.' },
+        evidence: [{ title: 'Widget docs', url: 'https://widget.test/docs', method: 'http', sourceKind: 'official-docs', summary: 'Widget finding.', supports: ['Widget excerpt.'] }],
+        requiredSourceEvidence: [{ title: 'Widget docs', url: 'https://widget.test/docs', method: 'http', sourceKind: 'official-docs', summary: 'Widget finding.', supports: ['Widget excerpt.'] }],
+        requiredSourceFailures: [{ url: 'https://failed.test/docs', code: 'READ_FAILED', message: 'Could not read.', reason: 'read-failed' }],
+        metadata: { searchPasses: 1, fetchedPages: 1, headlessAttempts: 0, exhaustedBudget: true, executedQueries: [secret], openGaps: ['Need supported version details.'], suggestedQueries: [secret + ' release notes'] }
+      }) })
+    } as never);
+    const text = (await tools[0].execute('context-error', { query: secret })).content[0].text as string;
+    expect(text.indexOf('Required source not read:')).toBeLessThan(text.indexOf('[S1] Widget finding.'));
+    expect(text.indexOf('  - Widget excerpt.')).toBeGreaterThan(text.indexOf('[S1] Widget finding.'));
+    expect(text.indexOf('Searched:')).toBeGreaterThan(text.indexOf('  - Widget excerpt.'));
+    expect(text.indexOf('Research failed: Stopped.')).toBeGreaterThan(text.indexOf('Try next:'));
+  });
+
+  it('preserves context in the zero-evidence terminal-error serialization branch', async () => {
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __webExploreTool: createWebExploreTool({ explore: vi.fn().mockResolvedValue({
+        decision: { action: 'research-again' }, evidence: [], workerPass: {},
+        terminalFailure: { code: 'STOPPED', message: 'Stopped.' },
+        metadata: { searchPasses: 1, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: true, executedQueries: ['Widget versions'], openGaps: ['Need supported version details.'], suggestedQueries: ['Widget versions release notes'] }
+      }) })
+    } as never);
+    const text = (await tools[0].execute('empty-error', { query: 'Widget versions' })).content[0].text as string;
+    expect(text.indexOf('Research failed: Stopped.')).toBeLessThan(text.indexOf('Searched:'));
+    expect(text).toContain('Still open: supported version details');
+    expect(text).toContain('Try next: "Widget versions release notes"');
+  });
+
   it('keeps userinfo and token values out of model text, terminal views, and saved details', async () => {
     const url = 'https://alice:secret@example.com/doc?token=secret&id=7';
     const tools: any[] = [];

@@ -111,6 +111,18 @@ citations, caveats, and these notices unchanged across compact, preview, and
 verbose modes. Expanding a result opens the verbose view; saved results keep
 the mode selected when they ran, and older saved results use a legacy fallback.
 
+The model also receives up to three short research-context lines: `Searched`
+lists searches that actually started, `Still open` lists remaining gaps detected
+by rules, and `Try next` suggests up to two unexecuted follow-up queries for a
+partial result. These are rule-based hints, not another model's assessment.
+`Still open` and `Try next` appear only for a partial result or a required-source
+failure. Partial search coverage remains in the existing caveat rather than in
+`Still open`.
+The block is limited to 1,000 characters. Queries may be shortened for display;
+the underlying search and the existing evidence excerpts are unchanged.
+The same context appears in the verbose terminal view. Compact and preview
+keep their current layout. Older saved results without these fields remain readable.
+
 The visible mode changes terminal presentation only. It does not create extra
 public tools or change the research workflow.
 

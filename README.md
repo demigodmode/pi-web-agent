@@ -84,6 +84,8 @@ Or hand it a link to read:
 
 If a pass comes back thin, call `web_explore` again with a narrower query.
 
+Short, specific queries work best. Words like `vs`, a version number or `user opinions` change how the research runs, so they're worth keeping. Results also list what was searched, and when one comes back partial, what's still open plus a couple of follow-up searches Pi can try.
+
 ## Backends
 
 Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Switch providers from `/web-agent settings → Backends`. The UI does not write API keys. Manual Firecrawl `apiKey` and proxy `password` config values are supported, but a Backends save removes them from that scope's file. Environment variables survive those saves.

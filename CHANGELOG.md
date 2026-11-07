@@ -7,10 +7,10 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Research results tell Pi what was searched, which gaps remain, and up to two rule-based follow-up searches. The same context appears in verbose view.
 
 ### Changed
-- None.
+- The tool description asks for short, specific searches while keeping intent words and supplied links (#124).
 
 ### Fixed
 - None.

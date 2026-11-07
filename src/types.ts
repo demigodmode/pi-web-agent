@@ -204,6 +204,11 @@ export type WebExploreResponse = {
     attempts?: Attempt[];
     requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
     presentationStats?: PresentationStats;
+    executedQueries?: string[];
+    /** Final rule-detected task gaps; excludes historical page failures. */
+    openGaps?: string[];
+    /** Unexecuted, rule-based proposals for the caller. */
+    suggestedQueries?: string[];
   };
   presentation?: PresentationEnvelope;
   error?: ToolError;

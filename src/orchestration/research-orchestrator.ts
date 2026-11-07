@@ -25,6 +25,7 @@ import { classifyResearchIntent, missingComparisonTargets } from './research-int
 import { createResearchRunBudget, type ResearchBudgetReason, type ResearchBudgetSnapshot } from './run-budget.js';
 import type { ResearchProgress } from './progress.js';
 import { createPresentationStats, type PresentationStats } from './presentation-stats.js';
+import { buildCallerContext, collectTaskPlanningGaps } from './caller-context.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -178,6 +179,9 @@ function buildMetadata({
     budget,
     presentationStats,
     ...(requiredSourceFailures?.length ? { requiredSourceFailures } : {}),
+    executedQueries: [...executedQueries],
+    openGaps: [] as string[],
+    suggestedQueries: [] as string[],
     ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
 }
@@ -274,6 +278,7 @@ export function createResearchOrchestrator({
       const previousQueries: string[] = [];
       // Only searches the worker actually started count as passes.
       const executedQueries: string[] = [];
+      let lastPlanningPass = -1;
       const suggestedHeadlessUrls: string[] = [];
       const attemptedHeadlessUrls = new Set<string>();
       // Only discretionary escalations consume the decider's two attempts.
@@ -304,6 +309,19 @@ export function createResearchOrchestrator({
       };
       const complete = (result: Omit<ResearchOrchestratorResult, 'requiredSourceEvidence' | 'requiredSourceFailures'>): ResearchOrchestratorResult => {
         const hasRequiredFailure = requiredSourceFailures.length > 0;
+        const finalEvidence = [...result.evidence, ...requiredSourceEvidence];
+        const context = buildCallerContext({
+          query, intent, evidence: finalEvidence, opinionQuestion,
+          hasPossibleConflict: analyzeEvidenceQuality({
+            evidence: finalEvidence, gaps: [], lowValueOutcomes: []
+          }).flags.hasPossibleConflict,
+          requiredFailureUrls: requiredSourceFailures.map((failure) => failure.url),
+          executedQueries,
+          nextPassIndex: lastPlanningPass + 1,
+          partial: result.decision.action !== 'answer' || hasRequiredFailure,
+          allowSuggestions: !result.terminalFailure && intent.kind !== 'read' &&
+            lastPass?.searchUnavailableOnly !== true
+        });
         return {
           ...result,
           ...(hasRequiredFailure && result.decision.action === 'answer'
@@ -314,6 +332,7 @@ export function createResearchOrchestrator({
           ...(searchUnavailable.length ? { searchUnavailable: [...searchUnavailable] } : {}),
           metadata: {
             ...result.metadata,
+            ...context,
             caveatReasons: hasRequiredFailure
               ? [...new Set([...result.metadata.caveatReasons, 'unreadable-direct-source' as EvidenceCaveatReason])]
               : result.metadata.caveatReasons,
@@ -558,23 +577,16 @@ export function createResearchOrchestrator({
       }
 
       for (let passIndex = 0; passIndex < DEFAULT_MAX_PASSES; passIndex++) {
-        const evidenceText = allEvidence.flatMap((item) => [item.title, item.summary, ...item.supports]).join(' ');
+        lastPlanningPass = passIndex;
         const planningGaps = [
           ...allGaps.map((gap) => gap.message),
-          ...missingComparisonTargets(intent, allEvidence).map((target) => `Need comparison evidence for target: ${target}`)
+          ...collectTaskPlanningGaps({
+            query, intent, evidence: allEvidence, opinionQuestion,
+            hasPossibleConflict: analyzeEvidenceQuality({
+              evidence: allEvidence, gaps: allGaps, lowValueOutcomes: allLowValueOutcomes
+            }).flags.hasPossibleConflict
+          })
         ];
-        if (/\b(?:versions?|compatibility|supported since)\b/i.test(query) && !/\bv?\d+\.\d+(?:\.\d+)?\b/i.test(evidenceText)) {
-          planningGaps.push('Need supported version details.');
-        }
-        if (/\b(?:API|method|function|parameter)\b/i.test(query) && allEvidence.length === 0) {
-          planningGaps.push('Need exact API behavior.');
-        }
-        if (opinionQuestion && !allEvidence.some((item) => item.sourceKind === 'community' || item.sourceKind === 'issue-thread' || item.sourceKind === 'official-discussion')) {
-          planningGaps.push('Need user experience.');
-        }
-        if (analyzeEvidenceQuality({ evidence: allEvidence, gaps: allGaps, lowValueOutcomes: allLowValueOutcomes }).flags.hasPossibleConflict) {
-          planningGaps.push('Sources disagree about the recommendation.');
-        }
         const queries = planSearchQueries({
           originalQuery: query,
           passIndex,
