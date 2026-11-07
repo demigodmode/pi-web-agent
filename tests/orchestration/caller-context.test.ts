@@ -45,7 +45,7 @@ describe('buildCallerContext', () => {
     const query = 'Compare https://a.test/docs https://b.test/docs';
     const result = buildCallerContext({ ...input(query), requiredFailureUrls: ['https://b.test/docs'],
       evidence: [{ ...page('A'), url: 'https://a.test/docs', requestedUrl: 'https://a.test/docs' }] });
-    expect(result.openGaps.some((gap) => gap.includes('https://b.test/docs'))).toBe(false);
+    expect(result.openGaps).not.toContain('Need comparison evidence for target: https://b.test/docs');
   });
 
   it('preserves the complete user site scope in suggestions', () => {

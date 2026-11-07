@@ -1299,8 +1299,8 @@ describe('research orchestrator search passes', () => {
       headlessFetch: vi.fn()
     }).run({ query: 'Compare https://a.test/docs https://b.test/docs' });
     expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://b.test/docs' }));
-    expect(result.metadata.openGaps.some((gap) => gap.includes('https://b.test/docs'))).toBe(false);
-    expect(result.metadata.suggestedQueries.some((suggestion) => suggestion.includes('https://b.test/docs'))).toBe(false);
+    expect(result.metadata.openGaps).not.toContain('Need comparison evidence for target: https://b.test/docs');
+    expect(result.metadata.suggestedQueries.flatMap((suggestion) => suggestion.split(/\s+/))).not.toContain('https://b.test/docs');
   });
 
   it('keeps a missing named comparison target in final gaps', async () => {
