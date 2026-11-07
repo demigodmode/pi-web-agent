@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as researchTypes from '../../src/orchestration/research-types.js';
 import type { ResearchProgress } from '../../src/orchestration/progress.js';
 import { createResearchOrchestrator } from '../../src/orchestration/research-orchestrator.js';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { WebFetchHeadlessResponse } from '../../src/types.js';
 import type { PresentationStatsCollector } from '../../src/orchestration/presentation-stats.js';
 import type {
@@ -1261,6 +1262,151 @@ describe('orchestrator run budget', () => {
 });
 
 describe('research orchestrator search passes', () => {
+  it('returns final version gaps and proposals when the search budget stops a pass', async () => {
+    const run = vi.fn(async ({ query, budget }: {
+      query: string;
+      budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget;
+    }) => {
+      budget!.claimSearch();
+      return { searchQueries: [query], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true };
+    });
+    const result = await createResearchOrchestrator({ worker: { run }, headlessFetch: vi.fn() })
+      .run({ query: 'Widget versions' });
+    expect(result.metadata.executedQueries).toEqual(['Widget versions']);
+    expect(result.metadata.openGaps).toContain('Need supported version details.');
+    expect(result.metadata.suggestedQueries.length).toBeGreaterThan(0);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count queued work as searched', async () => {
+    const run = vi.fn(async ({ query }: { query: string }) =>
+      ({ searchQueries: [query], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true }));
+    const result = await createResearchOrchestrator({ worker: { run }, headlessFetch: vi.fn() })
+      .run({ query: 'Widget versions' });
+    expect(result.metadata.executedQueries).toEqual([]);
+  });
+
+  it('keeps failed required comparison URLs out of final gaps and proposals', async () => {
+    const run = vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return { searchQueries: [query], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true };
+    });
+    const result = await createResearchOrchestrator({
+      worker: { run },
+      fetchDirect: vi.fn(async ({ url }: { url: string }) => url === 'https://a.test/docs'
+        ? { status: 'ok' as const, url, content: { title: 'A', text: 'A' }, metadata: { method: 'http' as const, cacheHit: false } }
+        : { status: 'error' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'READ_FAILED', message: 'No B' } }),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Compare https://a.test/docs https://b.test/docs' });
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://b.test/docs' }));
+    expect(result.metadata.openGaps).not.toContain('Need comparison evidence for target: https://b.test/docs');
+    expect(result.metadata.suggestedQueries.flatMap((suggestion) => suggestion.split(/\s+/))).not.toContain('https://b.test/docs');
+  });
+
+  it('keeps a missing named comparison target in final gaps', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [{ title: 'React', url: 'https://react.dev/', sourceKind: 'official-docs' as const,
+          method: 'http' as const, summary: 'React documentation', supports: ['React documentation'] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: true
+      };
+    }) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Compare React and Vue' });
+    expect(result.metadata.openGaps).toContain('Need comparison evidence for target: Vue');
+  });
+
+  it('has no final gaps or proposals for a confident answer', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [
+          { title: 'Widget docs', url: 'https://a.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'API supported since 1.2.3', supports: ['API supported since 1.2.3'] },
+          { title: 'Widget reference', url: 'https://b.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'API version 1.2.3', supports: ['API version 1.2.3'] }
+        ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      };
+    }) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Widget API versions' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.metadata.openGaps).toEqual([]);
+    expect(result.metadata.suggestedQueries).toEqual([]);
+  });
+
+  it('does not publish heuristic version or API gaps for a confident answer without an x.y token', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [
+          { title: 'Widget guide', url: 'https://guide.widget.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API documents supported releases.', supports: ['Supported release guidance.'] },
+          { title: 'Widget reference', url: 'https://reference.widget.test/api', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API reference describes compatibility.', supports: ['Compatibility details.'] }
+        ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      };
+    }) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Widget API versions' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.metadata.openGaps).toEqual([]);
+    expect(result.metadata.suggestedQueries).toEqual([]);
+  });
+
+  it('keeps partial search coverage in the caveat rather than final gaps or proposals for an answer', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [
+          { title: 'Widget guide', url: 'https://guide.widget.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API documents supported releases.', supports: ['Supported release guidance.'] },
+          { title: 'Widget reference', url: 'https://reference.widget.test/api', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API reference describes compatibility.', supports: ['Compatibility details.'] }
+        ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false, searchCoveragePartial: true
+      };
+    }) };
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch: vi.fn() });
+    const result = await orchestrator.run({ query: 'Widget API versions' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.metadata.caveatReasons).toContain('partial-search-coverage');
+    expect(result.metadata.openGaps).toEqual([]);
+    expect(result.metadata.suggestedQueries).toEqual([]);
+
+    const publicResult = await createWebExploreTool({ explore: orchestrator })({ query: 'Widget API versions' });
+    expect(publicResult.caveat).toContain('some search backends were unavailable');
+    expect(publicResult.metadata?.openGaps).toEqual([]);
+    expect(publicResult.metadata?.suggestedQueries).toEqual([]);
+  });
+
+  it('does not propose searches after terminal or unavailable workers', async () => {
+    const terminal = await createResearchOrchestrator({
+      worker: { run: vi.fn(async ({ budget }: { budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+        budget!.claimSearch();
+        return { searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false,
+          terminalFailure: { code: 'TERMINAL', message: 'Stopped' } };
+      }) }, headlessFetch: vi.fn()
+    }).run({ query: 'Widget versions' });
+    const unavailable = await createResearchOrchestrator({
+      worker: { run: vi.fn(async ({ budget }: { budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+        budget!.claimSearch();
+        return { searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false, searchUnavailableOnly: true };
+      }) }, headlessFetch: vi.fn()
+    }).run({ query: 'Widget versions' });
+    expect(terminal.metadata.suggestedQueries).toEqual([]);
+    expect(unavailable.metadata.suggestedQueries).toEqual([]);
+  });
+
+  it('finalizes caller context at the deadline without another worker call', async () => {
+    vi.useFakeTimers();
+    try {
+      const run = vi.fn(async ({ budget }: { budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+        budget!.claimSearch();
+        return new Promise<never>(() => undefined);
+      });
+      const pending = createResearchOrchestrator({ worker: { run }, headlessFetch: vi.fn() }).run({ query: 'Widget versions' });
+      await vi.advanceTimersByTimeAsync(120_001);
+      const result = await pending;
+      expect(result.metadata.executedQueries).toEqual(['Widget versions']);
+      expect(result.metadata.openGaps).toContain('Need supported version details.');
+      expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not count a planned search the worker refused before starting', async () => {
     const worker = {
       run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true }))

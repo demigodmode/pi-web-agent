@@ -2,6 +2,33 @@ import { describe, expect, it } from 'vitest';
 import { buildExplorePresentation } from '../../src/presentation/explore-presentation.js';
 
 describe('buildExplorePresentation', () => {
+  it.each(['measured', 'legacy', 'legacy-error'] as const)('adds context only to the verbose %s view', (kind) => {
+    const metadata = {
+      searchPasses: 1, fetchedPages: 1, headlessAttempts: 0, exhaustedBudget: true,
+      ...(kind === 'measured' ? { presentationStats: { searches: 1, executedQueries: ['Widget versions'], pagesRead: 1, failedReads: 0, methods: { http: 1 } } } : {})
+    };
+    const base = {
+      status: kind === 'legacy-error' ? 'error' as const : 'ok' as const,
+      ...(kind === 'measured' ? { durationMs: 1_000 } : {}),
+      findings: kind === 'legacy-error' ? [] : ['Widget finding'],
+      sources: kind === 'legacy-error' ? [] : [{ title: 'Widget', url: 'https://widget.test/docs', method: 'http' as const }],
+      ...(kind === 'legacy-error' ? { error: { code: 'STOPPED', message: 'Stopped.' } } : {}),
+      metadata
+    };
+    const withoutContext = buildExplorePresentation(base);
+    const withContext = buildExplorePresentation({ ...base, metadata: {
+      ...metadata,
+      executedQueries: ['Widget versions'],
+      openGaps: ['Need supported version details.'],
+      suggestedQueries: ['Widget versions release notes']
+    } });
+    expect(withContext.views.compact).toBe(withoutContext.views.compact);
+    expect(withContext.views.preview).toBe(withoutContext.views.preview);
+    expect(withContext.views.verbose).toContain('Searched: "Widget versions"');
+    expect(withContext.views.verbose).toContain('Still open: supported version details');
+    expect(withContext.views.verbose).toContain('Try next: "Widget versions release notes"');
+  });
+
   it('pluralizes measured search and page counts independently', () => {
     const build = (searches: number, pagesRead: number) => buildExplorePresentation({
       status: 'ok',

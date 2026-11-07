@@ -70,6 +70,11 @@ export type ResearchRunMetadata = {
   budgetReason?: ResearchBudgetReason;
   budget?: ResearchBudgetSnapshot;
   requiredSourceFailures?: RequiredSourceFailure[];
+  executedQueries?: string[];
+  /** Final rule-detected task gaps; excludes historical page failures. */
+  openGaps?: string[];
+  /** Unexecuted, rule-based proposals for the caller. */
+  suggestedQueries?: string[];
 };
 
 export type RequiredSourceFailure = {

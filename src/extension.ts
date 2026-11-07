@@ -18,6 +18,7 @@ import { getUpdateChangelogNotice } from './changelog-notice.js';
 import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
 import { formatResearchProgress } from './orchestration/progress.js';
+import { formatResearchContext } from './presentation/research-context.js';
 
 const SESSION_SHUTDOWN_GRACE_MS = 5_000;
 
@@ -49,6 +50,7 @@ function isCancelledResult(toolResult: { content?: unknown; details?: unknown })
  */
 function serializeForModel(result: WebExploreResponse): string {
   const searchNotices = searchUnavailableNotices(result);
+  const researchContext = formatResearchContext(result.metadata).join('\n');
   const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
     `Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`
   );
@@ -57,9 +59,9 @@ function serializeForModel(result: WebExploreResponse): string {
     : undefined;
   if (result.findings.length === 0 && result.sources.length === 0) {
     return terminalError
-      ? [...searchNotices, ...requiredNotices, terminalError].filter(Boolean).join('\n\n')
+      ? [...searchNotices, ...requiredNotices, terminalError, researchContext].filter(Boolean).join('\n\n')
       // "No usable evidence found." already says what the no-sources caveat would repeat.
-      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', result.caveat === 'No usable sources were found.' ? undefined : result.caveat]
+      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', researchContext, result.caveat === 'No usable sources were found.' ? undefined : result.caveat]
         .filter(Boolean).join('\n\n');
   }
   const linked = (result.evidence?.length ?? 0) > 0;
@@ -79,6 +81,7 @@ function serializeForModel(result: WebExploreResponse): string {
     linked ? `Evidence:\n${evidence}` : result.sources.length
       ? `Sources:\n${result.sources.map((source) => `- ${source.title}: ${source.url}`).join('\n')}`
       : undefined,
+    researchContext,
     result.caveat,
     terminalError
   ]
@@ -238,12 +241,13 @@ export default function extension(pi: ExtensionAPI) {
     name: 'web_explore',
     label: 'Web Explore',
     description:
-      'Research a web question using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
-      'Prefer this for ordinary web research and narrower follow-up searches. ' +
+      'Search the web and read the best sources, using bounded search/fetch passes, source ranking, and targeted headless escalation. ' +
+      'The query is used as the first search as written, so make it a short, specific search request rather than a conversational sentence. ' +
+      'Prefer this for ordinary web research. If the result says something is still open, call again with a narrower query for that part. ' +
       'Include every link the user supplied, unchanged, in the query: links in the query are read directly (GitHub issues and pull requests through the API, GitHub repositories cloned and searched), and reported if they cannot be read. ' +
       'Pi can still use git and gh for repository, issue, and pull request work, and tools the user explicitly requests.',
     parameters: Type.Object({
-      query: Type.String({ description: 'Web research question. Include any links the user gave, unchanged.' })
+      query: Type.String({ description: 'Short, specific search request, used as the first search as written. Skip filler like "can you find" or "please". Keep words that say what you want: "vs" for comparisons, version numbers, "API", "user opinions", "summarize" with a link. Include any links the user gave, unchanged.' })
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
       const executionSession = session;

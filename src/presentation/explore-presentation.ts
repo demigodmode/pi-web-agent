@@ -2,6 +2,7 @@ import type { FetchMethod, WebExploreResponse } from '../types.js';
 import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
 import { clipTerminalText, endWithPeriod, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
+import { formatResearchContext } from './research-context.js';
 
 export { sanitizeTerminalText } from './explore-display-text.js';
 
@@ -39,10 +40,14 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
     const successful = result.sources.length
       ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
       : [];
+    const compact = [...searchNotices, ...successful, ...notices,
+      `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n');
+    const researchContext = formatResearchContext(result.metadata).join('\n');
     return {
       mode: 'compact',
       views: {
-        compact: [...searchNotices, ...successful, ...notices, `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n')
+        compact,
+        ...(researchContext ? { verbose: `${compact}\n\n${researchContext}` } : {})
       }
     };
   }
@@ -90,6 +95,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
         ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`)
       ])
     ] : []),
+    formatResearchContext(result.metadata).join('\n') || undefined,
     internalSummary ? `\nInternal tools\n${internalSummary}` : undefined,
     result.caveat ? `\nCaveat\n${sanitizeTerminalText(result.caveat)}` : undefined,
     attemptLines(result.metadata?.attempts)
@@ -165,6 +171,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     : undefined;
   const limitation = !error && result.caveat ? sanitizeTerminalText(result.caveat) : undefined;
   const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
+  const researchContext = formatResearchContext(result.metadata).join('\n');
   const compact = [summary, ...searchNotices, ...compactNotices, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
   const previewFindings = result.findings.slice(0, 3).map((finding) =>
     `- ${clipTerminalText(sanitizeTerminalText(finding), 240)}`
@@ -197,6 +204,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
       `- [${sanitizeTerminalText(item.id)}] ${sanitizeTerminalText(item.title)}: ${sanitizeTerminalText(item.url)}`,
       ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`)
     ]).join('\n')}` : undefined,
+    researchContext || undefined,
     result.caveat ? `Caveat\n${sanitizeTerminalText(result.caveat)}` : undefined,
     ['Retrieval', ...retrieval, `Failed reads: ${stats.failedReads}`].join('\n'),
     attemptLines(result.metadata?.attempts)
