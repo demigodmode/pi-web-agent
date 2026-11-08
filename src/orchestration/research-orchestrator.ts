@@ -122,6 +122,44 @@ function directUnreadableMessage(url: string) {
     : `Direct URL could not be read reliably: ${url}`;
 }
 
+function directHttpStatus(result: WebFetchResponse): number | undefined {
+  return result.error?.failure?.httpStatus;
+}
+
+function directHeadlessFailure(
+  directResult: WebFetchResponse,
+  fallback: { code: string; message: string; failure?: RequiredSourceFailure['failure'] },
+  classification?: 'deadline' | 'limit'
+) {
+  const status = directHttpStatus(directResult);
+  if (status === undefined) return fallback;
+  const original = directResult.error!;
+  if (classification === 'deadline') {
+    return {
+      code: 'DIRECT_SOURCE_DEADLINE',
+      message: `Source deadline reached while reading this URL. ${original.message}`,
+      failure: original.failure
+    };
+  }
+  if (classification === 'limit') {
+    return {
+      code: 'DIRECT_SOURCE_LIMIT',
+      message: `Source limit reached; use a follow-up call for this URL. ${original.message}`,
+      failure: original.failure
+    };
+  }
+  if (fallback.failure?.kind === 'guard_refused' || fallback.failure?.kind === 'config_global') {
+    return { ...fallback, message: `${original.message} Browser retry: ${fallback.message}` };
+  }
+  return {
+    code: original.code,
+    message: fallback.message === directUnreadableMessage(directResult.url)
+      ? original.message
+      : `${original.message} Browser retry: ${fallback.message}`,
+    failure: original.failure
+  };
+}
+
 function shouldRetryDirectWithHeadless(result: WebFetchResponse, evidence: ResearchEvidence | null) {
   if (result.status === 'needs_headless') return true;
   if (result.status !== 'ok' || evidence) return false;
@@ -496,7 +534,17 @@ export function createResearchOrchestrator({
               } catch (error) {
                 if (signal?.aborted) throw error;
                 presentationStats.recordFailure(directResult.url);
-                requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : directUnreadableMessage(directResult.url));
+                const failure = directHeadlessFailure(directResult, {
+                  code: 'DIRECT_SOURCE_READ_FAILED',
+                  message: directUnreadableMessage(directResult.url)
+                }, budget.deadlineReached() ? 'deadline' : undefined);
+                requiredFailure(
+                  url,
+                  budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed',
+                  failure.code,
+                  failure.message,
+                  failure.failure
+                );
                 continue;
               } finally {
                 emit('headless', 'settled', directResult.url);
@@ -507,12 +555,27 @@ export function createResearchOrchestrator({
                 allEvidence.push(headlessEvidence);
                 requiredSourceEvidence.push(headlessEvidence);
               } else if (headlessResult.error) {
-                requiredFailure(url, 'read-failed', headlessResult.error.code, headlessResult.error.message, headlessResult.error.failure);
+                const failure = directHeadlessFailure(directResult, headlessResult.error);
+                requiredFailure(
+                  url,
+                  'read-failed',
+                  failure.code,
+                  failure.message,
+                  failure.failure
+                );
               } else {
-                requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', directUnreadableMessage(directResult.url));
+                const failure = directHeadlessFailure(directResult, {
+                  code: 'DIRECT_SOURCE_READ_FAILED',
+                  message: directUnreadableMessage(directResult.url)
+                });
+                requiredFailure(url, 'read-failed', failure.code, failure.message, failure.failure);
               }
             } else {
-              requiredFailure(url, 'limit', 'DIRECT_SOURCE_LIMIT', 'Source limit reached; use a follow-up call for this URL.');
+              const failure = directHeadlessFailure(directResult, {
+                code: 'DIRECT_SOURCE_LIMIT',
+                message: 'Source limit reached; use a follow-up call for this URL.'
+              }, 'limit');
+              requiredFailure(url, 'limit', failure.code, failure.message, failure.failure);
             }
           } else {
             requiredFailure(url, 'read-failed', directResult.error?.code ?? 'DIRECT_SOURCE_READ_FAILED', directResult.error?.message ?? directUnreadableMessage(directResult.url), directResult.error?.failure);

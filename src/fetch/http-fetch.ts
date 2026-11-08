@@ -2,6 +2,7 @@ import { extractReadableContentForQuery, extractReadableContentSafely } from '..
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { RedirectError } from './guarded-fetch.js';
 import { findGuardError } from './network-guard.js';
+import { targetStatusFailure, targetStatusMayNeedHeadless, targetStatusMessage } from './target-status.js';
 import { PAGE_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
 import type { WebFetchResponse } from '../types.js';
 
@@ -85,6 +86,24 @@ export function createHttpFetcher({
       }
       if (requestAbort.aborted) return timedOut(url, timeoutMs);
       return fetchFailed(url, error);
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      const error = {
+        code: 'HTTP_STATUS',
+        message: targetStatusMessage(response.status),
+        failure: targetStatusFailure(response.status)
+      };
+      if (targetStatusMayNeedHeadless(response.status)) {
+        return {
+          status: 'needs_headless', url: response.url || url,
+          metadata: { method: 'http', cacheHit: false }, error
+        };
+      }
+      return {
+        status: 'error', url: response.url || url,
+        metadata: { method: 'http', cacheHit: false }, error
+      };
     }
     const contentType = response.headers.get('content-type') ?? '';
 

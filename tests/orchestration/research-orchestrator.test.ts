@@ -13,6 +13,90 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it.each([404, 410, 500, 502, 503])('does not retry a direct HTTP %s source in the browser', async (httpStatus) => {
+    const headlessFetch = vi.fn();
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'error' as const, url, metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'HTTP_STATUS', message: `HTTP ${httpStatus} (not found)`, failure: { kind: 'bad_response' as const, httpStatus } }
+      })),
+      headlessFetch
+    }).run({ query: 'Read https://example.com/missing' });
+
+    expect(headlessFetch).not.toHaveBeenCalled();
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ message: `HTTP ${httpStatus} (not found)` }));
+  });
+
+  it.each(['blocked', 'error'] as const)('preserves the initial HTTP wall reason when headless %s', async (headlessStatus) => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } }
+      })),
+      headlessFetch: vi.fn(async ({ url }) => ({
+        status: headlessStatus, url, metadata: { method: 'headless' as const, cacheHit: false },
+        error: { code: 'HEADLESS_EXTRACTION_WEAK', message: 'Rendered page did not produce enough readable content.' }
+      }))
+    }).run({ query: 'Read https://example.com/wall' });
+
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({
+      code: 'HTTP_STATUS', message: expect.stringContaining('HTTP 403 (forbidden)'), failure: expect.objectContaining({ httpStatus: 403 })
+    }));
+  });
+
+  it('preserves the initial HTTP wall reason when headless throws', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } }
+      })),
+      headlessFetch: vi.fn(async () => { throw new Error('browser crashed'); })
+    }).run({ query: 'Read https://example.com/wall' });
+
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({
+      code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: expect.objectContaining({ httpStatus: 403 })
+    }));
+  });
+
+  it('preserves the HTTP status when headless returns no evidence or error', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'blocked' as const, url, metadata: { method: 'headless' as const, cacheHit: false } }))
+    }).run({ query: 'Read https://example.com/wall' });
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: expect.objectContaining({ httpStatus: 403 }) }));
+  });
+
+  it('keeps a guard refusal primary while retaining the initial HTTP status', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'BLOCKED_PRIVATE_ADDRESS', message: 'Blocked private address.', failure: { kind: 'guard_refused' as const } } }))
+    }).run({ query: 'Read https://example.com/wall' });
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ code: 'BLOCKED_PRIVATE_ADDRESS', message: expect.stringContaining('HTTP 403 (forbidden)'), failure: { kind: 'guard_refused' } }));
+  });
+
+  it('keeps deadline classification while retaining the initial HTTP status', async () => {
+    vi.useFakeTimers();
+    let resolveHeadless!: (value: WebFetchHeadlessResponse) => void;
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } } })),
+      headlessFetch: vi.fn(() => new Promise<WebFetchHeadlessResponse>((resolve) => { resolveHeadless = resolve; }))
+    });
+    try {
+      const run = orchestrator.run({ query: 'Read https://example.com/wall' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ reason: 'deadline-in-flight', code: 'DIRECT_SOURCE_DEADLINE', message: expect.stringContaining('HTTP 403 (forbidden)'), failure: expect.objectContaining({ httpStatus: 403 }) }));
+      resolveHeadless({ status: 'blocked', url: 'https://example.com/wall', metadata: { method: 'headless', cacheHit: false } });
+      await orchestrator.drain();
+    } finally { vi.useRealTimers(); }
+  });
+
   it('preserves requested URL and full reader evidence for a direct source', async () => {
     const url = 'https://github.com/acme/widget/issues/1';
     const readerText = 'First reader paragraph.\n\n```ts\nconst version = "1.4";\n```\n\nFinal reader paragraph.';
