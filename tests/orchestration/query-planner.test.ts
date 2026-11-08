@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSearchQueries } from '../../src/orchestration/query-planner.js';
+import { excludedSiteHosts, planSearchQueries } from '../../src/orchestration/query-planner.js';
 
 describe('planSearchQueries', () => {
   it('returns the original query for the first pass', () => {
@@ -54,6 +54,15 @@ describe('planSearchQueries', () => {
     const later = planSearchQueries({ originalQuery: 'React API', passIndex: 2, previousQueries: ['React API', ...first], gaps: ['Need exact API behavior.'] });
     expect(later.length).toBeGreaterThan(0);
     expect(later.every((query) => !first.includes(query))).toBe(true);
+  });
+});
+
+describe('excludedSiteHosts', () => {
+  it('extracts only real negative site operators and normalizes host operands', () => {
+    expect(excludedSiteHosts('docs -site:Example.COM./path, -SITE:xn--bcher-kva.example website:skip https://a.test/site:ignored')).toEqual([
+      'example.com',
+      'xn--bcher-kva.example'
+    ]);
   });
 });
 

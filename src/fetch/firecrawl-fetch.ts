@@ -3,17 +3,21 @@ import { classifyHttpFailure, readResponseParts } from '../backends/provider-fai
 import { selectRelevantContent } from '../extract/section-selector.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { FIRECRAWL_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
+import { targetStatusFailure, targetStatusMayNeedHeadless, targetStatusMessage } from './target-status.js';
 import type { FailureInfo, WebFetchResponse } from '../types.js';
 
 type FirecrawlResponse = {
   success?: boolean;
+  code?: unknown;
   data?: {
     markdown?: unknown;
     html?: unknown;
     metadata?: {
       title?: unknown;
       sourceURL?: unknown;
+      statusCode?: unknown;
     };
+    statusCode?: unknown;
   };
   error?: unknown;
 };
@@ -76,21 +80,34 @@ export function createFirecrawlFetcher({
       if (signal?.aborted) throw abortError();
       return failed(`Firecrawl scrape response could not be read: ${errorMessage(error)}`, { kind: 'transient' });
     }
-    if (!response.ok) {
-      const code = (parts.json as { code?: unknown } | undefined)?.code;
-      if (response.status === 500 && code === 'SCRAPE_ALL_ENGINES_FAILED') {
-        // No extractable content (https://github.com/firecrawl/firecrawl/issues/2316): same as an empty page.
-        return {
-          status: 'needs_headless',
-          url,
-          metadata: { method: 'firecrawl', cacheHit: false },
-          error: { code: 'WEAK_EXTRACTION', message: 'Firecrawl could not extract content from this page.' }
-        };
+    const parsed = parts.json as FirecrawlResponse | undefined;
+    const targetStatuses = [parsed?.data?.statusCode, parsed?.data?.metadata?.statusCode]
+      .filter((status): status is number => typeof status === 'number');
+    // A terminal result for the requested page is more useful than the
+    // provider's own status, including when Firecrawl wraps it in an API 500.
+    const targetStatus = targetStatuses.find((status) => status === 404 || status === 410 || (status >= 500 && status <= 599))
+      ?? targetStatuses.find((status) => status >= 400 && status <= 599);
+    if (targetStatus !== undefined) {
+      const error = { code: 'HTTP_STATUS', message: targetStatusMessage(targetStatus), failure: targetStatusFailure(targetStatus) };
+      if (targetStatusMayNeedHeadless(targetStatus)) {
+        return { status: 'needs_headless', url, metadata: { method: 'firecrawl', cacheHit: false }, error };
       }
+      return { status: 'error', url, metadata: { method: 'firecrawl', cacheHit: false }, error };
+    }
+
+    if (response.status === 500 && parsed?.code === 'SCRAPE_ALL_ENGINES_FAILED') {
+      return {
+        status: 'needs_headless',
+        url,
+        metadata: { method: 'firecrawl', cacheHit: false },
+        error: { code: 'WEAK_EXTRACTION', message: 'Firecrawl could not extract useful page text.' }
+      };
+    }
+
+    if (!response.ok) {
       return failed(`Firecrawl scrape failed: HTTP ${response.status}`, classifyHttpFailure('firecrawl', parts));
     }
 
-    const parsed = parts.json as FirecrawlResponse | undefined;
     if (!parsed || typeof parsed !== 'object' || parsed.success === false) {
       return failed('Firecrawl returned a response that did not match the expected format.', {
         kind: 'bad_response',

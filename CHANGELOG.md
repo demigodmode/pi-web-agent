@@ -16,7 +16,10 @@ The format is intentionally simple and release-oriented.
 - GitHub, PDF and YouTube pages found through search get normal excerpts instead of their whole text. Links you paste still come back in full at Standard.
 
 ### Fixed
-- None.
+- HTTP errors keep their status and are no longer read or cited as page content.
+- `/web-agent` menus work over RPC; unavailable settings screens point to the config files.
+- Clarified when research results show open gaps and follow-up suggestions.
+- Search results from excluded `-site:` hosts and their subdomains are filtered before reading.
 
 ### Breaking
 - None.

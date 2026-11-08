@@ -7,6 +7,40 @@ import { BlockedAddressError, createNetworkGuard } from '../../src/fetch/network
 import { fakeLookup } from './fake-lookup.js';
 
 describe('http fetch blocked redirect', () => {
+  it.each([404, 410, 500, 502, 503])('does not extract or escalate an HTTP %s page', async (status) => {
+    const cancel = vi.fn(async () => undefined);
+    const response = new Response(`<html><body><article>${'Error page details. '.repeat(80)}</article></body></html>`, {
+      status,
+      headers: { 'content-type': 'text/html' }
+    });
+    Object.defineProperty(response, 'body', { value: { cancel } });
+
+    const result = await createHttpFetcher({ fetchImpl: vi.fn().mockResolvedValue(response) })('https://example.com/missing');
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: { code: 'HTTP_STATUS', failure: { kind: 'bad_response', httpStatus: status } }
+    });
+    expect(result.content).toBeUndefined();
+    expect(result.error?.message).toContain(`HTTP ${status}`);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it.each([401, 403, 429])('preserves HTTP %s while allowing a browser retry', async (status) => {
+    const result = await createHttpFetcher({
+      fetchImpl: vi.fn().mockResolvedValue(new Response('<html><body>blocked</body></html>', {
+        status,
+        headers: { 'content-type': 'text/html' }
+      }))
+    })('https://example.com/wall');
+
+    expect(result).toMatchObject({
+      status: 'needs_headless',
+      error: { code: 'HTTP_STATUS', failure: { kind: 'blocked', httpStatus: status } }
+    });
+    expect(result.error?.message).toContain(`HTTP ${status}`);
+  });
+
   it('reports a blocked redirect hop as a private address error', async () => {
     const fetchImpl = (async () => {
       throw new BlockedAddressError('evil.example', '169.254.169.254');

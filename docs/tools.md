@@ -146,9 +146,9 @@ The model also receives up to three short research-context lines: `Searched`
 lists searches that actually started, `Still open` lists remaining gaps detected
 by rules, and `Try next` suggests up to two unexecuted follow-up queries for a
 partial result. These are rule-based hints, not another model's assessment.
-`Still open` and `Try next` appear only for a partial result or a required-source
-failure. Partial search coverage remains in the existing caveat rather than in
-`Still open`.
+`Still open` and `Try next` appear only when a partial result has open gaps.
+`Try next` is never offered for link-only requests. Partial search coverage stays
+in the caveat rather than `Still open`.
 At Standard the block is limited to 1,000 characters; finite result limits can
 shorten it along with findings and excerpts. Queries may be shortened for display;
 the underlying search is unchanged.

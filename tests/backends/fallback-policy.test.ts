@@ -3,6 +3,7 @@ import { abortableSleep } from '../../src/abort.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from '../../src/backends/fallback-policy.js';
 import { createProviderHealth } from '../../src/backends/provider-health.js';
 import { createGoogleSerpSearchTool } from '../../src/search/google-serp.js';
+import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 import type { FailureInfo, SearchProviderName, WebFetchResponse, WebSearchResponse } from '../../src/types.js';
 
 const ok = (backend: SearchProviderName, count = 1): WebSearchResponse => ({
@@ -207,6 +208,23 @@ describe('withFetchPolicy', () => {
     }
   });
 
+  it('does not retry, cool down, or disable Firecrawl for SCRAPE_ALL_ENGINES_FAILED', async () => {
+    const x = deps();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ success: false, code: 'SCRAPE_ALL_ENGINES_FAILED' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' }
+    }));
+    const firecrawl = createFirecrawlFetcher({ baseUrl: 'https://firecrawl.test', fetchImpl: fetchImpl as typeof fetch });
+    const primary = vi.fn(({ url, query, signal }: { url: string; query?: string; signal?: AbortSignal }) => firecrawl(url, query, signal));
+    const result = await withFetchPolicy(primary, undefined, x)({ url: 'https://page.test/' });
+
+    expect(result).toMatchObject({ status: 'needs_headless', error: { code: 'WEAK_EXTRACTION' } });
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(x.sleep).not.toHaveBeenCalled();
+    expect(x.health.get('firecrawl').state).toBe('available');
+  });
+
   it('never falls back on bad_request or terminal failures', async () => {
     for (const kind of ['bad_request', 'config_global', 'guard_refused'] as const) {
       const x = deps();
@@ -215,6 +233,22 @@ describe('withFetchPolicy', () => {
       expect(fallback).not.toHaveBeenCalled();
       expect(result.error?.failure?.kind).toBe(kind);
     }
+  });
+
+  it.each([401, 403, 404, 410, 429, 500, 502, 503])('returns a target HTTP %s result without HTTP fallback or provider penalty', async (httpStatus) => {
+    const x = deps();
+    const target = {
+      status: httpStatus === 401 || httpStatus === 403 || httpStatus === 429 ? 'needs_headless' as const : 'error' as const,
+      url: 'https://page.test/',
+      metadata: { method: 'firecrawl' as const, cacheHit: false },
+      error: { code: 'HTTP_STATUS', message: `HTTP ${httpStatus}`, failure: { kind: 'bad_response' as const, httpStatus } }
+    };
+    const fallback = vi.fn(async () => http());
+    const result = await withFetchPolicy(async () => target, fallback, x)({ url: 'https://page.test/' });
+    expect(fallback).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: target.status, error: { code: 'HTTP_STATUS', failure: { httpStatus } } });
+    expect(result.metadata.attempts).toEqual([]);
+    expect(x.health.get('firecrawl').state).toBe('available');
   });
 
   it('skips a disabled Firecrawl straight to http, and returns the skip when there is no fallback', async () => {

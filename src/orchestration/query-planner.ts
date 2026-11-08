@@ -71,6 +71,21 @@ function parseSiteOperators(query: string) {
   return { words, positives, negatives };
 }
 
+function normalizedSiteHost(operand: string): string | undefined {
+  try {
+    return new URL(`https://${operand}`).hostname.toLowerCase().replace(/\.+$/, '') || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Negative site: operands as normalized hosts for filtering backend search results. */
+export function excludedSiteHosts(query: string): string[] {
+  return parseSiteOperators(query).negatives
+    .map((operator) => normalizedSiteHost(operator.slice('-site:'.length)))
+    .filter((host): host is string => Boolean(host));
+}
+
 function extractImportantWords(query: string) {
   return parseSiteOperators(query).words
     .filter((word) => !URL_TOKEN.test(word) && /[\p{L}\p{N}]/u.test(word))
@@ -85,7 +100,7 @@ function siteScope(query: string): SiteScope {
   return {
     positive: positives[0],
     negatives,
-    excludedHosts: negatives.map((operator) => operator.slice('-site:'.length).toLowerCase())
+    excludedHosts: excludedSiteHosts(query)
   };
 }
 

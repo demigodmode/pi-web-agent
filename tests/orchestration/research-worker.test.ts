@@ -4,8 +4,78 @@ import { createPresentationStats } from '../../src/orchestration/presentation-st
 import { createResearchRunBudget } from '../../src/orchestration/run-budget.js';
 import type { WebFetchResponse } from '../../src/types.js';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
+import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 
 describe('research worker', () => {
+  it('does not fetch or cite excluded search results when a backend ignores -site', async () => {
+    const fetchPage = vi.fn(async ({ url }: { url: string }) => ({
+      status: 'ok' as const,
+      url,
+      content: { title: url, text: 'Detailed evidence that would otherwise be cited.' },
+      metadata: { method: 'http' as const, cacheHit: false }
+    }));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({
+        status: 'ok' as const,
+        results: [
+          { title: 'Excluded parent', url: 'https://example.com/guide', snippet: 'rich result' },
+          { title: 'Excluded subdomain', url: 'https://docs.example.com/guide', snippet: 'rich result' },
+          { title: 'Allowed', url: 'https://allowed.test/guide', snippet: 'rich result' }
+        ],
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      })),
+      fetchPage
+    });
+
+    const result = await worker.run({ query: 'guide -site:example.com', maxSearchRounds: 1, maxFetches: 3 });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://allowed.test/guide' }));
+    expect(result.evidence.map((item) => item.url)).toEqual(['https://allowed.test/guide']);
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
+  });
+
+  it('does not fetch or suggest headless when every search result is excluded', async () => {
+    const fetchPage = vi.fn();
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({
+        status: 'ok' as const,
+        results: [{ title: 'Excluded', url: 'https://sub.example.com/guide', snippet: 'rich result' }],
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      })),
+      fetchPage
+    });
+
+    const result = await worker.run({ query: 'guide -site:example.com', maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(result.evidence).toEqual([]);
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
+  });
+
+  it('never emits evidence or a headless suggestion for a long HTTP 404 search result', async () => {
+    const fetchPage = createHttpFetcher({
+      fetchImpl: vi.fn(async () => new Response(`<html><body><article>${'Long error page that must never become evidence. '.repeat(100)}</article></body></html>`, {
+        status: 404,
+        headers: { 'content-type': 'text/html' }
+      }))
+    });
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({
+        status: 'ok' as const,
+        results: [{ title: 'Missing page', url: 'https://example.com/missing', snippet: 'Result snippet' }],
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      })),
+      fetchPage: ({ url, query, signal }) => fetchPage(url, query, signal)
+    });
+
+    const result = await worker.run({ query: 'missing page', maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(result.evidence).toEqual([]);
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
+    expect(result.gaps).toContainEqual({ kind: 'fetch-failed', message: 'HTTP 404 (not found)' });
+  });
+
   it('keeps a discovered reader document and ordered supports while its summary stays short', async () => {
     const readerText = [
       'Navigation cookie preferences.',

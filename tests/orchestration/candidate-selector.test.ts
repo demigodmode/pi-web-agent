@@ -45,4 +45,35 @@ describe('selectCandidates', () => {
       'https://forum.example.com/topic/123'
     ]);
   });
+
+  it('drops excluded hosts and their subdomains before ranking or the candidate budget', () => {
+    const selected = selectCandidates({
+      query: 'coverage -site:Example.COM./docs, -site:blocked.test',
+      results: [
+        { title: 'Excluded parent', url: 'https://example.com/guide', snippet: '' },
+        { title: 'Excluded subdomain', url: 'https://docs.example.com/guide', snippet: '' },
+        { title: 'Excluded second host', url: 'https://blocked.test/guide', snippet: '' },
+        { title: 'Lookalike', url: 'https://notexample.com/guide', snippet: '' },
+        { title: 'Suffix lookalike', url: 'https://example.com.evil/guide', snippet: '' },
+        { title: 'Allowed', url: 'https://allowed.test/guide', snippet: '' }
+      ],
+      seenUrls: new Set(),
+      maxCandidates: 3
+    });
+
+    expect(selected.map((item) => item.url)).toEqual([
+      'https://notexample.com/guide',
+      'https://example.com.evil/guide',
+      'https://allowed.test/guide'
+    ]);
+  });
+
+  it('leaves positive site operators to the search backend', () => {
+    expect(selectCandidates({
+      query: 'coverage site:vitest.dev',
+      results: [{ title: 'Backend result', url: 'https://example.com/guide', snippet: '' }],
+      seenUrls: new Set(),
+      maxCandidates: 1
+    }).map((item) => item.url)).toEqual(['https://example.com/guide']);
+  });
 });
