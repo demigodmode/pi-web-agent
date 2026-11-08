@@ -84,7 +84,12 @@ export function createYoutubeReader({
           status: 'ok',
           url,
           content: { title: details.title ?? `YouTube ${videoID}`, text: transcript.slice(0, READER_TEXT_CAP) },
-          metadata: { method: 'youtube', cacheHit: false, truncated: transcript.length >= READER_TEXT_CAP }
+          metadata: {
+            method: 'youtube', cacheHit: false,
+            retrievalCut: transcript.length > READER_TEXT_CAP,
+            selectionOmitted: false,
+            truncated: transcript.length >= READER_TEXT_CAP
+          }
         };
       } catch (err) {
         return {

@@ -42,10 +42,15 @@ import {
 import {
   loadPresentationConfigLayers,
   resetPresentationConfigScope,
+  resetResultsConfigScope,
   saveBackendConfigScope,
   savePresentationConfigScope,
+  saveResultsConfigScope,
   type LoadedPresentationConfig
 } from '../presentation/config-store.js';
+import { formatResultLengthLine, openResultsSettingsUi } from './results-settings.js';
+import { DEFAULT_RESULTS_CONFIG } from '../results/config.js';
+import type { ResultsOverride } from '../results/types.js';
 import { BROWSER_PATH_ENV, resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { createProxyFetch } from '../fetch/proxy-fetch.js';
 import { checkJitiCompat } from '../jiti-compat.js';
@@ -63,7 +68,9 @@ type CommandDeps = {
   load?: () => ReturnType<typeof loadPresentationConfigLayers>;
   save?: (scope: PresentationScope, config: PresentationConfigOverride) => Promise<void>;
   saveBackends?: (scope: PresentationScope, config: BackendConfigOverride) => Promise<void>;
+  saveResults?: (scope: PresentationScope, config: ResultsOverride) => Promise<void>;
   reset?: (scope: PresentationScope) => Promise<void>;
+  resetResults?: (scope: PresentationScope) => Promise<void>;
   resolveBrowser?: (options?: { configuredPath?: string }) => Promise<BrowserResolutionResult>;
   runtime?: { nodeVersion: string; platform: string; arch: string };
   checkTypebox?: () => Promise<boolean>;
@@ -79,7 +86,7 @@ type SettingsUiResult =
   | { action: 'save'; scope: PresentationScope; config: PresentationConfig; backends: BackendConfig; presentationEdits?: PresentationEditPath[] };
 
 type WebAgentAction = 'settings' | 'show' | 'doctor' | 'changelog' | 'reset-project' | 'reset-global';
-type SettingsSection = 'presentation' | 'backends';
+type SettingsSection = 'presentation' | 'backends' | 'results';
 
 export type SettingsDraftState = {
   scope: PresentationScope;
@@ -943,7 +950,7 @@ async function openActionMenu(ctx: any): Promise<WebAgentAction | undefined> {
   return ctx.ui.custom((tui: any, theme: any, _kb: unknown, done: (value: WebAgentAction | undefined) => void) => {
     const container = new Container();
     const items: SelectItem[] = [
-      { value: 'settings', label: 'Settings', description: 'Edit presentation modes and backends' },
+      { value: 'settings', label: 'Settings', description: 'Edit presentation modes, backends, and result length' },
       { value: 'show', label: 'Show config', description: 'Print effective config paths and modes' },
       { value: 'doctor', label: 'Doctor', description: 'Check runtime dependencies and browser detection' },
       { value: 'changelog', label: 'Changelog', description: 'Show latest package changelog' },
@@ -984,6 +991,7 @@ async function openSettingsSectionMenu(ctx: any): Promise<SettingsSection | unde
     const container = new Container();
     const items: SelectItem[] = [
       { value: 'presentation', label: 'Presentation', description: 'Compact, preview, and verbose output modes' },
+      { value: 'results', label: 'Results', description: 'Model result length limits' },
       { value: 'backends', label: 'Backends', description: 'Search/fetch providers, URLs, and fallbacks' }
     ];
 
@@ -1200,7 +1208,9 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
   const load = deps.load ?? (() => loadPresentationConfigLayers());
   const save = deps.save ?? ((scope, config) => savePresentationConfigScope({}, scope, config));
   const saveBackends = deps.saveBackends ?? ((scope, config) => saveBackendConfigScope({}, scope, config));
+  const saveResults = deps.saveResults ?? ((scope, config) => saveResultsConfigScope({}, scope, config));
   const reset = deps.reset ?? ((scope) => resetPresentationConfigScope({}, scope));
+  const resetResults = deps.resetResults ?? ((scope) => resetResultsConfigScope({}, scope));
   const resolveBrowser = deps.resolveBrowser ?? ((options?: { configuredPath?: string }) =>
     resolveBrowserExecutable({ configuredPath: options?.configuredPath }));
   const runtime = deps.runtime ?? {
@@ -1256,6 +1266,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           formatBackendSummary(backendConfig),
           `network allow list: ${backendConfig.network?.allowRanges?.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
           `trust upstream proxy for private addresses: ${backendConfig.network?.trustProxyDns ? 'on' : 'off'}`,
+          formatResultLengthLine(loaded.effectiveResults ?? DEFAULT_RESULTS_CONFIG, ctx.model),
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
           ...backendHealth,
           repoResearchLine
@@ -1273,6 +1284,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           [
             formatConfigSummary(loaded.effectiveConfig),
             formatBackendSummary(loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG),
+            formatResultLengthLine(loaded.effectiveResults ?? DEFAULT_RESULTS_CONFIG, ctx.model),
             `global: ${loaded.global.path}${loaded.global.exists ? '' : ' (missing)'}`,
             `project: ${loaded.project.path}${loaded.project.exists ? '' : ' (missing)'}`
           ].join('\n'),
@@ -1294,7 +1306,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           const loaded = await load();
           const confirmed = await ctx.ui.confirm(
             `Reset ${scope} settings?`,
-            `This deletes ${loaded[scope].path}, including presentation and backend settings.`
+            `This deletes ${loaded[scope].path}, including presentation, backend, and result-length settings.`
           );
           if (!confirmed) {
             ctx.ui.notify('Reset cancelled.', 'info');
@@ -1352,9 +1364,17 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
 
         const result = section === 'presentation'
           ? await openPresentationSettingsUi(ctx, loaded, initialScope)
-          : await openBackendSettingsUi(ctx, loaded, initialScope);
+          : section === 'backends'
+            ? await openBackendSettingsUi(ctx, loaded, initialScope)
+            : await openResultsSettingsUi(ctx, loaded, initialScope);
 
         if (!result || result.action === 'cancel') {
+          return;
+        }
+
+        if (result.action === 'reset-results') {
+          await resetResults(result.scope);
+          ctx.ui.notify(`Reset ${result.scope} result-length config`, 'info');
           return;
         }
 
@@ -1364,7 +1384,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           return;
         }
 
-        if (section === 'presentation') {
+        if (section === 'presentation' && result.action === 'save') {
           await save(
             result.scope,
             collapsePresentationConfigToOverride(
@@ -1378,6 +1398,13 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           return;
         }
 
+        if (section === 'results' && result.action === 'save-results') {
+          await saveResults(result.scope, result.override);
+          ctx.ui.notify(`Saved ${result.scope} result-length config`, 'info');
+          return;
+        }
+
+        if (result.action !== 'save') return;
         await saveBackends(
           result.scope,
           collapseBackendConfigToOverride(

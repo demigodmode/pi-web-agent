@@ -161,6 +161,19 @@ describe('Pi extension entrypoint', () => {
     await Promise.all([tools[0].execute('a', { query: 'one' }), tools[0].execute('b', { query: 'two' })]);
     expect(starts).toEqual([11, 12]);
   });
+
+  it('snapshots only model facts and result config for the registered tool call', async () => {
+    const calls: any[] = [];
+    const tools: any[] = [];
+    extension({
+      registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(),
+      __presentationConfigStore: { load: vi.fn().mockResolvedValue({ effectiveConfig: { defaultMode: 'compact', tools: {} }, effectiveResults: { lengthLimit: 'short' } }) },
+      __webExploreTool: vi.fn(async (input) => { calls.push(input); return { status: 'ok', findings: [], sources: [] }; })
+    } as never);
+    await tools[0].execute('call', { query: 'raw query stays here' }, undefined, undefined, { model: { id: 'small', provider: 'custom', contextWindow: 8192, apiKey: 'secret' } });
+    expect(calls[0]).toMatchObject({ query: 'raw query stays here', results: { lengthLimit: 'short' }, modelContext: { id: 'small', provider: 'custom', contextWindow: 8192 } });
+    expect(calls[0].modelContext).not.toHaveProperty('apiKey');
+  });
   it('reuses the configured web_explore workflow while backend config is unchanged', async () => {
     vi.resetModules();
     const createResearchWorkflow = vi.fn().mockReturnValue({
@@ -197,6 +210,35 @@ describe('Pi extension entrypoint', () => {
     await webExplore.execute('tool-call-2', { query: 'example again' });
 
     expect(createResearchWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one cached workflow while model windows and results limits change per call', async () => {
+    vi.resetModules();
+    const evidence = Array.from({ length: 5 }, (_, index) => ({
+      title: `Source ${index + 1}`, url: `https://example.test/${index + 1}`, sourceKind: 'official-docs' as const, method: 'http' as const,
+      summary: `finding ${index + 1} ${'f'.repeat(300)}`,
+      supports: Array.from({ length: 3 }, (__, passage) => `source ${index + 1} passage ${passage + 1} ${'x'.repeat(900)}`)
+    }));
+    const run = vi.fn(async (_input: any) => ({ decision: { action: 'answer' as const }, evidence, workerPass: {}, metadata: { searchPasses: 1, fetchedPages: 5, headlessAttempts: 0, exhaustedBudget: false } }));
+    const createResearchWorkflow = vi.fn().mockReturnValue({ run });
+    vi.doMock('../src/orchestration/index.js', () => ({ createResearchWorkflow }));
+    const { default: dynamicExtension } = await import('../src/extension.js');
+    const tools: any[] = [];
+    const base = { effectiveConfig: { defaultMode: 'compact', tools: {} }, effectiveBackends: { search: { provider: 'duckduckgo' }, fetch: { provider: 'http' }, headless: { provider: 'local-browser' } } };
+    const pi = { registerTool: (tool: any) => tools.push(tool), registerCommand: vi.fn(), on: vi.fn(), __presentationConfigStore: { load: vi.fn()
+      .mockResolvedValueOnce({ ...base, effectiveResults: { lengthLimit: 'auto' } })
+      .mockResolvedValueOnce({ ...base, effectiveResults: { lengthLimit: 'auto' } })
+      .mockResolvedValueOnce({ ...base, effectiveResults: { lengthLimit: 1000 } }) } };
+    dynamicExtension(pi as never);
+    const webExplore = tools.find((tool) => tool.name === 'web_explore');
+    const tiny = await webExplore.execute('one', { query: 'raw tiny query' }, undefined, undefined, { model: { contextWindow: 8192 } });
+    const large = await webExplore.execute('two', { query: 'raw large query' }, undefined, undefined, { model: { contextWindow: 128000 } });
+    const fixed = await webExplore.execute('three', { query: 'raw fixed query' }, undefined, undefined, { model: { contextWindow: 128000 } });
+    expect(createResearchWorkflow).toHaveBeenCalledTimes(1);
+    expect(tiny.details.metadata.resultLength.effectiveChars).toBe(1310);
+    expect(large.details.metadata.resultLength.contentChars).toBeGreaterThan(tiny.details.metadata.resultLength.contentChars);
+    expect(fixed.details.metadata.resultLength.effectiveChars).toBe(1000);
+    expect(run.mock.calls.map(([input]) => input.query)).toEqual(['raw tiny query', 'raw large query', 'raw fixed query']);
   });
 
   it('passes configured backends into the default web_explore workflow', async () => {

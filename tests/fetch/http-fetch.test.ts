@@ -95,6 +95,8 @@ describe('http fetch query selection', () => {
     expect(result.content?.text).toContain('48 hours before departure');
     expect(result.content?.text.length).toBeLessThanOrEqual(4000);
     expect(result.metadata.truncated).toBe(true);
+    expect(result.metadata.selectionOmitted).toBe(true);
+    expect(result.metadata.retrievalCut).toBe(false);
   });
 
   it('finds a relevant answer in a later sibling article', async () => {

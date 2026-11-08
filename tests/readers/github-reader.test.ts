@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createGithubReader } from '../../src/readers/github-reader.js';
+import { READER_TEXT_CAP } from '../../src/readers/limits.js';
 
 function ok(body: string, contentType = 'text/plain') {
   return { ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body), headers: new Headers({ 'content-type': contentType }) };
@@ -50,6 +51,18 @@ describe('createGithubReader', () => {
     expect(res.metadata.method).toBe('github');
     expect(res.content?.text).toContain('export const x = 1;');
     expect(res.content?.title).toBe('owner/repo/src/x.ts');
+  });
+
+  it.each([
+    [READER_TEXT_CAP, false],
+    [READER_TEXT_CAP + 1, true]
+  ])('marks only source text beyond the cap as a retrieval cut (%i)', async (length, retrievalCut) => {
+    const reader = createGithubReader({ fetchImpl: vi.fn().mockResolvedValue(ok('x'.repeat(length))) });
+    const res = await reader.read('https://github.com/owner/repo/blob/main/src/x.ts');
+
+    expect(res.content?.text).toHaveLength(READER_TEXT_CAP);
+    expect(res.metadata.retrievalCut).toBe(retrievalCut);
+    expect(res.metadata.selectionOmitted).toBe(false);
   });
 
   it('encodes path segments with percent-encoded characters in blob urls', async () => {
@@ -173,6 +186,8 @@ describe('createGithubReader', () => {
     const res = await createGithubReader({ fetchImpl }).read('https://github.com/o/r/issues/1');
     expect(res.content?.text).toContain('three');
     expect(res.metadata.partialComments).toBe(true);
+    expect(res.metadata.retrievalCut).toBe(false);
+    expect(res.metadata.selectionOmitted).toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 

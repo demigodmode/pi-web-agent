@@ -156,6 +156,24 @@ function requiredNotices(result: WebExploreResponse, compact = false) {
   );
 }
 
+function evidenceLines(result: WebExploreResponse) {
+  return result.evidence?.flatMap((item) => {
+    const targets = new Set<string>();
+    for (const coverage of item.samePassageAs ?? []) {
+      if (result.evidence?.find((source) => source.id === coverage.sourceId)?.excerpts[coverage.excerptIndex]) targets.add(`${coverage.relation === 'same' ? 'same passage as' : 'covered by a passage from'} ${coverage.sourceId}`);
+    }
+    return [`- [${sanitizeTerminalText(item.id)}] ${sanitizeTerminalText(item.title)}: ${sanitizeTerminalText(item.url)}`,
+      ...(item.retrievalCut ? ['  (document longer than what was read)'] : []),
+      ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`),
+      ...[...targets].map((target) => `  ${target}`)];
+  }) ?? [];
+}
+
+function spaceCutNotice(result: WebExploreResponse) {
+  const ids = result.metadata?.resultLength?.cutSourceIds ?? [];
+  return ids.length ? `${ids.join(ids.length === 2 ? ' and ' : ', ')} had more relevant text that didn't fit. Re-read a link with a narrower question if you need it.` : undefined;
+}
+
 
 /** Terminal-only views built from execution-time statistics; full evidence stays on the response. */
 export function buildExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
@@ -200,10 +218,8 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     displayQueries.length ? `Queries\n${displayQueries.join('\n')}` : undefined,
     verboseFindings.length ? `Findings\n${verboseFindings.join('\n')}` : undefined,
     result.sources.length ? `Sources\n${result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`).join('\n')}` : undefined,
-    result.evidence?.length ? `Evidence\n${result.evidence.flatMap((item) => [
-      `- [${sanitizeTerminalText(item.id)}] ${sanitizeTerminalText(item.title)}: ${sanitizeTerminalText(item.url)}`,
-      ...item.excerpts.map((excerpt) => `  ${excerpt.anchor ? `#${sanitizeTerminalText(excerpt.anchor)}: ` : ''}${sanitizeTerminalText(excerpt.text)}`)
-    ]).join('\n')}` : undefined,
+    result.evidence?.length ? `Evidence\n${evidenceLines(result).join('\n')}` : undefined,
+    spaceCutNotice(result),
     researchContext || undefined,
     result.caveat ? `Caveat\n${sanitizeTerminalText(result.caveat)}` : undefined,
     ['Retrieval', ...retrieval, `Failed reads: ${stats.failedReads}`].join('\n'),

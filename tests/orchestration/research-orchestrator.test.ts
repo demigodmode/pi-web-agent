@@ -13,6 +13,32 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it('preserves requested URL and full reader evidence for a direct source', async () => {
+    const url = 'https://github.com/acme/widget/issues/1';
+    const readerText = 'First reader paragraph.\n\n```ts\nconst version = "1.4";\n```\n\nFinal reader paragraph.';
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async () => ({
+        status: 'ok' as const, url,
+        content: { text: readerText, sectionAnchor: 'comment-1' },
+        metadata: { method: 'github' as const, cacheHit: false, retrievalCut: true, selectionOmitted: false, partialComments: true }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: `Read ${url} API version` });
+
+    expect(result.requiredSourceEvidence).toContainEqual(expect.objectContaining({
+      requestedUrl: url,
+      sourceKind: 'issue-thread',
+      readerDocument: readerText,
+      supports: ['First reader paragraph.', '```ts\nconst version = "1.4";\n```', 'Final reader paragraph.'],
+      sectionAnchor: 'comment-1',
+      retrievalCut: true,
+      selectionOmitted: false,
+      partialComments: true
+    }));
+    expect(Array.from(result.requiredSourceEvidence[0]!.summary).length).toBeLessThanOrEqual(180);
+  });
+
   it('reports the first successful direct read in its settled progress snapshot', async () => {
     const events: ResearchProgress[] = [];
     const result = await createResearchOrchestrator({
@@ -221,7 +247,7 @@ describe('research orchestrator types', () => {
       fetchDirect: vi.fn(async ({ url }) => ({
         status: 'ok' as const, url,
         content: { title: 'Guide', text: 'A usable guide with the requested details.' },
-        metadata: { method: 'http' as const, cacheHit: false }
+        metadata: { method: 'http' as const, cacheHit: false, retrievalCut: false, selectionOmitted: true }
       })),
       headlessFetch: vi.fn()
     });
@@ -230,6 +256,7 @@ describe('research orchestrator types', () => {
 
     expect(worker.run).not.toHaveBeenCalled();
     expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({ retrievalCut: false, selectionOmitted: true });
     expect(result.metadata?.searchPasses).toBe(0);
   });
 

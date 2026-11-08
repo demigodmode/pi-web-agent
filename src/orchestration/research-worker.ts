@@ -5,7 +5,8 @@ import { selectCandidates } from './candidate-selector.js';
 import { userFixableSearchFailures } from '../backends/fallback-policy.js';
 import { classifySourceProfile } from './source-profile.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
-import { selectEvidencePassages } from './evidence-passages.js';
+import { rankEvidencePassages, selectEvidencePassages } from './evidence-passages.js';
+import { readerEvidence } from './reader-evidence.js';
 import { isBotCheckContent } from '../extract/bot-check.js';
 import type { ResearchRunBudget } from './run-budget.js';
 import type { ResearchProgress } from './progress.js';
@@ -34,18 +35,7 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
 
   // Reader extraction keeps its full text while source authority comes from the URL.
   if (isReaderMethod(fetched.metadata.method)) {
-    return {
-      title: content.title ?? fallbackTitle,
-      url: fetched.url,
-      sourceKind: classifySource(fetched.url),
-      method: fetched.metadata.method,
-      summary: content.text,
-      supports: [content.text],
-      ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
-      ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
-      truncated: fetched.metadata.truncated ?? false
-      , ...(fetched.metadata.partialComments ? { partialComments: true } : {})
-    } satisfies ResearchEvidence;
+    return readerEvidence({ ...fetched, content: { ...content, title: content.title ?? fallbackTitle } }, query);
   }
 
   const sourceKind = classifySource(fetched.url);
@@ -61,8 +51,11 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
     method: fetched.metadata.method,
     summary: selectRelevantExcerpt(content.text, query, 180),
     supports: passages.excerpts,
+    resultCandidates: rankEvidencePassages(content.text, query),
     ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
     ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    retrievalCut: fetched.metadata.retrievalCut ?? false,
+    selectionOmitted: fetched.metadata.selectionOmitted ?? false,
     truncated: (fetched.metadata.truncated ?? false) || passages.truncated
     , ...(fetched.metadata.partialComments ? { partialComments: true } : {})
   } satisfies ResearchEvidence;

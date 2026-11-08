@@ -1,9 +1,34 @@
 import type { ResearchEvidence } from '../orchestration/research-types.js';
+import { rankEvidencePassages } from '../orchestration/evidence-passages.js';
+import type { PreparedSource } from '../results/types.js';
 import type { WebExploreResponse } from '../types.js';
 
 const MAX_EXCERPTS_PER_SOURCE = 3;
 const MAX_EXCERPT_CHARS = 900;
 const MAX_TOTAL_EXCERPT_CHARS = 10_000;
+
+/**
+ * Keeps allocation inputs separate from the legacy public record builder.  Task
+ * 7 will call this seam after assigning required/discovered source roles; the
+ * existing buildEvidenceRecords behaviour intentionally remains unchanged.
+ */
+export function prepareEvidenceSources(items: ResearchEvidence[], query: string, requiredCount = 0): PreparedSource[] {
+  return items.map((item, index) => ({
+    id: `S${index + 1}`,
+    required: index < requiredCount,
+    reader: item.method === 'github' || item.method === 'pdf' || item.method === 'youtube',
+    title: item.title,
+    url: item.url,
+    ...(item.requestedUrl ? { requestedUrl: item.requestedUrl } : {}),
+    method: item.method,
+    ...(item.sectionAnchor ? { sectionAnchor: item.sectionAnchor } : {}),
+    ranked: item.resultCandidates?.map(candidate => ({ ...candidate })) ?? rankEvidencePassages(item.readerDocument ?? item.supports.join('\n\n'), query),
+    ...(item.readerDocument !== undefined ? { readerDocument: item.readerDocument } : {}),
+    retrievalCut: item.retrievalCut ?? false,
+    selectionOmitted: item.selectionOmitted ?? false,
+    ...(item.retrievedAt ? { retrievedAt: item.retrievedAt } : {})
+  }));
+}
 
 export function buildEvidenceRecords(items: ResearchEvidence[]): NonNullable<WebExploreResponse['evidence']> {
   let remaining = MAX_TOTAL_EXCERPT_CHARS;

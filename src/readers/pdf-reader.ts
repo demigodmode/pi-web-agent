@@ -73,7 +73,12 @@ export function createPdfReader({ fetchImpl = fetch, extractPdfText = defaultExt
           status: 'ok',
           url,
           content: { title: extracted.title ?? filenameFromUrl(url), text: text.slice(0, READER_TEXT_CAP) },
-          metadata: { method: 'pdf', cacheHit: false, contentType: 'application/pdf', truncated: text.length >= READER_TEXT_CAP }
+          metadata: {
+            method: 'pdf', cacheHit: false, contentType: 'application/pdf',
+            retrievalCut: text.length > READER_TEXT_CAP,
+            selectionOmitted: false,
+            truncated: text.length >= READER_TEXT_CAP
+          }
         };
       } catch (err) {
         return {

@@ -42,7 +42,38 @@ You don't do anything special for these. If a GitHub, PDF, or YouTube URL shows 
 - PDF: the text is extracted directly. A scanned PDF with no text layer can't be read, so you get a note saying so rather than a silent empty result.
 - YouTube: you get the transcript from the captions. A video with no captions gets the same kind of note.
 
-These run behind `web_explore`, so there's still nothing extra to call. When you paste a link to one of these and ask to read or summarize it, you get the extracted content back: the transcript or PDF text or file/issue body (long content is capped around 24k characters), not a research digest. A question that's only links ("read https://...") just reads them, without searching the web as well.
+These run behind `web_explore`, so there's still nothing extra to call. Readers take up to 24,000 characters of a long transcript, PDF, file or issue. How much of that reaches the model depends on [result length](#result-length): at Standard, a link you pasted comes back in full (up to that cap), while readers found through search give normal excerpts. A question that's only links ("read https://...") just reads them, without searching the web as well.
+
+## Result length
+
+Result length controls how much content reaches the calling model. It is separate from terminal presentation: `compact`, `preview`, and `verbose` keep their layouts and do not change the tool result budget.
+
+The limit counts findings, excerpts, and research context (`Searched`, `Still open`, and `Try next`). Notices, required-source failures, errors, caveats, source headers, and source IDs stay outside the budget and are never cut.
+
+| Setting | Behavior |
+| --- | --- |
+| Auto (default) | Uses the model's declared context window: 4% of it at an estimate of four characters per token, with a 1,000-character floor and never more than Standard would produce. |
+| Short | 4,000 characters. |
+| Medium | 8,000 characters. |
+| Standard | No overall character budget; per-source caps apply. |
+| Exact number | JSON-only character limit. Finite numbers are rounded down; numbers below 1,000 become 1,000. |
+
+Auto is an estimate from the model's declared context window. It doesn't count tokens or look at how full the conversation is. If the model doesn't declare a context window, Auto uses Standard. `/web-agent show` and `/web-agent doctor` show the configured setting and the current model's estimate. When Auto sees a 128k context, they also say: `For custom models, 128k may be Pi's default; set contextWindow in models.json if your model's real context is smaller.`
+
+Set the global default in `~/.pi/agent/extensions/pi-web-agent/config.json` and override it per project in `.pi/extensions/pi-web-agent/config.json`. Project settings layer over global settings. In the Results screen, **Inherit** removes the project override, while **Auto** is an explicit project override. Custom numeric values are preserved in config even though the menu only offers the named choices.
+
+```json
+{
+  "results": { "lengthLimit": "short" },
+  "presentation": { "defaultMode": "compact" }
+}
+```
+
+At Standard, sources share 10,000 characters of excerpts, with up to three excerpts of 900 characters each per source. Links you pasted go first; search results split what's left evenly in rank order. If a search result's share would be under 300 characters, it's left out and the result says so. GitHub, PDF and YouTube pages found through search count as ordinary sources here. A GitHub, PDF or YouTube link you pasted comes back in full (up to 24,000 characters), outside that pool.
+
+With any other setting, each link you pasted still gets its best excerpt (up to 900 characters) even if that goes over the limit, so a result with many pasted links can run a little long.
+
+Results say why text is missing. `(document longer than what was read)` means the reader hit its cap, and reading again won't get more. A notice that a source "had more relevant text that didn't fit" means the result length cut it; asking about that link with a narrower question will pick a different passage. Text that simply wasn't relevant to the question isn't marked.
 
 ## Asking about a GitHub repo
 
@@ -106,9 +137,9 @@ and Repository. Repository research is separate from the GitHub reader.
 
 Required-source notices appear before findings in every mode. They give the
 requested URL, the reason it could not be read, and say that its requirements
-were not checked. The model receives the complete findings, evidence,
-citations, caveats, and these notices unchanged across compact, preview, and
-verbose modes. Expanding a result opens the verbose view; saved results keep
+were not checked. The model receives the same findings, evidence,
+citations, caveats and notices in compact, preview and verbose modes; only
+result length changes how much of it there is. Expanding a result opens the verbose view; saved results keep
 the mode selected when they ran, and older saved results use a legacy fallback.
 
 The model also receives up to three short research-context lines: `Searched`
@@ -118,13 +149,14 @@ partial result. These are rule-based hints, not another model's assessment.
 `Still open` and `Try next` appear only for a partial result or a required-source
 failure. Partial search coverage remains in the existing caveat rather than in
 `Still open`.
-The block is limited to 1,000 characters. Queries may be shortened for display;
-the underlying search and the existing evidence excerpts are unchanged.
+At Standard the block is limited to 1,000 characters; finite result limits can
+shorten it along with findings and excerpts. Queries may be shortened for display;
+the underlying search is unchanged.
 The same context appears in the verbose terminal view. Compact and preview
 keep their current layout. Older saved results without these fields remain readable.
 
 The visible mode changes terminal presentation only. It does not create extra
-public tools or change the research workflow.
+public tools, change the research workflow, or alter the result-length setting.
 
 ## When evidence is weak
 

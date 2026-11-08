@@ -8,9 +8,12 @@ The format is intentionally simple and release-oriented.
 
 ### Added
 - Research results tell Pi what was searched, which gaps remain, and up to two rule-based follow-up searches. The same context appears in verbose view.
+- Result length setting (#125). The default, Auto, sizes the tool result to the model's context window, so small local models get shorter results. Short, Medium, Standard or an exact number of characters can be set instead.
 
 ### Changed
 - The tool description asks for short, specific searches while keeping intent words and supplied links (#124).
+- The same passage quoted by two sources is sent once. Results now say whether text is missing because a document was longer than what was read, or because it didn't fit the result length.
+- GitHub, PDF and YouTube pages found through search get normal excerpts instead of their whole text. Links you paste still come back in full at Standard.
 
 ### Fixed
 - None.

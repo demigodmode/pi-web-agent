@@ -1,5 +1,6 @@
 import type { Attempt, FailureInfo, SearchProviderName, SearchUnavailable } from '../types.js';
 import type { ResearchBudgetReason, ResearchBudgetSnapshot } from './run-budget.js';
+import type { PassageCandidate } from './evidence-passages.js';
 
 export type ResearchSourceKind =
   | 'official-docs'
@@ -22,8 +23,15 @@ export type ResearchEvidence = {
   method: Exclude<ResearchMethod, 'search'>;
   summary: string;
   supports: string[];
+  /** Rich candidate excerpts used for result allocation, not serialized research support. */
+  resultCandidates?: PassageCandidate[];
+  /** Complete reader text retained for the Standard result policy. */
+  readerDocument?: string;
   sectionAnchor?: string;
   retrievedAt?: string;
+  retrievalCut?: boolean;
+  selectionOmitted?: boolean;
+  /** @deprecated Compatibility marker; it does not establish why text was omitted. */
   truncated?: boolean;
   partialComments?: boolean;
 };
