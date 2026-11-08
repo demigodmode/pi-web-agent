@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   DEFAULT_BACKEND_CONFIG,
@@ -157,6 +157,15 @@ async function readConfigFileForWrite(filePath: string): Promise<AgentConfigFile
   }
 }
 
+async function fileExists(filePath: string) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function writeConfigFile(filePath: string, config: AgentConfigFile) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(config, null, 2) + '\n', 'utf8');
@@ -248,6 +257,7 @@ export async function resetResultsConfigScope(
 ) {
   const { globalPath, projectPath } = getPresentationConfigPaths(options);
   const filePath = scope === 'global' ? globalPath : projectPath;
+  if (!(await fileExists(filePath))) return;
   const existing = await readConfigFileForWrite(filePath);
   const next = { ...existing };
   delete next.results;

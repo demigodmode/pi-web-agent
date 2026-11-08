@@ -58,7 +58,7 @@ The limit counts findings, excerpts, and research context (`Searched`, `Still op
 | Standard | No overall character budget; per-source caps apply. |
 | Exact number | JSON-only character limit. Finite numbers are rounded down; numbers below 1,000 become 1,000. |
 
-Auto is an estimate from the model's declared context window. It doesn't count tokens or look at how full the conversation is. If the model doesn't declare a context window, Auto uses Standard. `/web-agent show` and `/web-agent doctor` show the configured setting and the current model's estimate. When Auto sees a 128k context, they also say: `For custom models, 128k may be Pi's default; set contextWindow in models.json if your model's real context is smaller.`
+Auto is an estimate from the model's context window. It doesn't count tokens or look at how full the conversation is. Auto uses Standard only if Pi gives no context window at all. Pi reports a custom model without `contextWindow` in `models.json` as 128k, so Auto sizes it for 128k. `/web-agent show` and `/web-agent doctor` show the configured setting and the current model's estimate. When Auto sees a 128k context, they also say: `For custom models, 128k may be Pi's default; set contextWindow in models.json if your model's real context is smaller.`
 
 Set the global default in `~/.pi/agent/extensions/pi-web-agent/config.json` and override it per project in `.pi/extensions/pi-web-agent/config.json`. Project settings layer over global settings. In the Results screen, **Inherit** removes the project override, while **Auto** is an explicit project override. Custom numeric values are preserved in config even though the menu only offers the named choices.
 

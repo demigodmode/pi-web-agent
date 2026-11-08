@@ -60,7 +60,7 @@ If you want to change that, open the action menu with:
 
 From there you can open settings, show config, run doctor, or reset config. Settings lets you change presentation modes, result length, and backend providers without editing JSON by hand. The Results screen offers Inherit, Auto, Short, Medium and Standard. An exact character limit can be set in the JSON file.
 
-Result length defaults to Auto. It sizes the tool result to the model's context window, or uses Standard if the model doesn't declare one. See [Result length](/tools#result-length) for details and [Presentation and settings](/presentation) for terminal modes.
+Result length defaults to Auto. It sizes the tool result to the model's context window, or uses Standard if Pi gives no context window for the model. See [Result length](/tools#result-length) for details and [Presentation and settings](/presentation) for terminal modes.
 
 ## Optional backends
 
