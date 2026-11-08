@@ -145,8 +145,9 @@ These also work:
 
 - **Presentation**: default output mode and the `web_explore` override
 - **Backends**: search/fetch providers, base URLs where relevant, fallback behavior, and env-var reminders for Brave/Firecrawl API keys
+- **Results**: result-length limit and its write scope
 
-From either settings screen you can:
+From each settings screen you can:
 
 - choose whether you are editing global or project settings
 - save, reset the current scope, or cancel
@@ -154,16 +155,16 @@ From either settings screen you can:
 Keyboard shortcuts in the settings UI:
 
 - `Ctrl+S` saves edits to the selected scope
-- `Ctrl+R` resets the selected scope: the first press asks, a second press deletes that scope's entire config file (presentation and backend settings both), and Esc or any other key cancels
+- `Ctrl+R` in Presentation or Backends resets the selected scope's entire config file after a second press. `Ctrl+R` in Results resets only that scope's result-length settings. Esc or any other key cancels.
 - `Esc` discards unsaved edits and closes settings
 
-The reset menu entries and `/web-agent reset project` or `/web-agent reset global` also delete the whole scope file, after a confirmation dialog. Without an interactive UI, the typed command resets straight away.
+The reset menu entries and `/web-agent reset project` or `/web-agent reset global` also delete the whole scope file, including result-length settings, after a confirmation dialog. Without an interactive UI, the typed command resets straight away.
 
 While an inline backend URL editor is open, its keys take precedence: Enter accepts the field edit and Esc cancels that edit. Return to the settings screen before using Ctrl+S to save the scope.
 
 ## Config files
 
-Settings are stored in real JSON files. The UI writes presentation and backend sections separately so changing one does not wipe the other.
+Settings are stored in real JSON files. The UI writes presentation, backend, and results sections separately so changing one does not wipe the others.
 
 Global config:
 

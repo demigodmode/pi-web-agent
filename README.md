@@ -40,7 +40,7 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 - **Honest by default.** Weak, narrow, blocked, or cautionary evidence gets flagged instead of dressed up as confidence.
 - **Safe with untrusted pages.** Links the model picks, or finds on a page it read, can't reach localhost, your LAN, or cloud metadata endpoints. That includes redirects and everything a headless page loads. Addresses you configure yourself aren't affected, and an allow list covers the private ranges you do want.
 - **Fallback that knows why.** Rate-limited or misconfigured backends get skipped for a while, flaky ones get one retry, and answers say when some search backends were unavailable.
-- **Bounded output.** `compact` / `preview` / `verbose` transcript modes.
+- **Presentation and result length are separate.** `compact` / `preview` / `verbose` control the terminal; Auto result length keeps the tool result suited to the calling model.
 - **Zero-config to start.** Runs keyless out of the box (DuckDuckGo search, local browser, the built-in readers). Opt into hosted backends, fallback, search fanout, and per-tool output modes through config when you want more control.
 
 ## Why pi-web-agent
@@ -49,7 +49,7 @@ Compared to other web tooling for agents:
 
 - **Hands-off.** No curator, no browser windows to approve, no step that pops you out of your session. Ask `web_explore` once and the answer comes back cleanly. Nothing to babysit.
 - **Keyless by default.** Search, page reads, and the GitHub/PDF/YouTube readers all work with no API keys. Add hosted providers only when you want them.
-- **Bounded and honest.** Compact output by default, and it says when a read was not good enough instead of returning fake confidence.
+- **Bounded and honest.** The terminal is compact by default; tool results use their own model-aware length limit and say when a read was not good enough instead of returning fake confidence.
 
 ## Install
 
@@ -126,6 +126,7 @@ Project: .pi/extensions/pi-web-agent/config.json
 
 ```json
 {
+  "results": { "lengthLimit": "short" },
   "presentation": {
     "defaultMode": "compact",
     "tools": { "web_explore": { "mode": "verbose" } }
@@ -139,7 +140,9 @@ Presentation modes:
 - `preview`: slightly richer bounded view
 - `verbose`: fuller bounded view
 
-Modes change the terminal display; the model receives findings, sources, and caveats in every mode. In settings, Ctrl+S saves, Esc discards edits, and Ctrl+R (pressed twice) resets the selected scope's whole config file, presentation and backend settings both.
+Modes change the terminal display only. They do not shorten the tool result the model receives. Result length controls that separately: Auto is the default, or choose Short (4,000 characters), Medium (8,000), Standard, or an exact number in JSON (numbers below 1,000 become 1,000). See [Result length](https://demigodmode.github.io/pi-web-agent/tools#result-length) for what is counted and the Standard source caps.
+
+In Presentation or Backends settings, Ctrl+S saves, Esc discards edits, and Ctrl+R (pressed twice) resets the selected scope's whole config file. In Results, Ctrl+R resets only result-length settings for that scope. The explicit reset menu and `/web-agent reset project` or `/web-agent reset global` reset the whole scope file, including result-length settings.
 
 ## Docs
 

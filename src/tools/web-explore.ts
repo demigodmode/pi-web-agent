@@ -5,7 +5,10 @@ import { buildExplorePresentation } from '../presentation/explore-presentation.j
 import type { EvidenceCaveatReason } from '../orchestration/evidence-quality.js';
 import type { WebExploreResponse } from '../types.js';
 import { raceAbort, throwIfAborted } from '../abort.js';
-import { buildEvidenceRecords } from './evidence-records.js';
+import { prepareEvidenceSources } from './evidence-records.js';
+import { allocateResult } from '../results/allocate.js';
+import { DEFAULT_RESULTS_CONFIG } from '../results/config.js';
+import type { ModelContext, ResultsConfig } from '../results/types.js';
 import type { ResearchProgress } from '../orchestration/progress.js';
 import { redactUrlForDisplay, redactUrlsInText } from '../orchestration/url.js';
 import type { PresentationEnvelope } from '../presentation/types.js';
@@ -75,7 +78,7 @@ export function createWebExploreTool({
 } = {}) {
   const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
 
-  return async function webExplore({ query, signal, onProgress, startedAt }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void; startedAt?: number }) {
+  return async function webExplore({ query, signal, onProgress, startedAt, results = DEFAULT_RESULTS_CONFIG, modelContext }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void; startedAt?: number; results?: ResultsConfig; modelContext?: ModelContext }) {
     const localStartedAt = now();
     const durationMs = () => Math.max(0, now() - (startedAt ?? localStartedAt));
     throwIfAborted(signal);
@@ -110,20 +113,20 @@ export function createWebExploreTool({
     safeProgress?.({ phase: 'complete', state: 'settled', searches: counts.searches, fetches: counts.fetches, headless: counts.headless, ...(presentationStats ? { pagesRead: presentationStats.pagesRead, failedReads: presentationStats.failedReads } : {}) });
     if (result.terminalFailure) {
       const required = result.requiredSourceEvidence ?? [];
-      const evidence = buildEvidenceRecords(required);
-      const failed: WebExploreResponse = {
+      const publicEvidence = required;
+      const base: WebExploreResponse = {
         status: 'error',
         durationMs: durationMs(),
         findings: required.map((item) => item.summary),
         sources: required.map((item) => ({ title: item.title, url: item.url, ...(item.requestedUrl ? { requestedUrl: item.requestedUrl } : {}), method: item.method })),
-        evidence,
-        findingSourceIds: required.map((_, index) => [evidence[index]!.id]),
+        evidence: [],
+        findingSourceIds: required.map((_, index) => [`S${index + 1}`]),
         error: result.terminalFailure,
         metadata: result.metadata,
         requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures,
         ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {})
       };
-      return toPublicResponse(failed);
+      return allocatePublicResponse(base, publicEvidence, normalizedQuery, required.length, results, modelContext);
     }
 
     const required = result.requiredSourceEvidence ?? [];
@@ -132,7 +135,6 @@ export function createWebExploreTool({
     ));
     const publicEvidence = [...required, ...discretionary].slice(0, required.length + 5);
     const selectedEvidence = [...required, ...discretionary].slice(0, 5);
-    const evidence = buildEvidenceRecords(publicEvidence);
     const sources = publicEvidence.map((item) => ({
       title: item.title,
       url: item.url,
@@ -156,14 +158,41 @@ export function createWebExploreTool({
       durationMs: durationMs(),
       findings: synthesized.findings,
       sources,
-      evidence,
-      findingSourceIds: selectedEvidence.map((item) => [evidence[publicEvidence.indexOf(item)]!.id]),
+      evidence: [],
+      findingSourceIds: selectedEvidence.map((item) => [`S${publicEvidence.indexOf(item) + 1}`]),
       caveat: synthesized.caveat,
       metadata: result.metadata,
       requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures,
       ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {})
     };
 
-    return toPublicResponse(shaped);
+    return allocatePublicResponse(shaped, publicEvidence, normalizedQuery, required.length, results, modelContext);
   };
+}
+
+function allocatePublicResponse(base: WebExploreResponse, rawEvidence: ResearchEvidence[], query: string, requiredCount: number, results: ResultsConfig, modelContext?: ModelContext) {
+  // URLs and metadata are public output. Candidate text remains the unredacted page content.
+  const redacted = withRedactedUrls(base);
+  const allocation = allocateResult({
+    sources: prepareEvidenceSources(rawEvidence, query, requiredCount).map((source) => ({
+      ...source,
+      url: redactUrlForDisplay(source.url),
+      ...(source.requestedUrl ? { requestedUrl: redactUrlForDisplay(source.requestedUrl) } : {})
+    })),
+    findings: redacted.findings,
+    findingSourceIds: redacted.findingSourceIds ?? [],
+    context: redacted.metadata ?? {},
+    setting: results.lengthLimit,
+    ...(modelContext ? { model: modelContext } : {})
+  });
+  const response: WebExploreResponse = {
+    ...redacted,
+    evidence: allocation.evidence,
+    modelResult: allocation.modelResult,
+    metadata: {
+      ...(redacted.metadata ?? { searchPasses: 0, fetchedPages: 0, headlessAttempts: 0, exhaustedBudget: false }),
+      resultLength: { setting: results.lengthLimit, ...(allocation.effectiveChars !== undefined ? { effectiveChars: allocation.effectiveChars } : {}), contentChars: allocation.modelResult.contentChars, requiredOverflowChars: allocation.requiredOverflowChars, cutSourceIds: allocation.cutSourceIds }
+    }
+  };
+  return { ...response, presentation: buildExplorePresentation(response) };
 }

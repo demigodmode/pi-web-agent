@@ -6,6 +6,38 @@ import type { WebFetchResponse } from '../../src/types.js';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('research worker', () => {
+  it('keeps a discovered reader document and ordered supports while its summary stays short', async () => {
+    const readerText = [
+      'Navigation cookie preferences.',
+      '```ts\nconst apiVersion = "1.4";\n```',
+      'AcmeWidget version 1.4 supports the requested migration.'
+    ].join('\n\n');
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Widget issue', url: 'https://github.com/acme/widget/issues/1', snippet: 'Widget' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://github.com/acme/widget/issues/1',
+        content: { text: readerText },
+        metadata: { method: 'github', cacheHit: false, retrievalCut: false, selectionOmitted: false }
+      })
+    });
+
+    const result = await worker.run({ query: 'AcmeWidget API version 1.4', maxSearchRounds: 1, maxFetches: 1 });
+    const evidence = result.evidence[0]!;
+    expect(evidence.sourceKind).toBe('issue-thread');
+    expect(evidence.readerDocument).toBe(readerText);
+    expect(evidence.supports).toEqual([
+      'Navigation cookie preferences.',
+      '```ts\nconst apiVersion = "1.4";\n```',
+      'AcmeWidget version 1.4 supports the requested migration.'
+    ]);
+    expect(Array.from(evidence.summary).length).toBeLessThanOrEqual(180);
+    expect(evidence.summary).not.toBe(readerText);
+  });
+
   it('retains several source passages and extraction metadata from an ordinary page', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
@@ -16,7 +48,10 @@ describe('research worker', () => {
       fetchPage: vi.fn().mockResolvedValue({
         status: 'ok', url: 'https://example.com/coverage',
         content: { title: 'Coverage guide', text: 'First coverage paragraph.\n\nSecond coverage paragraph.\n\nThird coverage paragraph.', sectionAnchor: 'coverage' },
-        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: true }
+        metadata: {
+          method: 'http', cacheHit: false, contentType: 'text/html', truncated: true,
+          retrievalCut: false, selectionOmitted: true
+        }
       })
     });
 
@@ -24,6 +59,8 @@ describe('research worker', () => {
     expect(result.evidence[0]?.supports).toEqual(['First coverage paragraph.', 'Second coverage paragraph.', 'Third coverage paragraph.']);
     expect(result.evidence[0]?.sectionAnchor).toBe('coverage');
     expect(result.evidence[0]?.truncated).toBe(true);
+    expect(result.evidence[0]?.retrievalCut).toBe(false);
+    expect(result.evidence[0]?.selectionOmitted).toBe(true);
     expect(result.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -672,7 +709,10 @@ describe('research worker', () => {
           title: 'Technical Discussion Video',
           text: fullYoutubeText
         },
-        metadata: { method: 'youtube', cacheHit: false, contentType: 'text/plain', truncated: false }
+        metadata: {
+          method: 'youtube', cacheHit: false, contentType: 'text/plain', truncated: false,
+          retrievalCut: true, selectionOmitted: false
+        }
       })
     });
 
@@ -686,8 +726,11 @@ describe('research worker', () => {
     const evidence = result.evidence[0];
     expect(evidence?.sourceKind).toBe('unknown');
     expect(evidence?.method).toBe('youtube');
-    expect(evidence?.summary).toBe(fullYoutubeText);
+    expect(Array.from(evidence?.summary ?? '').length).toBeLessThanOrEqual(180);
+    expect(evidence?.readerDocument).toBe(fullYoutubeText);
     expect(evidence?.supports[0]).toBe(fullYoutubeText);
+    expect(evidence?.retrievalCut).toBe(true);
+    expect(evidence?.selectionOmitted).toBe(false);
   });
 
   it('does not accept an empty reader response as evidence', async () => {

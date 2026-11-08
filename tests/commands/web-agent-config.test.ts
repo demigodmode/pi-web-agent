@@ -2258,7 +2258,7 @@ describe('reset command confirmation', () => {
 
     expect(confirm).toHaveBeenCalledWith(
       'Reset global settings?',
-      'This deletes /global/config.json, including presentation and backend settings.'
+      'This deletes /global/config.json, including presentation, backend, and result-length settings.'
     );
     expect(reset).toHaveBeenCalledWith('global');
     expect(notify).toHaveBeenCalledWith('Reset global config', 'info');
@@ -2285,7 +2285,7 @@ describe('reset command confirmation', () => {
 
     expect(confirm).toHaveBeenCalledWith(
       'Reset project settings?',
-      'This deletes /project/config.json, including presentation and backend settings.'
+      'This deletes /project/config.json, including presentation, backend, and result-length settings.'
     );
     expect(reset).toHaveBeenCalledWith('project');
   });

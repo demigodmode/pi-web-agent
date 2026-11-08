@@ -131,7 +131,12 @@ export function createFirecrawlFetcher({
         ...(hasBotCheckContent(text, markdown !== undefined ? 'markdown' : 'html') ? { botCheck: true } : {}),
         ...(selection?.anchor ? { sectionAnchor: selection.anchor } : {})
       },
-      metadata: { method: 'firecrawl', cacheHit: false, truncated: selection?.omitted ?? text.length >= 4000 }
+      metadata: {
+        method: 'firecrawl', cacheHit: false,
+        retrievalCut: false,
+        selectionOmitted: selection?.omitted ?? false,
+        truncated: selection?.omitted ?? text.length >= 4000
+      }
     };
   };
 }

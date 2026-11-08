@@ -18,6 +18,8 @@ describe('firecrawl fetch backend', () => {
     expect(result).toMatchObject({ status: 'ok', metadata: { truncated: true } });
     expect(result.content?.text).toContain('48 hours before departure');
     expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+    expect(result.metadata.retrievalCut).toBe(false);
+    expect(result.metadata.selectionOmitted).toBe(true);
   });
 
   it('selects HTML without markup or scripts when markdown is unavailable', async () => {

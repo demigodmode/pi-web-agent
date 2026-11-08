@@ -133,9 +133,10 @@ describe('web_explore tool', () => {
     expect(result.evidence).toHaveLength(5);
     expect(result.evidence?.[0]?.excerpts[0]).toEqual({ text: supports[0].slice(0, 900), anchor: 'relevant' });
     expect(result.evidence?.[0]?.retrievedAt).toBe('2026-10-17T00:00:00.000Z');
-    expect(result.evidence?.[0]?.truncated).toBe(true);
+    expect(result.evidence?.[0]?.retrievalCut).toBe(false);
+    expect(result.evidence?.[0]?.selectionOmitted).toBe(false);
     expect(result.evidence?.flatMap((item) => item.excerpts).reduce((sum, item) => sum + item.text.length, 0)).toBeLessThanOrEqual(10000);
-    expect(result.evidence?.[4]?.excerpts.length).toBeGreaterThan(0);
+    expect((result.evidence?.[4]?.excerpts.length ?? 0) + (result.evidence?.[4]?.samePassageAs?.length ?? 0)).toBeGreaterThan(0);
     expect(result.findingSourceIds?.every((ids, index) => ids[0] === result.evidence?.[index]?.id)).toBe(true);
   });
 

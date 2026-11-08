@@ -639,7 +639,10 @@ describe('research workflow composition', () => {
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.sourceKind).toBe('unknown');
     expect(result.evidence[0]?.method).toBe('pdf');
-    expect(result.evidence[0]?.summary).toBe(fullPdfText);
+    expect(result.evidence[0]?.summary).toBeTruthy();
+    expect(Array.from(result.evidence[0]?.summary ?? '').length).toBeLessThanOrEqual(180);
+    expect(result.evidence[0]?.readerDocument).toBe(fullPdfText);
+    expect(result.evidence[0]?.supports).toEqual([fullPdfText]);
     expect(result.metadata?.caveatReasons).toHaveLength(0);
     expect(search).toHaveBeenCalledTimes(0);
   });

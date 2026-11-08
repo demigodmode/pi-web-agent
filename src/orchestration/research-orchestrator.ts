@@ -16,7 +16,8 @@ import type {
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
-import { selectEvidencePassages } from './evidence-passages.js';
+import { rankEvidencePassages, selectEvidencePassages } from './evidence-passages.js';
+import { readerEvidence } from './reader-evidence.js';
 import { isBotCheckContent } from '../extract/bot-check.js';
 import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
@@ -48,19 +49,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
   if (!trustedContent && isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   if (isReaderMethod(result.metadata.method)) {
-    return {
-      title: result.content.title ?? result.url,
-      url: result.url,
-      ...(requestedUrl ? { requestedUrl } : {}),
-      sourceKind: classifyEvidenceUrl(result.url),
-      method: result.metadata.method,
-      summary: result.content.text,
-      supports: [result.content.text],
-      ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
-      ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
-      truncated: result.metadata.truncated ?? false
-      , ...(result.metadata.partialComments ? { partialComments: true } : {})
-    };
+    return readerEvidence(result, query, requestedUrl);
   }
 
   const passages = selectEvidencePassages(result.content.text, query);
@@ -72,8 +61,11 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     method: result.metadata.method,
     summary: selectRelevantExcerpt(result.content.text, query, 180),
     supports: passages.excerpts,
+    resultCandidates: rankEvidencePassages(result.content.text, query),
     ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    retrievalCut: result.metadata.retrievalCut ?? false,
+    selectionOmitted: result.metadata.selectionOmitted ?? false,
     truncated: (result.metadata.truncated ?? false) || passages.truncated
     , ...(result.metadata.partialComments ? { partialComments: true } : {})
   };
@@ -92,8 +84,11 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string, r
     method: 'headless',
     summary: selectRelevantExcerpt(result.content.text, query, 180),
     supports: passages.excerpts,
+    resultCandidates: rankEvidencePassages(result.content.text, query),
     ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    retrievalCut: result.metadata.retrievalCut ?? false,
+    selectionOmitted: result.metadata.selectionOmitted ?? false,
     truncated: (result.metadata.truncated ?? false) || passages.truncated
   };
 }

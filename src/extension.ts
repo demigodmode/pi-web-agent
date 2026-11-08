@@ -8,8 +8,7 @@ import { DEFAULT_PRESENTATION_CONFIG, resolvePresentationMode } from './presenta
 import { createResearchWorkflow } from './orchestration/index.js';
 import { loadPresentationConfigLayers } from './presentation/config-store.js';
 import { selectPresentationView } from './presentation/select-view.js';
-import { endWithPeriod, sanitizeTerminalText } from './presentation/explore-display-text.js';
-import { searchUnavailableNotices } from './presentation/explore-presentation.js';
+import { sanitizeTerminalText } from './presentation/explore-display-text.js';
 import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
@@ -18,7 +17,9 @@ import { getUpdateChangelogNotice } from './changelog-notice.js';
 import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
 import { formatResearchProgress } from './orchestration/progress.js';
-import { formatResearchContext } from './presentation/research-context.js';
+import { serializeExploreResult } from './tools/serialize-explore-result.js';
+import { DEFAULT_RESULTS_CONFIG } from './results/config.js';
+import type { ModelContext } from './results/types.js';
 
 const SESSION_SHUTDOWN_GRACE_MS = 5_000;
 
@@ -40,53 +41,6 @@ function isCancelledResult(toolResult: { content?: unknown; details?: unknown })
   const parts = Array.isArray(toolResult.content) ? toolResult.content as Array<{ text?: unknown }> : [];
   const text = parts.map((part) => (typeof part?.text === 'string' ? part.text : '')).join(' ').trim();
   return /^(?:this |the )?operation (?:was )?aborted\.?$/i.test(text);
-}
-
-/**
- * What the model receives as the tool result: the actual synthesized findings (which for a
- * direct GitHub/PDF/YouTube read is the full extracted content), plus source citations and any
- * caveat. This is separate from the terminal display (see renderResult), so the model always
- * gets the substance regardless of the user's compact/preview/verbose presentation setting.
- */
-function serializeForModel(result: WebExploreResponse): string {
-  const searchNotices = searchUnavailableNotices(result);
-  const researchContext = formatResearchContext(result.metadata).join('\n');
-  const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
-    `Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`
-  );
-  const terminalError = result.status === 'error'
-    ? `Research failed: ${result.error?.message ?? 'Unknown research failure.'}`
-    : undefined;
-  if (result.findings.length === 0 && result.sources.length === 0) {
-    return terminalError
-      ? [...searchNotices, ...requiredNotices, terminalError, researchContext].filter(Boolean).join('\n\n')
-      // "No usable evidence found." already says what the no-sources caveat would repeat.
-      : [...searchNotices, ...requiredNotices, 'No usable evidence found.', researchContext, result.caveat === 'No usable sources were found.' ? undefined : result.caveat]
-        .filter(Boolean).join('\n\n');
-  }
-  const linked = (result.evidence?.length ?? 0) > 0;
-  const findings = result.findings.map((finding, index) => {
-    const ids = result.findingSourceIds?.[index] ?? [];
-    return ids.length ? `[${ids.join(', ')}] ${finding}` : finding;
-  });
-  const evidence = result.evidence?.map((item) => [
-    `[${item.id}] ${item.title}: ${item.url}`,
-    ...item.excerpts.map((excerpt) => `  - ${excerpt.anchor ? `#${excerpt.anchor}: ` : ''}${excerpt.text}`),
-    item.truncated ? '  (source excerpt truncated)' : undefined
-  ].filter(Boolean).join('\n')).join('\n');
-  return [
-    ...searchNotices,
-    ...requiredNotices,
-    findings.join('\n\n'),
-    linked ? `Evidence:\n${evidence}` : result.sources.length
-      ? `Sources:\n${result.sources.map((source) => `- ${source.title}: ${source.url}`).join('\n')}`
-      : undefined,
-    researchContext,
-    result.caveat,
-    terminalError
-  ]
-    .filter(Boolean)
-    .join('\n\n');
 }
 
 async function loadWebAgentConfig(pi: ExtensionAPI) {
@@ -194,10 +148,10 @@ export default function extension(pi: ExtensionAPI) {
     }
   });
 
-  async function getConfiguredWebExplore(configuredSession = session) {
+  async function getConfiguredWebExplore(configuredSession = session, configuredBackends?: BackendConfig) {
     if (injectedWebExplore) return injectedWebExplore;
 
-    const backendConfig = await getEffectiveBackendConfig(pi);
+    const backendConfig = configuredBackends ?? await getEffectiveBackendConfig(pi);
     if (configuredSession.shutdownDeadline !== undefined && Date.now() >= configuredSession.shutdownDeadline) {
       throw new Error('The session has ended.');
     }
@@ -249,7 +203,7 @@ export default function extension(pi: ExtensionAPI) {
     parameters: Type.Object({
       query: Type.String({ description: 'Short, specific search request, used as the first search as written. Skip filler like "can you find" or "please". Keep words that say what you want: "vs" for comparisons, version numbers, "API", "user opinions", "summarize" with a link. Include any links the user gave, unchanged.' })
     }),
-    async execute(_toolCallId, params, signal, onUpdate) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const executionSession = session;
       const startedAt = now();
       let updatesOpen = true;
@@ -273,27 +227,38 @@ export default function extension(pi: ExtensionAPI) {
       const operation = (async () => {
         try {
           update('Starting web research…', true);
-          const webExplore = await getConfiguredWebExplore(executionSession);
+          // Pi's context may contain provider credentials and mutable state; retain
+          // only the model facts this call needs before any asynchronous config read.
+          const contextModel = (ctx as { model?: ModelContext } | undefined)?.model;
+          const modelContext = contextModel ? { id: contextModel.id, provider: contextModel.provider, contextWindow: contextModel.contextWindow } : undefined;
+          // Read the layered file once for this call: its result policy and backend
+          // choice are a single execution-time snapshot.
+          const hasInjectedStore = Boolean((pi as ExtensionAPI & { __presentationConfigStore?: unknown }).__presentationConfigStore);
+          const loaded = (!injectedWebExplore || hasInjectedStore) ? await loadWebAgentConfig(pi).catch(() => undefined) : undefined;
+          const results = loaded?.effectiveResults ?? DEFAULT_RESULTS_CONFIG;
+          const presentationConfig = loaded?.effectiveConfig ?? (injectedWebExplore ? DEFAULT_PRESENTATION_CONFIG : await getEffectivePresentationConfig(pi));
+          const webExplore = await getConfiguredWebExplore(executionSession, loaded?.effectiveBackends);
           const result: WebExploreResponse = await webExplore({
             query: params.query,
             ...(signal ? { signal } : {}),
             startedAt,
+            results,
+            ...(modelContext ? { modelContext } : {}),
             onProgress(progress) {
               update(formatResearchProgress(progress));
             }
           });
           update('Research complete.');
 
-          // Terminal display honors the user's presentation mode; the model gets the full findings.
-          // The fallback must stay terse: never fall back to serializeForModel here, or a missing
-          // presentation would dump the full findings into the terminal.
-          const mode = resolvePresentationMode('web_explore', await getEffectivePresentationConfig(pi));
+          // Terminal display honors the presentation mode; serializeExploreResult sends the
+          // allocated model selection, so a missing presentation never dumps it to the terminal.
+          const mode = resolvePresentationMode('web_explore', presentationConfig);
           const terseFallback = 'web_explore result';
           const terminalText = selectPresentationView(result.presentation, mode) ?? terseFallback;
           const terminalTextExpanded = selectPresentationView(result.presentation, 'verbose') ?? terminalText;
 
           return {
-            content: [{ type: 'text' as const, text: serializeForModel(result) }],
+            content: [{ type: 'text' as const, text: serializeExploreResult(result) }],
             details: { ...result, selectedMode: mode, terminalText, terminalTextExpanded },
             isError: result.status === 'error'
           };

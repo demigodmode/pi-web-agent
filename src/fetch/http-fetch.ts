@@ -133,7 +133,12 @@ export function createHttpFetcher({
       status: 'ok',
       url: response.url,
       content,
-      metadata: { method: 'http', cacheHit: false, contentType, truncated: queryExtraction?.omitted ?? content.text.length >= 4000 }
+      metadata: {
+        method: 'http', cacheHit: false, contentType,
+        retrievalCut: false,
+        selectionOmitted: queryExtraction?.omitted ?? false,
+        truncated: queryExtraction?.omitted ?? content.text.length >= 4000
+      }
     };
   };
 }

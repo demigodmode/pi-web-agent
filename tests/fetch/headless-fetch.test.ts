@@ -48,6 +48,8 @@ describe('headless fetch', () => {
     expect(result).toMatchObject({ status: 'ok', content: { sectionAnchor: 'cancellation' }, metadata: { truncated: true } });
     expect(result.content?.text).toContain('48 hours before departure');
     expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+    expect(result.metadata.retrievalCut).toBe(false);
+    expect(result.metadata.selectionOmitted).toBe(true);
   });
 
   it('preserves a raw bot-wall signal omitted by query selection', async () => {

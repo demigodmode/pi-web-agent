@@ -304,6 +304,8 @@ export async function headlessFetch(
         cacheHit: false,
         browser: browserName,
         navigationMs: finishedAt - startedAt,
+        retrievalCut: false,
+        selectionOmitted: queryExtraction?.omitted ?? false,
         truncated: queryExtraction?.omitted ?? cleanedContent.text.length >= 4000,
         ...(blockedSubresources > 0 ? { blockedSubresources } : {})
       }

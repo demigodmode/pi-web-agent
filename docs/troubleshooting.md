@@ -130,14 +130,15 @@ If you want the diagnostic report directly, use:
 /web-agent doctor
 ```
 
-The settings UI currently has two sections:
+The settings UI has three sections:
 
 - **Presentation**: `defaultMode` and `web_explore`
 - **Backends**: search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
+- **Results**: the result-length limit and its write scope
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
 
-In either settings screen, Ctrl+S saves and Esc discards unsaved edits. Ctrl+R resets the selected scope's whole config file, presentation and backend settings both, but only after you press it a second time; Esc cancels. The reset entries in the `/web-agent` menu ask for confirmation before deleting anything.
+In any settings screen, Ctrl+S saves and Esc discards unsaved edits. In Presentation or Backends, Ctrl+R resets the selected scope's whole config file after a second press. In Results, Ctrl+R resets only that scope's result-length settings. The reset entries in the `/web-agent` menu ask for confirmation before deleting the whole scope file, including result-length settings.
 
 ## Pi seems to be loading the wrong copy
 

@@ -169,6 +169,8 @@ describe('researchRepo', () => {
     const text = result.response.content!.text;
     expect(text.length).toBeLessThanOrEqual(READER_TEXT_CAP);
     expect(result.response.metadata.truncated).toBe(true);
+    expect(result.response.metadata.selectionOmitted).toBe(true);
+    expect(result.response.metadata.retrievalCut).toBe(false);
     const sections = text.split('\n\n').slice(1);
     expect(sections.length).toBeGreaterThan(0);
     for (const section of sections) {
@@ -226,6 +228,8 @@ describe('researchRepo', () => {
     expect(result.response.content!.text).toContain('Searched the first');
     expect(result.response.content!.text).toContain('files only (large repo); paste a /tree/ folder link to narrow it.');
     expect(result.response.metadata.truncated).toBe(true);
+    expect(result.response.metadata.selectionOmitted).toBe(false);
+    expect(result.response.metadata.retrievalCut).toBe(false);
   }, 30_000);
 
   it('says a valid scoped search ran out of time before it could start', async () => {

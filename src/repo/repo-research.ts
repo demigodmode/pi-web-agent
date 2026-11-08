@@ -94,7 +94,8 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
   const header =
     `Repository ${name} at ${meta.ref} (${meta.sha.slice(0, 12)})${meta.pathScope ? `, folder ${meta.pathScope}` : ''}.` +
       (search.terms.length ? ` Searched the code for: ${search.terms.join(', ')}.` : '');
-  let truncated = header.length > contentCap || search.partial === true;
+  let selectionOmitted = header.length > contentCap;
+  let truncated = selectionOmitted || search.partial === true;
   const sections = [safeSlice(header, contentCap)];
   let length = sections[0].length;
   let exhausted = false;
@@ -107,6 +108,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
       const full = excerptSection(meta, file.path, excerpt.startLine, excerpt.text);
       const section = fitExcerptSection(meta, file.path, excerpt, available);
       if (!section) {
+        selectionOmitted = true;
         truncated = true;
         exhausted = true;
         break;
@@ -114,6 +116,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
       sections.push(section);
       length += section.length + 2;
       if (section !== full) {
+        selectionOmitted = true;
         truncated = true;
         exhausted = true;
         break;
@@ -135,6 +138,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
         length += shortened.length + 2;
       }
     }
+    selectionOmitted = true;
     truncated = true;
   };
   if (search.files.length === 0) {
@@ -142,7 +146,10 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
   }
   // The README only fills in when the code search found little (#70).
   if (search.files.length < 2 && overview) {
-    if (overview.readme) appendPlain(`${overview.readmePath}:\n${safeSlice(overview.readme, README_EXCERPT_CHARS)}`);
+    if (overview.readme) {
+      if (overview.readme.length > README_EXCERPT_CHARS) selectionOmitted = true;
+      appendPlain(`${overview.readmePath}:\n${safeSlice(overview.readme, README_EXCERPT_CHARS)}`);
+    }
     if (search.files.length === 0) {
       const listing = overview.entries.map((entry) => (entry.dir ? `[dir] ${entry.name}` : entry.name)).join('\n');
       appendPlain(`Contents of ${meta.pathScope ?? 'the top level'}:\n${listing || '(empty)'}`);
@@ -154,7 +161,12 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
     status: 'ok',
     url: treeUrl(meta),
     content: { title: name, text },
-    metadata: { method: 'github', cacheHit: reused, truncated }
+    metadata: {
+      method: 'github', cacheHit: reused,
+      retrievalCut: false,
+      selectionOmitted,
+      truncated
+    }
   };
 }
 

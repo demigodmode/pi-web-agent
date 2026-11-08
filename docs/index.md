@@ -35,7 +35,7 @@ Right now it gives you:
 - one public web research tool: `web_explore`
 - compact-by-default transcript output
 - preview mode with up to three plain findings, plus verbose provenance and retrieval detail
-- a `/web-agent` settings UI for presentation and backend config
+- a `/web-agent` settings UI for presentation, result length, and backend config
 - direct-link and forum/thread-aware research handling
 - keyless public GitHub content plus PDF and YouTube readers that pull the real content behind those links
 - questions about a pasted GitHub repo answered from a clone of its code, with commit-pinned citations

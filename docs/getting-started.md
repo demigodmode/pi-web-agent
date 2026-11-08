@@ -34,7 +34,7 @@ Use it when you want Pi to find and compare current web sources.
 
 > Find current docs and discussions about configuring Vitest coverage in TypeScript projects.
 
-Pi should call `web_explore` and return a compact research result. If you need more detail inline, switch presentation mode to `preview` or `verbose`.
+Pi should call `web_explore`. By default its terminal presentation is compact; switch to `preview` or `verbose` if you want more detail in the terminal. That only changes what you see. How much Pi gets back is the Result length setting.
 
 Another example:
 
@@ -44,13 +44,13 @@ Prefer `web_explore` for that research. If the first pass is thin, Pi can call i
 
 You can also include direct links in the prompt. `web_explore` reads HTTP/HTTPS links first, strips common tracking params, and then searches if it still needs more evidence.
 
-For GitHub, PDF, and YouTube links, `web_explore` fetches the real content automatically instead of scraping the page. GitHub files, issues, PRs, and repo READMEs come from the raw/API endpoints; PDFs are extracted to text; YouTube links return the transcript. Public GitHub content is keyless; private GitHub content needs `GITHUB_TOKEN` or `gh auth login`. Scanned PDFs and videos without captions are noted rather than failing. Pasting a link and asking to summarize returns the extracted content (long transcripts or PDFs capped around 24k characters), so it's a reliable way to get summaries of videos, PDFs, or repo files.
+For GitHub, PDF, and YouTube links, `web_explore` fetches the real content automatically instead of scraping the page. GitHub files, issues, PRs, and repo READMEs come from the raw/API endpoints; PDFs are extracted to text; YouTube links return the transcript. Public GitHub content is keyless; private GitHub content needs `GITHUB_TOKEN` or `gh auth login`. Scanned PDFs and videos without captions are noted rather than failing. Long transcripts and PDFs are read up to 24,000 characters, and how much reaches Pi depends on the [result length](/tools#result-length) setting. Pasting a link and asking for a summary is still the most reliable way to summarize a video, PDF or repo file.
 
 If you paste a link to a whole GitHub repo (or a folder inside one), `web_explore` clones that exact commit and answers from the code, with citations that point at the commit it read. That needs `git` 2.32 or newer; public repositories can be read anonymously, while private repositories use `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read, it says why. Press Esc if a run is taking too long; it stops everything underneath.
 
-## Presentation defaults
+## Presentation and result length
 
-The package renders web research output in `compact` mode by default.
+The package renders web research output in `compact` mode by default. That controls the terminal only, not how much evidence reaches the calling model.
 
 If you want to change that, open the action menu with:
 
@@ -58,9 +58,9 @@ If you want to change that, open the action menu with:
 /web-agent
 ```
 
-From there you can open settings, show config, run doctor, or reset config. Settings lets you change presentation modes and backend providers without editing JSON by hand.
+From there you can open settings, show config, run doctor, or reset config. Settings lets you change presentation modes, result length, and backend providers without editing JSON by hand. The Results screen offers Inherit, Auto, Short, Medium and Standard. An exact character limit can be set in the JSON file.
 
-If you want the full details, see [Presentation and settings](/presentation).
+Result length defaults to Auto. It sizes the tool result to the model's context window, or uses Standard if the model doesn't declare one. See [Result length](/tools#result-length) for details and [Presentation and settings](/presentation) for terminal modes.
 
 ## Optional backends
 
