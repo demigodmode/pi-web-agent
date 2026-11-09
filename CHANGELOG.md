@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.17.0] - 2026-11-09
+### Added
 - Research results tell Pi what was searched, which gaps remain, and up to two rule-based follow-up searches. The same context appears in verbose view.
 - Result length setting (#125). The default, Auto, sizes the tool result to the model's context window, so small local models get shorter results. Short, Medium, Standard or an exact number of characters can be set instead.
 
