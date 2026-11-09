@@ -227,9 +227,12 @@ export function selectRelevantContent({
   }
   selected.sort((a, b) => a.index - b.index);
   const text = selected.map((window) => window.text).join('\n\n');
+  // Excerpts from this text all get the same anchor, so only keep one that
+  // fits all of it. A wrong anchor sends the reader to the wrong section.
+  const anchors = new Set(selected.map((window) => window.anchor));
   return {
     text,
-    anchor: ranked.find((window) => selected.includes(window))?.anchor,
+    anchor: anchors.size === 1 ? selected[0]!.anchor : undefined,
     omitted: selected.length < windows.length,
     matched: true
   };

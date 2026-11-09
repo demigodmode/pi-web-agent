@@ -1088,6 +1088,7 @@ async function openPresentationSettingsUi(
         (id, newValue) => {
           state = applySettingsValue(state, id, newValue);
           rebuildSettingsList();
+          settingsList.selectItem(id);
           container.invalidate();
         },
         () => done({ action: 'cancel' }),
@@ -1176,6 +1177,7 @@ async function openBackendSettingsUi(
         (id, newValue) => {
           state = applySettingsValue(state, id, newValue);
           rebuildSettingsList();
+          settingsList.selectItem(id);
           container.invalidate();
         },
         () => done({ action: 'cancel' }),

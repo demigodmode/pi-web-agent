@@ -20,6 +20,8 @@ The format is intentionally simple and release-oriented.
 - `/web-agent` menus work over RPC; unavailable settings screens point to the config files.
 - Clarified when research results show open gaps and follow-up suggestions.
 - Search results from excluded `-site:` hosts and their subdomains are filtered before reading.
+- Settings screens keep the cursor on the row you changed.
+- Excerpts no longer get a section link that points at a different part of the page.
 
 ### Breaking
 - None.

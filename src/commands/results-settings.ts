@@ -54,14 +54,20 @@ export function createResultsDraftState(loaded: ResultsLoaded, scope: Presentati
   return { scope, drafts, draft: drafts[scope] };
 }
 
+const LENGTH_CHOICES_HELP = "Auto fits the model's context. Short 4,000 chars, Medium 8,000, Standard uses per-source caps.";
+
+function formatLengthValue(value: LengthLimit): string {
+  return typeof value === 'number' ? value.toLocaleString('en-US') : value;
+}
+
 export function buildResultsSettingsItems(scope: PresentationScope, draft: ResultsDraft): SettingItem[] {
-  const display = draft.inherit ? 'inherit' : typeof draft.lengthLimit === 'number' ? `Custom (${draft.lengthLimit})` : draft.lengthLimit;
+  const display = draft.inherit ? 'inherit' : typeof draft.lengthLimit === 'number' ? `Custom (${formatLengthValue(draft.lengthLimit)})` : draft.lengthLimit;
+  const description = draft.inherit
+    ? `Inherited: ${formatLengthValue(draft.inheritedLength)}. ${LENGTH_CHOICES_HELP}`
+    : LENGTH_CHOICES_HELP;
   return [
     { id: 'scope', label: 'Write scope', currentValue: scope, values: ['project', 'global'] },
-    {
-      id: 'lengthLimit', label: 'Result length', currentValue: display, values: ['inherit', 'auto', 'short', 'medium', 'standard'],
-      ...(draft.inherit ? { description: `Inherited: ${draft.inheritedLength}` } : {})
-    }
+    { id: 'lengthLimit', label: 'Result length', currentValue: display, values: ['inherit', 'auto', 'short', 'medium', 'standard'], description }
   ];
 }
 
@@ -95,6 +101,7 @@ export function collapseResultsDraft(draft: ResultsDraft): ResultsOverride {
 }
 
 function windowLabel(window: number): string {
+  if (window >= 1_000_000) return `${Math.floor(window / 1_000_000)}M context`;
   return `${window % 1000 === 0 ? window / 1000 : Math.floor(window / 1000)}k context`;
 }
 
@@ -105,7 +112,7 @@ export function formatResultLengthLine(config: ResultsConfig, model?: ModelConte
     const resolved = resolveLengthLimit(setting, model?.contextWindow);
     if (resolved.kind === 'standard') return 'Result length: auto, standard caps (context unknown)';
     const modelName = model?.id ?? 'current model';
-    const line = `Result length: auto, about ${resolved.chars.toLocaleString('en-US')} chars for ${modelName} (${windowLabel(model!.contextWindow!)})`;
+    const line = `Result length: auto, up to about ${resolved.chars.toLocaleString('en-US')} chars for ${modelName} (${windowLabel(model!.contextWindow!)})`;
     return model?.contextWindow === 128000
       ? `${line}\nFor custom models, 128k may be Pi's default; set contextWindow in models.json if your model's real context is smaller.`
       : line;
@@ -133,6 +140,7 @@ export async function openResultsSettingsUi(ctx: any, loaded: ResultsLoaded, ini
       list = new SettingsList(buildResultsSettingsItems(state.scope, state.draft), 6, getSettingsListTheme(), (id, value) => {
         state = applyResultsDraftValue(state, id, value);
         rebuild();
+        list.selectItem(id);
         container.invalidate();
       }, () => done({ action: 'cancel' }), { enableSearch: true });
       container.addChild(list);

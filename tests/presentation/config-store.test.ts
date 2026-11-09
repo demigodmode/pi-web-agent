@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -182,6 +182,14 @@ describe('presentation config store', () => {
     expect(reset.results).toBeUndefined();
     expect(reset.presentation.defaultMode).toBe('preview');
     expect(reset.backends.fetch.apiKey).toBe('persisted-secret');
+  });
+
+  it('does not create a config file when resetting results in a scope with no file', async () => {
+    const { projectPath, globalPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    await resetResultsConfigScope({ homeDir, projectDir }, 'project');
+    await resetResultsConfigScope({ homeDir, projectDir }, 'global');
+    expect(existsSync(projectPath)).toBe(false);
+    expect(existsSync(globalPath)).toBe(false);
   });
 
   it('retains results when presentation or backend settings are written', async () => {

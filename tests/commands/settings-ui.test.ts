@@ -22,7 +22,7 @@ type UiFactory = (tui: { requestRender(): void }, colors: typeof theme, keys: ob
 function selectToolMode(current: 'inherit' | PresentationMode, target: 'inherit' | PresentationMode): string[] {
   const modes = ['inherit', ...PRESENTATION_MODES];
   const cycles = (modes.indexOf(target) - modes.indexOf(current) + modes.length) % modes.length || modes.length;
-  return Array.from({ length: cycles }, () => ['\x1b[B', '\x1b[B', '\r']).flat();
+  return ['\x1b[B', '\x1b[B', ...Array.from({ length: cycles }, () => '\r')];
 }
 
 function commandHarness(options: { homeDir: string; projectDir: string }) {
@@ -183,13 +183,44 @@ describe('settings input and persisted presentation inheritance', () => {
     expect((await loadPresentationConfigLayers(options)).project.rawConfig).toBeDefined();
   });
 
+  it('keeps the cursor on the Result length row after each value change', async () => {
+    const command = commandHarness(options);
+    const { result, screen } = await command.runUi('results', ['\x1b[B', '\r', '\r', '\x13']);
+    expect(result).toEqual({ action: 'save-results', scope: 'project', override: { lengthLimit: 'short' } });
+    expect(screen).toContain('Result length');
+  });
+
+  it('keeps acting on the filtered Result length row across value changes', async () => {
+    const command = commandHarness(options);
+    const { result } = await command.runUi('results', ['l', 'e', 'n', '\r', '\r', '\x13']);
+    expect(result).toEqual({ action: 'save-results', scope: 'project', override: { lengthLimit: 'short' } });
+  });
+
+  it('keeps the cursor on Write scope after a scope switch', async () => {
+    const command = commandHarness(options);
+    const { result } = await command.runUi('results', ['\r', '\r', '\x13']);
+    expect(result).toEqual({ action: 'save-results', scope: 'project', override: {} });
+  });
+
+  it('keeps the cursor on the Default mode row after each value change in the presentation screen', async () => {
+    const command = commandHarness(options);
+    const { result } = await command.runUi('presentation', ['\x1b[B', '\r', '\r', '\x13']);
+    expect(result).toMatchObject({ action: 'save', scope: 'project', config: { defaultMode: 'verbose' } });
+  });
+
+  it('keeps the cursor on the Search backend row after each value change in the backends screen', async () => {
+    const command = commandHarness(options);
+    const { result } = await command.runUi('backends', ['\x1b[B', '\r', '\r', '\x13']);
+    expect(result).toMatchObject({ action: 'save', scope: 'project', backends: { search: { provider: 'brave' } } });
+  });
+
   it('keeps a numeric project setting through real scope switches, save, and cancellation', async () => {
     await saveResultsConfigScope(options, 'project', { lengthLimit: 1234 });
     const file = getPresentationConfigPaths(options).projectPath;
     const before = await readFile(file, 'utf8');
     const command = commandHarness(options);
     const saved = await command.runUi('results', ['\r', '\r', '\x13']);
-    expect(saved.screen).toContain('Custom (1234)');
+    expect(saved.screen).toContain('Custom (1,234)');
     expect(saved.result).toEqual({ action: 'save-results', scope: 'project', override: { lengthLimit: 1234 } });
     expect((await loadPresentationConfigLayers(options)).project.rawResults).toEqual({ lengthLimit: 1234 });
     const cancelled = commandHarness(options);
@@ -311,7 +342,7 @@ describe('settings input and persisted presentation inheritance', () => {
     await savePresentationConfigScope(options, 'global', { tools: {} });
     const command = commandHarness(options);
     const prefix = scope === 'global' ? ['\r'] : [];
-    const editBackToCompact = Array.from({ length: 3 }, () => ['\x1b[B', '\r']).flat();
+    const editBackToCompact = ['\x1b[B', '\r', '\r', '\r'];
     await command.runUi('presentation', [...prefix, ...editBackToCompact, '\x13']);
     expect((await loadPresentationConfigLayers(options))[scope].rawConfig?.defaultMode).toBe('compact');
     if (scope === 'project') await savePresentationConfigScope(options, 'global', { defaultMode: 'verbose', tools: {} });
@@ -324,7 +355,7 @@ describe('settings input and persisted presentation inheritance', () => {
     await savePresentationConfigScope(options, 'project', { defaultMode: 'verbose', tools: {} });
     const command = commandHarness(options);
     await command.runUi('presentation', [
-      ...selectToolMode('inherit', 'preview'), '\r', ...selectToolMode('inherit', 'compact'), '\r', '\x13'
+      ...selectToolMode('inherit', 'preview'), '\x1b[A', '\x1b[A', '\r', ...selectToolMode('inherit', 'compact'), '\x1b[A', '\x1b[A', '\r', '\x13'
     ]);
     const loaded = await loadPresentationConfigLayers(options);
     expect(loaded.project.rawConfig?.tools.web_explore).toEqual({ mode: 'preview' });
@@ -334,7 +365,7 @@ describe('settings input and persisted presentation inheritance', () => {
   it('does not copy global draft edits into an untouched project draft', async () => {
     await savePresentationConfigScope(options, 'global', { defaultMode: 'preview', tools: {} });
     const command = commandHarness(options);
-    await command.runUi('presentation', ['\r', ...selectToolMode('inherit', 'compact'), '\r', '\x13']);
+    await command.runUi('presentation', ['\r', ...selectToolMode('inherit', 'compact'), '\x1b[A', '\x1b[A', '\r', '\x13']);
     const loaded = await loadPresentationConfigLayers(options);
     expect(loaded.project.rawConfig?.tools).toEqual({});
     expect(loaded.project.rawConfig?.defaultMode).toBeUndefined();
