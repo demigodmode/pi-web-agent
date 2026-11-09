@@ -70,7 +70,7 @@ That path is for local development and reloads while you are working in this rep
 
 ## Config files after install
 
-The package stores presentation and backend settings in real JSON files.
+The package stores presentation, result-length, and backend settings in real JSON files.
 
 Global config:
 

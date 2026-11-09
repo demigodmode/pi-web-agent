@@ -42,10 +42,15 @@ import {
 import {
   loadPresentationConfigLayers,
   resetPresentationConfigScope,
+  resetResultsConfigScope,
   saveBackendConfigScope,
   savePresentationConfigScope,
+  saveResultsConfigScope,
   type LoadedPresentationConfig
 } from '../presentation/config-store.js';
+import { formatResultLengthLine, openResultsSettingsUi } from './results-settings.js';
+import { DEFAULT_RESULTS_CONFIG } from '../results/config.js';
+import type { ResultsOverride } from '../results/types.js';
 import { BROWSER_PATH_ENV, resolveBrowserExecutable, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { createProxyFetch } from '../fetch/proxy-fetch.js';
 import { checkJitiCompat } from '../jiti-compat.js';
@@ -63,7 +68,9 @@ type CommandDeps = {
   load?: () => ReturnType<typeof loadPresentationConfigLayers>;
   save?: (scope: PresentationScope, config: PresentationConfigOverride) => Promise<void>;
   saveBackends?: (scope: PresentationScope, config: BackendConfigOverride) => Promise<void>;
+  saveResults?: (scope: PresentationScope, config: ResultsOverride) => Promise<void>;
   reset?: (scope: PresentationScope) => Promise<void>;
+  resetResults?: (scope: PresentationScope) => Promise<void>;
   resolveBrowser?: (options?: { configuredPath?: string }) => Promise<BrowserResolutionResult>;
   runtime?: { nodeVersion: string; platform: string; arch: string };
   checkTypebox?: () => Promise<boolean>;
@@ -79,7 +86,43 @@ type SettingsUiResult =
   | { action: 'save'; scope: PresentationScope; config: PresentationConfig; backends: BackendConfig; presentationEdits?: PresentationEditPath[] };
 
 type WebAgentAction = 'settings' | 'show' | 'doctor' | 'changelog' | 'reset-project' | 'reset-global';
-type SettingsSection = 'presentation' | 'backends';
+type SettingsSection = 'presentation' | 'backends' | 'results';
+
+const ACTION_MENU_ITEMS: SelectItem[] = [
+  { value: 'settings', label: 'Settings', description: 'Edit presentation modes, backends, and result length' },
+  { value: 'show', label: 'Show config', description: 'Print effective config paths and modes' },
+  { value: 'doctor', label: 'Doctor', description: 'Check runtime dependencies and browser detection' },
+  { value: 'changelog', label: 'Changelog', description: 'Show latest package changelog' },
+  { value: 'reset-project', label: 'Reset project config', description: 'Delete project-level overrides' },
+  { value: 'reset-global', label: 'Reset global config', description: 'Delete global overrides' }
+];
+
+const SETTINGS_SECTION_ITEMS: SelectItem[] = [
+  { value: 'presentation', label: 'Presentation', description: 'Compact, preview, and verbose output modes' },
+  { value: 'results', label: 'Results', description: 'Model result length limits' },
+  { value: 'backends', label: 'Backends', description: 'Search/fetch providers, URLs, and fallbacks' }
+];
+
+function isTuiContext(ctx: any): boolean {
+  // Old Pi test harnesses did not expose mode; their custom UI is the TUI path.
+  return ctx.mode === 'tui' || (ctx.mode === undefined && typeof ctx.ui?.custom === 'function');
+}
+
+async function selectMenuItem<T extends string>(ctx: any, title: string, items: SelectItem[]): Promise<T | undefined> {
+  if (isTuiContext(ctx)) return undefined;
+  if (ctx.mode !== 'rpc' || typeof ctx.ui?.select !== 'function') return undefined;
+  const label = await ctx.ui.select(title, items.map((item) => item.label));
+  return items.find((item) => item.label === label)?.value as T | undefined;
+}
+
+function interactiveMenuGuidance(): string {
+  return 'Interactive menus require the TUI or RPC. Use /web-agent show, /web-agent doctor, /web-agent changelog, /web-agent reset project, /web-agent reset global, or /web-agent mode.';
+}
+
+function tuiSettingsGuidance(section: SettingsSection | undefined, loaded: Awaited<LoadedPresentationConfig>): string {
+  const target = section ? `${section[0].toUpperCase()}${section.slice(1)} settings` : 'Settings';
+  return `${target} requires the TUI. Config files: global ${loaded.global.path}${loaded.global.exists ? '' : ' (missing)'}; project ${loaded.project.path}${loaded.project.exists ? '' : ' (missing)'}.`;
+}
 
 export type SettingsDraftState = {
   scope: PresentationScope;
@@ -940,21 +983,16 @@ function resetPromptText(scope: PresentationScope, path: string): string {
 }
 
 async function openActionMenu(ctx: any): Promise<WebAgentAction | undefined> {
+  const selected = await selectMenuItem<WebAgentAction>(ctx, 'pi-web-agent', ACTION_MENU_ITEMS);
+  if (!isTuiContext(ctx)) return selected;
+
   return ctx.ui.custom((tui: any, theme: any, _kb: unknown, done: (value: WebAgentAction | undefined) => void) => {
     const container = new Container();
-    const items: SelectItem[] = [
-      { value: 'settings', label: 'Settings', description: 'Edit presentation modes and backends' },
-      { value: 'show', label: 'Show config', description: 'Print effective config paths and modes' },
-      { value: 'doctor', label: 'Doctor', description: 'Check runtime dependencies and browser detection' },
-      { value: 'changelog', label: 'Changelog', description: 'Show latest package changelog' },
-      { value: 'reset-project', label: 'Reset project config', description: 'Delete project-level overrides' },
-      { value: 'reset-global', label: 'Reset global config', description: 'Delete global overrides' }
-    ];
 
     container.addChild(new DynamicBorder((text: string) => theme.fg('accent', text)));
     container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent')), 1, 0));
 
-    const list = new SelectList(items, Math.min(items.length, 8), {
+    const list = new SelectList(ACTION_MENU_ITEMS, Math.min(ACTION_MENU_ITEMS.length, 8), {
       selectedPrefix: (text: string) => theme.fg('accent', text),
       selectedText: (text: string) => theme.fg('accent', text),
       description: (text: string) => theme.fg('muted', text),
@@ -980,17 +1018,16 @@ async function openActionMenu(ctx: any): Promise<WebAgentAction | undefined> {
 }
 
 async function openSettingsSectionMenu(ctx: any): Promise<SettingsSection | undefined> {
+  const selected = await selectMenuItem<SettingsSection>(ctx, 'pi-web-agent settings', SETTINGS_SECTION_ITEMS);
+  if (!isTuiContext(ctx)) return selected;
+
   return ctx.ui.custom((tui: any, theme: any, _kb: unknown, done: (value: SettingsSection | undefined) => void) => {
     const container = new Container();
-    const items: SelectItem[] = [
-      { value: 'presentation', label: 'Presentation', description: 'Compact, preview, and verbose output modes' },
-      { value: 'backends', label: 'Backends', description: 'Search/fetch providers, URLs, and fallbacks' }
-    ];
 
     container.addChild(new DynamicBorder((text: string) => theme.fg('accent', text)));
     container.addChild(new Text(theme.fg('accent', theme.bold('pi-web-agent settings')), 1, 0));
 
-    const list = new SelectList(items, items.length, {
+    const list = new SelectList(SETTINGS_SECTION_ITEMS, SETTINGS_SECTION_ITEMS.length, {
       selectedPrefix: (text: string) => theme.fg('accent', text),
       selectedText: (text: string) => theme.fg('accent', text),
       description: (text: string) => theme.fg('muted', text),
@@ -1051,6 +1088,7 @@ async function openPresentationSettingsUi(
         (id, newValue) => {
           state = applySettingsValue(state, id, newValue);
           rebuildSettingsList();
+          settingsList.selectItem(id);
           container.invalidate();
         },
         () => done({ action: 'cancel' }),
@@ -1139,6 +1177,7 @@ async function openBackendSettingsUi(
         (id, newValue) => {
           state = applySettingsValue(state, id, newValue);
           rebuildSettingsList();
+          settingsList.selectItem(id);
           container.invalidate();
         },
         () => done({ action: 'cancel' }),
@@ -1200,7 +1239,9 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
   const load = deps.load ?? (() => loadPresentationConfigLayers());
   const save = deps.save ?? ((scope, config) => savePresentationConfigScope({}, scope, config));
   const saveBackends = deps.saveBackends ?? ((scope, config) => saveBackendConfigScope({}, scope, config));
+  const saveResults = deps.saveResults ?? ((scope, config) => saveResultsConfigScope({}, scope, config));
   const reset = deps.reset ?? ((scope) => resetPresentationConfigScope({}, scope));
+  const resetResults = deps.resetResults ?? ((scope) => resetResultsConfigScope({}, scope));
   const resolveBrowser = deps.resolveBrowser ?? ((options?: { configuredPath?: string }) =>
     resolveBrowserExecutable({ configuredPath: options?.configuredPath }));
   const runtime = deps.runtime ?? {
@@ -1227,6 +1268,10 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       let [action, maybeScope] = (args ?? '').trim().split(/\s+/).filter(Boolean);
 
       if (!action) {
+        if (!isTuiContext(ctx) && ctx.mode !== 'rpc') {
+          ctx.ui.notify(interactiveMenuGuidance(), 'info');
+          return;
+        }
         const selectedAction = await openActionMenu(ctx);
         if (!selectedAction) return;
 
@@ -1256,6 +1301,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           formatBackendSummary(backendConfig),
           `network allow list: ${backendConfig.network?.allowRanges?.length ? backendConfig.network.allowRanges.join(', ') : 'none'}`,
           `trust upstream proxy for private addresses: ${backendConfig.network?.trustProxyDns ? 'on' : 'off'}`,
+          formatResultLengthLine(loaded.effectiveResults ?? DEFAULT_RESULTS_CONFIG, ctx.model),
           backendIssues.length > 0 ? `backend config: warning\n${backendIssues.join('\n')}` : 'backend config: ok',
           ...backendHealth,
           repoResearchLine
@@ -1273,6 +1319,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           [
             formatConfigSummary(loaded.effectiveConfig),
             formatBackendSummary(loaded.effectiveBackends ?? DEFAULT_BACKEND_CONFIG),
+            formatResultLengthLine(loaded.effectiveResults ?? DEFAULT_RESULTS_CONFIG, ctx.model),
             `global: ${loaded.global.path}${loaded.global.exists ? '' : ' (missing)'}`,
             `project: ${loaded.project.path}${loaded.project.exists ? '' : ' (missing)'}`
           ].join('\n'),
@@ -1294,7 +1341,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           const loaded = await load();
           const confirmed = await ctx.ui.confirm(
             `Reset ${scope} settings?`,
-            `This deletes ${loaded[scope].path}, including presentation and backend settings.`
+            `This deletes ${loaded[scope].path}, including presentation, backend, and result-length settings.`
           );
           if (!confirmed) {
             ctx.ui.notify('Reset cancelled.', 'info');
@@ -1347,14 +1394,28 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
       if (!action || action === 'settings') {
         const loaded = await load();
         const initialScope: PresentationScope = 'project';
+        // Settings screens are TUI-only. RPC may select top-level actions, but
+        // must not descend into a section picker it cannot render.
+        if (!isTuiContext(ctx)) {
+          ctx.ui.notify(tuiSettingsGuidance(undefined, loaded), 'info');
+          return;
+        }
         const section = await openSettingsSectionMenu(ctx);
         if (!section) return;
 
         const result = section === 'presentation'
           ? await openPresentationSettingsUi(ctx, loaded, initialScope)
-          : await openBackendSettingsUi(ctx, loaded, initialScope);
+          : section === 'backends'
+            ? await openBackendSettingsUi(ctx, loaded, initialScope)
+            : await openResultsSettingsUi(ctx, loaded, initialScope);
 
         if (!result || result.action === 'cancel') {
+          return;
+        }
+
+        if (result.action === 'reset-results') {
+          await resetResults(result.scope);
+          ctx.ui.notify(`Reset ${result.scope} result-length config`, 'info');
           return;
         }
 
@@ -1364,7 +1425,7 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           return;
         }
 
-        if (section === 'presentation') {
+        if (section === 'presentation' && result.action === 'save') {
           await save(
             result.scope,
             collapsePresentationConfigToOverride(
@@ -1378,6 +1439,13 @@ export function registerWebAgentConfigCommands(pi: ExtensionAPI, deps: CommandDe
           return;
         }
 
+        if (section === 'results' && result.action === 'save-results') {
+          await saveResults(result.scope, result.override);
+          ctx.ui.notify(`Saved ${result.scope} result-length config`, 'info');
+          return;
+        }
+
+        if (result.action !== 'save') return;
         await saveBackends(
           result.scope,
           collapseBackendConfigToOverride(

@@ -16,7 +16,8 @@ import type {
 import { decideNextResearchStep } from './stop-decider.js';
 import { analyzeEvidenceQuality, type EvidenceCaveatReason } from './evidence-quality.js';
 import { selectRelevantExcerpt } from '../extract/section-selector.js';
-import { selectEvidencePassages } from './evidence-passages.js';
+import { rankEvidencePassages, selectEvidencePassages } from './evidence-passages.js';
+import { readerEvidence } from './reader-evidence.js';
 import { isBotCheckContent } from '../extract/bot-check.js';
 import { REPO_MAX_TYPED_REPOS } from '../repo/limits.js';
 import type { RepoResearchInput, RepoResearchResult } from '../repo/repo-research.js';
@@ -25,6 +26,7 @@ import { classifyResearchIntent, missingComparisonTargets } from './research-int
 import { createResearchRunBudget, type ResearchBudgetReason, type ResearchBudgetSnapshot } from './run-budget.js';
 import type { ResearchProgress } from './progress.js';
 import { createPresentationStats, type PresentationStats } from './presentation-stats.js';
+import { buildCallerContext, collectTaskPlanningGaps } from './caller-context.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -47,19 +49,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
   if (!trustedContent && isBotCheckContent({ title: result.content.title, text: result.content.text, botCheck: result.content.botCheck })) return null;
 
   if (isReaderMethod(result.metadata.method)) {
-    return {
-      title: result.content.title ?? result.url,
-      url: result.url,
-      ...(requestedUrl ? { requestedUrl } : {}),
-      sourceKind: classifyEvidenceUrl(result.url),
-      method: result.metadata.method,
-      summary: result.content.text,
-      supports: [result.content.text],
-      ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
-      ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
-      truncated: result.metadata.truncated ?? false
-      , ...(result.metadata.partialComments ? { partialComments: true } : {})
-    };
+    return readerEvidence(result, query, requestedUrl);
   }
 
   const passages = selectEvidencePassages(result.content.text, query);
@@ -71,8 +61,11 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     method: result.metadata.method,
     summary: selectRelevantExcerpt(result.content.text, query, 180),
     supports: passages.excerpts,
+    resultCandidates: rankEvidencePassages(result.content.text, query),
     ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    retrievalCut: result.metadata.retrievalCut ?? false,
+    selectionOmitted: result.metadata.selectionOmitted ?? false,
     truncated: (result.metadata.truncated ?? false) || passages.truncated
     , ...(result.metadata.partialComments ? { partialComments: true } : {})
   };
@@ -91,8 +84,11 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string, r
     method: 'headless',
     summary: selectRelevantExcerpt(result.content.text, query, 180),
     supports: passages.excerpts,
+    resultCandidates: rankEvidencePassages(result.content.text, query),
     ...(result.content.sectionAnchor ? { sectionAnchor: result.content.sectionAnchor } : {}),
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
+    retrievalCut: result.metadata.retrievalCut ?? false,
+    selectionOmitted: result.metadata.selectionOmitted ?? false,
     truncated: (result.metadata.truncated ?? false) || passages.truncated
   };
 }
@@ -124,6 +120,44 @@ function directUnreadableMessage(url: string) {
   return classifySourceProfile(url).kind === 'forum-thread'
     ? `Thread source could not be read reliably: ${url}`
     : `Direct URL could not be read reliably: ${url}`;
+}
+
+function directHttpStatus(result: WebFetchResponse): number | undefined {
+  return result.error?.failure?.httpStatus;
+}
+
+function directHeadlessFailure(
+  directResult: WebFetchResponse,
+  fallback: { code: string; message: string; failure?: RequiredSourceFailure['failure'] },
+  classification?: 'deadline' | 'limit'
+) {
+  const status = directHttpStatus(directResult);
+  if (status === undefined) return fallback;
+  const original = directResult.error!;
+  if (classification === 'deadline') {
+    return {
+      code: 'DIRECT_SOURCE_DEADLINE',
+      message: `Source deadline reached while reading this URL. ${original.message}`,
+      failure: original.failure
+    };
+  }
+  if (classification === 'limit') {
+    return {
+      code: 'DIRECT_SOURCE_LIMIT',
+      message: `Source limit reached; use a follow-up call for this URL. ${original.message}`,
+      failure: original.failure
+    };
+  }
+  if (fallback.failure?.kind === 'guard_refused' || fallback.failure?.kind === 'config_global') {
+    return { ...fallback, message: `${original.message} Browser retry: ${fallback.message}` };
+  }
+  return {
+    code: original.code,
+    message: fallback.message === directUnreadableMessage(directResult.url)
+      ? original.message
+      : `${original.message} Browser retry: ${fallback.message}`,
+    failure: original.failure
+  };
 }
 
 function shouldRetryDirectWithHeadless(result: WebFetchResponse, evidence: ResearchEvidence | null) {
@@ -178,6 +212,9 @@ function buildMetadata({
     budget,
     presentationStats,
     ...(requiredSourceFailures?.length ? { requiredSourceFailures } : {}),
+    executedQueries: [...executedQueries],
+    openGaps: [] as string[],
+    suggestedQueries: [] as string[],
     ...(attempts && attempts.length > 0 ? { attempts } : {})
   };
 }
@@ -274,6 +311,7 @@ export function createResearchOrchestrator({
       const previousQueries: string[] = [];
       // Only searches the worker actually started count as passes.
       const executedQueries: string[] = [];
+      let lastPlanningPass = -1;
       const suggestedHeadlessUrls: string[] = [];
       const attemptedHeadlessUrls = new Set<string>();
       // Only discretionary escalations consume the decider's two attempts.
@@ -304,6 +342,19 @@ export function createResearchOrchestrator({
       };
       const complete = (result: Omit<ResearchOrchestratorResult, 'requiredSourceEvidence' | 'requiredSourceFailures'>): ResearchOrchestratorResult => {
         const hasRequiredFailure = requiredSourceFailures.length > 0;
+        const finalEvidence = [...result.evidence, ...requiredSourceEvidence];
+        const context = buildCallerContext({
+          query, intent, evidence: finalEvidence, opinionQuestion,
+          hasPossibleConflict: analyzeEvidenceQuality({
+            evidence: finalEvidence, gaps: [], lowValueOutcomes: []
+          }).flags.hasPossibleConflict,
+          requiredFailureUrls: requiredSourceFailures.map((failure) => failure.url),
+          executedQueries,
+          nextPassIndex: lastPlanningPass + 1,
+          partial: result.decision.action !== 'answer' || hasRequiredFailure,
+          allowSuggestions: !result.terminalFailure && intent.kind !== 'read' &&
+            lastPass?.searchUnavailableOnly !== true
+        });
         return {
           ...result,
           ...(hasRequiredFailure && result.decision.action === 'answer'
@@ -314,6 +365,7 @@ export function createResearchOrchestrator({
           ...(searchUnavailable.length ? { searchUnavailable: [...searchUnavailable] } : {}),
           metadata: {
             ...result.metadata,
+            ...context,
             caveatReasons: hasRequiredFailure
               ? [...new Set([...result.metadata.caveatReasons, 'unreadable-direct-source' as EvidenceCaveatReason])]
               : result.metadata.caveatReasons,
@@ -482,7 +534,17 @@ export function createResearchOrchestrator({
               } catch (error) {
                 if (signal?.aborted) throw error;
                 presentationStats.recordFailure(directResult.url);
-                requiredFailure(url, budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed', budget.deadlineReached() ? 'DIRECT_SOURCE_DEADLINE' : 'DIRECT_SOURCE_READ_FAILED', budget.deadlineReached() ? 'Source deadline reached while reading this URL.' : directUnreadableMessage(directResult.url));
+                const failure = directHeadlessFailure(directResult, {
+                  code: 'DIRECT_SOURCE_READ_FAILED',
+                  message: directUnreadableMessage(directResult.url)
+                }, budget.deadlineReached() ? 'deadline' : undefined);
+                requiredFailure(
+                  url,
+                  budget.deadlineReached() ? 'deadline-in-flight' : 'read-failed',
+                  failure.code,
+                  failure.message,
+                  failure.failure
+                );
                 continue;
               } finally {
                 emit('headless', 'settled', directResult.url);
@@ -493,12 +555,27 @@ export function createResearchOrchestrator({
                 allEvidence.push(headlessEvidence);
                 requiredSourceEvidence.push(headlessEvidence);
               } else if (headlessResult.error) {
-                requiredFailure(url, 'read-failed', headlessResult.error.code, headlessResult.error.message, headlessResult.error.failure);
+                const failure = directHeadlessFailure(directResult, headlessResult.error);
+                requiredFailure(
+                  url,
+                  'read-failed',
+                  failure.code,
+                  failure.message,
+                  failure.failure
+                );
               } else {
-                requiredFailure(url, 'read-failed', 'DIRECT_SOURCE_READ_FAILED', directUnreadableMessage(directResult.url));
+                const failure = directHeadlessFailure(directResult, {
+                  code: 'DIRECT_SOURCE_READ_FAILED',
+                  message: directUnreadableMessage(directResult.url)
+                });
+                requiredFailure(url, 'read-failed', failure.code, failure.message, failure.failure);
               }
             } else {
-              requiredFailure(url, 'limit', 'DIRECT_SOURCE_LIMIT', 'Source limit reached; use a follow-up call for this URL.');
+              const failure = directHeadlessFailure(directResult, {
+                code: 'DIRECT_SOURCE_LIMIT',
+                message: 'Source limit reached; use a follow-up call for this URL.'
+              }, 'limit');
+              requiredFailure(url, 'limit', failure.code, failure.message, failure.failure);
             }
           } else {
             requiredFailure(url, 'read-failed', directResult.error?.code ?? 'DIRECT_SOURCE_READ_FAILED', directResult.error?.message ?? directUnreadableMessage(directResult.url), directResult.error?.failure);
@@ -558,23 +635,16 @@ export function createResearchOrchestrator({
       }
 
       for (let passIndex = 0; passIndex < DEFAULT_MAX_PASSES; passIndex++) {
-        const evidenceText = allEvidence.flatMap((item) => [item.title, item.summary, ...item.supports]).join(' ');
+        lastPlanningPass = passIndex;
         const planningGaps = [
           ...allGaps.map((gap) => gap.message),
-          ...missingComparisonTargets(intent, allEvidence).map((target) => `Need comparison evidence for target: ${target}`)
+          ...collectTaskPlanningGaps({
+            query, intent, evidence: allEvidence, opinionQuestion,
+            hasPossibleConflict: analyzeEvidenceQuality({
+              evidence: allEvidence, gaps: allGaps, lowValueOutcomes: allLowValueOutcomes
+            }).flags.hasPossibleConflict
+          })
         ];
-        if (/\b(?:versions?|compatibility|supported since)\b/i.test(query) && !/\bv?\d+\.\d+(?:\.\d+)?\b/i.test(evidenceText)) {
-          planningGaps.push('Need supported version details.');
-        }
-        if (/\b(?:API|method|function|parameter)\b/i.test(query) && allEvidence.length === 0) {
-          planningGaps.push('Need exact API behavior.');
-        }
-        if (opinionQuestion && !allEvidence.some((item) => item.sourceKind === 'community' || item.sourceKind === 'issue-thread' || item.sourceKind === 'official-discussion')) {
-          planningGaps.push('Need user experience.');
-        }
-        if (analyzeEvidenceQuality({ evidence: allEvidence, gaps: allGaps, lowValueOutcomes: allLowValueOutcomes }).flags.hasPossibleConflict) {
-          planningGaps.push('Sources disagree about the recommendation.');
-        }
         const queries = planSearchQueries({
           originalQuery: query,
           passIndex,

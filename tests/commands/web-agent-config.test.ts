@@ -1167,6 +1167,155 @@ describe('web-agent config commands', () => {
     expect(notify.mock.calls[0][0]).toContain('browser: chromium /usr/bin/chromium');
   });
 
+  it('uses the RPC selector for a no-argument Show config action without opening a custom UI', async () => {
+    let handler: any;
+    const load = vi.fn().mockResolvedValue({
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG,
+      effectiveResults: { lengthLimit: 'auto' }
+    });
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: any) => { handler = command.handler; } } as never, { load });
+
+    const custom = vi.fn(() => { throw new Error('custom UI is unavailable over RPC'); });
+    const select = vi.fn().mockResolvedValue('Show config');
+    const notify = vi.fn();
+    await handler('', { mode: 'rpc', hasUI: true, ui: { custom, select, notify } });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(custom).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('global: /global/config.json'), 'info');
+  });
+
+  it.each(['settings', 'settings presentation', 'settings results', 'settings backends'] as const)('explains that %s requires the TUI over RPC without a selector', async (command) => {
+    let handler: any;
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const saveResults = vi.fn();
+    const reset = vi.fn();
+    const resetResults = vi.fn();
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: any) => { handler = command.handler; } } as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG,
+        effectiveResults: { lengthLimit: 'auto' }
+      }),
+      save,
+      saveBackends,
+      saveResults,
+      reset,
+      resetResults
+    });
+
+    const custom = vi.fn(() => { throw new Error('custom UI is unavailable over RPC'); });
+    const select = vi.fn(() => { throw new Error('settings must not open a selector over RPC'); });
+    const notify = vi.fn();
+    await handler(command, { mode: 'rpc', hasUI: true, ui: { custom, select, notify } });
+
+    expect(custom).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('requires the TUI'), 'info');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('/global/config.json'), 'info');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('/project/config.json'), 'info');
+    expect(save).not.toHaveBeenCalled();
+    expect(saveBackends).not.toHaveBeenCalled();
+    expect(saveResults).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(resetResults).not.toHaveBeenCalled();
+  });
+
+  it('leaves an RPC menu unchanged when its selection is cancelled', async () => {
+    let handler: any;
+    const load = vi.fn();
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: any) => { handler = command.handler; } } as never, { load });
+    const custom = vi.fn(() => { throw new Error('custom UI is unavailable over RPC'); });
+    const notify = vi.fn();
+
+    await handler('', { mode: 'rpc', hasUI: true, ui: { custom, select: vi.fn().mockResolvedValue(undefined), notify } });
+
+    expect(load).not.toHaveBeenCalled();
+    expect(custom).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('keeps reset confirmation when RPC selects a reset action', async () => {
+    let handler: any;
+    const reset = vi.fn();
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: any) => { handler = command.handler; } } as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: true },
+        project: { path: '/project/config.json', exists: true },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG
+      }),
+      reset
+    });
+    const confirm = vi.fn().mockResolvedValue(false);
+    const custom = vi.fn(() => { throw new Error('custom UI is unavailable over RPC'); });
+
+    await handler('', { mode: 'rpc', hasUI: true, ui: { custom, select: vi.fn().mockResolvedValue('Reset project config'), confirm, notify: vi.fn() } });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(reset).not.toHaveBeenCalled();
+    expect(custom).not.toHaveBeenCalled();
+  });
+
+  it.each(['print', 'json'] as const)('gives actionable no-argument guidance in %s mode without interactive UI calls', async (mode) => {
+    let handler: any;
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: any) => { handler = command.handler; } } as never);
+    const custom = vi.fn(() => { throw new Error('custom UI is unavailable'); });
+    const select = vi.fn(() => { throw new Error('selection UI is unavailable'); });
+    const notify = vi.fn();
+
+    await handler('', { mode, hasUI: false, ui: { custom, select, notify } });
+
+    expect(custom).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('/web-agent show'), 'info');
+  });
+
+  it.each(['print', 'json'] as const)('explains that explicit settings requires the TUI in %s mode without interactive UI calls', async (mode) => {
+    let handler: any;
+    const save = vi.fn();
+    const saveBackends = vi.fn();
+    const saveResults = vi.fn();
+    const reset = vi.fn();
+    const resetResults = vi.fn();
+    registerWebAgentConfigCommands({ registerCommand: (_name: string, command: any) => { handler = command.handler; } } as never, {
+      load: vi.fn().mockResolvedValue({
+        global: { path: '/global/config.json', exists: false },
+        project: { path: '/project/config.json', exists: false },
+        effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+        effectiveBackends: DEFAULT_BACKEND_CONFIG,
+        effectiveResults: { lengthLimit: 'auto' }
+      }),
+      save,
+      saveBackends,
+      saveResults,
+      reset,
+      resetResults
+    });
+    const custom = vi.fn(() => { throw new Error('custom UI is unavailable'); });
+    const select = vi.fn(() => { throw new Error('selection UI is unavailable'); });
+    const notify = vi.fn();
+
+    await handler('settings', { mode, hasUI: false, ui: { custom, select, notify } });
+
+    expect(custom).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('requires the TUI'), 'info');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('/global/config.json'), 'info');
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('/project/config.json'), 'info');
+    expect(save).not.toHaveBeenCalled();
+    expect(saveBackends).not.toHaveBeenCalled();
+    expect(saveResults).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(resetResults).not.toHaveBeenCalled();
+  });
+
   it('opens a custom settings UI when invoked with settings', async () => {
     let handler: any;
     const pi = {
@@ -2258,7 +2407,7 @@ describe('reset command confirmation', () => {
 
     expect(confirm).toHaveBeenCalledWith(
       'Reset global settings?',
-      'This deletes /global/config.json, including presentation and backend settings.'
+      'This deletes /global/config.json, including presentation, backend, and result-length settings.'
     );
     expect(reset).toHaveBeenCalledWith('global');
     expect(notify).toHaveBeenCalledWith('Reset global config', 'info');
@@ -2285,7 +2434,7 @@ describe('reset command confirmation', () => {
 
     expect(confirm).toHaveBeenCalledWith(
       'Reset project settings?',
-      'This deletes /project/config.json, including presentation and backend settings.'
+      'This deletes /project/config.json, including presentation, backend, and result-length settings.'
     );
     expect(reset).toHaveBeenCalledWith('project');
   });

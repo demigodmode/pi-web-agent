@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -7,7 +7,9 @@ import {
   loadPresentationConfigLayers,
   resetPresentationConfigScope,
   saveBackendConfigScope,
-  savePresentationConfigScope
+  savePresentationConfigScope,
+  resetResultsConfigScope,
+  saveResultsConfigScope
 } from '../../src/presentation/config-store.js';
 
 describe('presentation config store', () => {
@@ -44,6 +46,7 @@ describe('presentation config store', () => {
       fetch: { provider: 'http' },
       headless: { provider: 'local-browser' }
     });
+    expect(loaded.effectiveResults).toEqual({ lengthLimit: 'auto' });
     expect(loaded.global.exists).toBe(false);
     expect(loaded.project.exists).toBe(false);
   });
@@ -109,6 +112,105 @@ describe('presentation config store', () => {
       defaultMode: 'preview',
       tools: { web_explore: { mode: 'verbose' } }
     });
+  });
+
+  it('reads results at the root beside a legacy presentation file', async () => {
+    const { globalPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    mkdirSync(path.dirname(globalPath), { recursive: true });
+    writeFileSync(globalPath, JSON.stringify({
+      defaultMode: 'preview',
+      results: { lengthLimit: 'short' }
+    }), 'utf8');
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+
+    expect(loaded.effectiveConfig.defaultMode).toBe('preview');
+    expect(loaded.global.rawResults).toEqual({ lengthLimit: 'short' });
+    expect(loaded.effectiveResults).toEqual({ lengthLimit: 'short' });
+  });
+
+  it.each([
+    ['presentation-only project config', { presentation: { defaultMode: 'preview' } }, undefined],
+    ['empty results root', { results: {} }, {}]
+  ])('keeps global result length inherited with %s', async (_name, project, rawResults) => {
+    const { globalPath, projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    mkdirSync(path.dirname(globalPath), { recursive: true });
+    mkdirSync(path.dirname(projectPath), { recursive: true });
+    writeFileSync(globalPath, JSON.stringify({ results: { lengthLimit: 'short' } }), 'utf8');
+    writeFileSync(projectPath, JSON.stringify(project), 'utf8');
+
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+    expect(loaded.effectiveResults).toEqual({ lengthLimit: 'short' });
+    expect(loaded.project.rawResults).toEqual(rawResults);
+  });
+
+  it('layers global Short with project inherit, explicit Auto, and a cleared override', async () => {
+    await saveResultsConfigScope({ homeDir, projectDir }, 'global', { lengthLimit: 'short' });
+    expect((await loadPresentationConfigLayers({ homeDir, projectDir })).effectiveResults).toEqual({ lengthLimit: 'short' });
+
+    await saveResultsConfigScope({ homeDir, projectDir }, 'project', { lengthLimit: 'auto' });
+    expect((await loadPresentationConfigLayers({ homeDir, projectDir })).effectiveResults).toEqual({ lengthLimit: 'auto' });
+
+    await saveResultsConfigScope({ homeDir, projectDir }, 'project', { cleared: ['lengthLimit'] });
+    const loaded = await loadPresentationConfigLayers({ homeDir, projectDir });
+    expect(loaded.project.rawResults).toEqual({ cleared: ['lengthLimit'] });
+    expect(loaded.effectiveResults).toEqual({ lengthLimit: 'auto' });
+  });
+
+  it('persists an exact results length and retains sibling sections across save and reset', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    mkdirSync(path.dirname(projectPath), { recursive: true });
+    writeFileSync(projectPath, JSON.stringify({
+      backends: { fetch: { provider: 'firecrawl', apiKey: 'persisted-secret' } }
+    }), 'utf8');
+
+    await savePresentationConfigScope({ homeDir, projectDir }, 'project', {
+      defaultMode: 'preview', tools: { web_explore: { mode: 'verbose' } }
+    });
+    await saveResultsConfigScope({ homeDir, projectDir }, 'project', { lengthLimit: 1234.9 });
+
+    expect(JSON.parse(readFileSync(projectPath, 'utf8'))).toMatchObject({
+      presentation: { defaultMode: 'preview', tools: { web_explore: { mode: 'verbose' } } },
+      backends: { fetch: { provider: 'firecrawl', apiKey: 'persisted-secret' } },
+      results: { lengthLimit: 1234 }
+    });
+    expect(JSON.parse(readFileSync(projectPath, 'utf8')).backends.fetch.apiKey).toBe('persisted-secret');
+    expect((await loadPresentationConfigLayers({ homeDir, projectDir })).effectiveResults).toEqual({ lengthLimit: 1234 });
+
+    await resetResultsConfigScope({ homeDir, projectDir }, 'project');
+    const reset = JSON.parse(readFileSync(projectPath, 'utf8'));
+    expect(reset.results).toBeUndefined();
+    expect(reset.presentation.defaultMode).toBe('preview');
+    expect(reset.backends.fetch.apiKey).toBe('persisted-secret');
+  });
+
+  it('does not create a config file when resetting results in a scope with no file', async () => {
+    const { projectPath, globalPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    await resetResultsConfigScope({ homeDir, projectDir }, 'project');
+    await resetResultsConfigScope({ homeDir, projectDir }, 'global');
+    expect(existsSync(projectPath)).toBe(false);
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('retains results when presentation or backend settings are written', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    await saveResultsConfigScope({ homeDir, projectDir }, 'project', { lengthLimit: 'medium' });
+    await savePresentationConfigScope({ homeDir, projectDir }, 'project', {
+      defaultMode: 'preview', tools: {}
+    });
+    await saveBackendConfigScope({ homeDir, projectDir }, 'project', {
+      search: { provider: 'searxng', baseUrl: 'http://localhost:8080', fallback: 'duckduckgo' }
+    });
+
+    expect(JSON.parse(readFileSync(projectPath, 'utf8')).results).toEqual({ lengthLimit: 'medium' });
+  });
+
+  it('removes only a results override when saved empty', async () => {
+    const { projectPath } = getPresentationConfigPaths({ homeDir, projectDir });
+    await saveResultsConfigScope({ homeDir, projectDir }, 'project', { lengthLimit: 'medium' });
+    await saveResultsConfigScope({ homeDir, projectDir }, 'project', {});
+
+    expect(JSON.parse(readFileSync(projectPath, 'utf8')).results).toBeUndefined();
   });
 
   it('loads root presentation and backend config sections', async () => {

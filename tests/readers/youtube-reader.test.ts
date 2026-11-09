@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createYoutubeReader } from '../../src/readers/youtube-reader.js';
+import { READER_TEXT_CAP } from '../../src/readers/limits.js';
 
 describe('createYoutubeReader', () => {
   it('handles watch, youtu.be, shorts, live, embed forms', () => {
@@ -26,6 +27,20 @@ describe('createYoutubeReader', () => {
     expect(res.metadata.method).toBe('youtube');
     expect(res.content?.title).toBe('My Talk');
     expect(res.content?.text).toContain('hello world');
+  });
+
+  it.each([
+    [READER_TEXT_CAP, false],
+    [READER_TEXT_CAP + 1, true]
+  ])('marks only transcript text beyond the cap as a retrieval cut (%i)', async (length, retrievalCut) => {
+    const res = await createYoutubeReader({
+      fetchSubtitles: vi.fn().mockResolvedValue([{ start: '0', dur: '1', text: 'x'.repeat(length) }]),
+      fetchDetails: vi.fn().mockResolvedValue({ title: 'Talk' })
+    }).read('https://youtu.be/abc123');
+
+    expect(res.content?.text).toHaveLength(READER_TEXT_CAP);
+    expect(res.metadata.retrievalCut).toBe(retrievalCut);
+    expect(res.metadata.selectionOmitted).toBe(false);
   });
 
   it('passes the extracted video id to the fetchers', async () => {

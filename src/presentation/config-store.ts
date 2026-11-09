@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   DEFAULT_BACKEND_CONFIG,
@@ -13,6 +13,13 @@ import {
   extractPresentationConfigOverride,
   mergePresentationConfigLayers
 } from './config.js';
+import {
+  DEFAULT_RESULTS_CONFIG,
+  extractResultsOverride,
+  mergeResultsConfig,
+  normalizeLengthLimit
+} from '../results/config.js';
+import type { ResultsConfig, ResultsConfigFile, ResultsOverride } from '../results/types.js';
 import type {
   PresentationConfig,
   PresentationConfigFile,
@@ -30,6 +37,7 @@ export type PresentationConfigLayer = {
   exists: boolean;
   rawConfig?: PresentationConfigOverride;
   rawBackends?: BackendConfigOverride;
+  rawResults?: ResultsOverride;
   error?: string;
 };
 
@@ -38,6 +46,7 @@ export type LoadedPresentationConfig = {
   project: PresentationConfigLayer;
   effectiveConfig: PresentationConfig;
   effectiveBackends: BackendConfig;
+  effectiveResults?: ResultsConfig;
 };
 
 export function getPresentationConfigPaths(options: PresentationConfigStoreOptions = {}) {
@@ -50,7 +59,7 @@ export function getPresentationConfigPaths(options: PresentationConfigStoreOptio
   };
 }
 
-type AgentConfigFile = PresentationConfigFile & BackendConfigFile;
+type AgentConfigFile = PresentationConfigFile & BackendConfigFile & ResultsConfigFile;
 
 type LegacyPresentationConfigFile = NonNullable<PresentationConfigFile['presentation']>;
 
@@ -70,7 +79,8 @@ async function readPresentationConfigFile(filePath: string): Promise<Presentatio
       path: filePath,
       exists: true,
       rawConfig: extractPresentationConfigOverride(presentationFile),
-      rawBackends: extractBackendConfigOverride(parsed)
+      rawBackends: extractBackendConfigOverride(parsed),
+      ...(parsed.results !== undefined ? { rawResults: extractResultsOverride(parsed) } : {})
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
@@ -147,6 +157,15 @@ async function readConfigFileForWrite(filePath: string): Promise<AgentConfigFile
   }
 }
 
+async function fileExists(filePath: string) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function writeConfigFile(filePath: string, config: AgentConfigFile) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(config, null, 2) + '\n', 'utf8');
@@ -171,6 +190,11 @@ export async function loadPresentationConfigLayers(
       DEFAULT_BACKEND_CONFIG,
       global.rawBackends,
       project.rawBackends
+    ),
+    effectiveResults: mergeResultsConfig(
+      DEFAULT_RESULTS_CONFIG,
+      global.rawResults,
+      project.rawResults
     )
   };
 }
@@ -203,6 +227,42 @@ export async function saveBackendConfigScope(
     ...existing,
     ...serializeBackendConfigOverride(config)
   });
+}
+
+export async function saveResultsConfigScope(
+  options: PresentationConfigStoreOptions,
+  scope: PresentationScope,
+  override: ResultsOverride
+) {
+  const { globalPath, projectPath } = getPresentationConfigPaths(options);
+  const filePath = scope === 'global' ? globalPath : projectPath;
+  const existing = await readConfigFileForWrite(filePath);
+  const next = { ...existing };
+
+  if (override.lengthLimit === undefined && !override.cleared?.length) {
+    delete next.results;
+  } else {
+    next.results = {
+      ...(override.lengthLimit !== undefined ? { lengthLimit: normalizeLengthLimit(override.lengthLimit) } : {}),
+      ...(override.cleared?.length ? { cleared: [...override.cleared] } : {})
+    };
+  }
+
+  await writeConfigFile(filePath, next);
+}
+
+export async function resetResultsConfigScope(
+  options: PresentationConfigStoreOptions,
+  scope: PresentationScope
+) {
+  const { globalPath, projectPath } = getPresentationConfigPaths(options);
+  const filePath = scope === 'global' ? globalPath : projectPath;
+  if (!(await fileExists(filePath))) return;
+  const existing = await readConfigFileForWrite(filePath);
+  const next = { ...existing };
+  delete next.results;
+
+  await writeConfigFile(filePath, next);
 }
 
 export async function resetPresentationConfigScope(

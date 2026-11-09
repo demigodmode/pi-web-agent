@@ -2,6 +2,48 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
 
 describe('firecrawl fetch backend', () => {
+  it.each([
+    ['data.statusCode', { statusCode: 404 }],
+    ['data.metadata.statusCode', { metadata: { statusCode: 500 } }]
+  ])('does not accept target HTTP errors from %s when the API succeeded', async (_field, data) => {
+    const result = await createFirecrawlFetcher({
+      baseUrl: 'http://localhost:3002',
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        data: { markdown: '# Error\n\n' + 'Long target error page. '.repeat(100), ...data }
+      })))
+    })('https://example.com/missing');
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: { code: 'HTTP_STATUS', failure: { kind: 'bad_response' } }
+    });
+    expect(result.content).toBeUndefined();
+  });
+
+  it('rejects a metadata target error when the top-level target status is 200', async () => {
+    const result = await createFirecrawlFetcher({
+      baseUrl: 'http://localhost:3002',
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, data: {
+        statusCode: 200,
+        metadata: { statusCode: 404 },
+        markdown: 'Long target error page. '.repeat(100)
+      } })))
+    })('https://example.com/missing');
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: 404 } } });
+  });
+
+  it.each([401, 403, 429])('keeps target HTTP %s eligible for browser fetches', async (statusCode) => {
+    const result = await createFirecrawlFetcher({
+      baseUrl: 'http://localhost:3002',
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        data: { markdown: 'blocked', statusCode }
+      })))
+    })('https://example.com/wall');
+    expect(result).toMatchObject({ status: 'needs_headless', error: { code: 'HTTP_STATUS', failure: { kind: 'blocked', httpStatus: statusCode } } });
+  });
+
   it('selects a late relevant markdown section with one scrape', async () => {
     const markdown = `# Guide\n\n${'General documentation background. '.repeat(220)}\n\n## Cancellation deadline\n\nThe cancellation deadline is 48 hours before departure.`;
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -18,6 +60,8 @@ describe('firecrawl fetch backend', () => {
     expect(result).toMatchObject({ status: 'ok', metadata: { truncated: true } });
     expect(result.content?.text).toContain('48 hours before departure');
     expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+    expect(result.metadata.retrievalCut).toBe(false);
+    expect(result.metadata.selectionOmitted).toBe(true);
   });
 
   it('selects HTML without markup or scripts when markdown is unavailable', async () => {
@@ -147,10 +191,15 @@ describe('firecrawl classification (#55)', () => {
     expect(result).toMatchObject({ status: 'error', error: { code: 'FETCH_FAILED', failure: { kind, httpStatus: status } } });
   });
 
-  it('treats SCRAPE_ALL_ENGINES_FAILED as no extractable content, not a failure', async () => {
+  it('restores SCRAPE_ALL_ENGINES_FAILED API 500 responses as a weak extraction', async () => {
     const result = await fetcher(json({ success: false, code: 'SCRAPE_ALL_ENGINES_FAILED' }, 500))('https://page.test/');
-    expect(result.status).toBe('needs_headless');
+    expect(result).toMatchObject({ status: 'needs_headless', error: { code: 'WEAK_EXTRACTION' } });
     expect(result.error?.failure).toBeUndefined();
+  });
+
+  it.each([404, 410, 500])('uses embedded target HTTP %s over SCRAPE_ALL_ENGINES_FAILED API failure', async (targetStatus) => {
+    const result = await fetcher(json({ success: false, code: 'SCRAPE_ALL_ENGINES_FAILED', data: { statusCode: targetStatus, metadata: { statusCode: targetStatus } } }, 500))('https://page.test/');
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: targetStatus } } });
   });
 
   it('treats a malformed 200 or success:false on 200 as bad_response', async () => {

@@ -94,7 +94,13 @@ function okResponse(url: string, title: string, text: string, partialComments = 
     status: 'ok',
     url,
     content: { title, text: capped },
-    metadata: { method: 'github', cacheHit: false, truncated: text.length >= READER_TEXT_CAP, ...(partialComments ? { partialComments: true } : {}) }
+    metadata: {
+      method: 'github', cacheHit: false,
+      retrievalCut: text.length > READER_TEXT_CAP,
+      selectionOmitted: false,
+      truncated: text.length >= READER_TEXT_CAP,
+      ...(partialComments ? { partialComments: true } : {})
+    }
   };
 }
 

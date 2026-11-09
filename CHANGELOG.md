@@ -18,6 +18,27 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [1.17.0] - 2026-11-09
+### Added
+- Research results tell Pi what was searched, which gaps remain, and up to two rule-based follow-up searches. The same context appears in verbose view.
+- Result length setting (#125). The default, Auto, sizes the tool result to the model's context window, so small local models get shorter results. Short, Medium, Standard or an exact number of characters can be set instead.
+
+### Changed
+- The tool description asks for short, specific searches while keeping intent words and supplied links (#124).
+- The same passage quoted by two sources is sent once. Results now say whether text is missing because a document was longer than what was read, or because it didn't fit the result length.
+- GitHub, PDF and YouTube pages found through search get normal excerpts instead of their whole text. Links you paste still come back in full at Standard.
+
+### Fixed
+- HTTP errors keep their status and are no longer read or cited as page content.
+- `/web-agent` menus work over RPC; unavailable settings screens point to the config files.
+- Clarified when research results show open gaps and follow-up suggestions.
+- Search results from excluded `-site:` hosts and their subdomains are filtered before reading.
+- Settings screens keep the cursor on the row you changed.
+- Excerpts no longer get a section link that points at a different part of the page.
+
+### Breaking
+- None.
+
 ## [1.16.0] - 2026-10-23
 ### Added
 - Parallel as a search backend: keyless and opt-in, select `parallel` under Settings → Backends. Thanks to @georgeatparallel (#102, closes #43).

@@ -88,6 +88,11 @@ function failedAttempt(backend: string, failure: FailureInfo, state: ProviderHea
   };
 }
 
+function isTargetHttpFailure(result: WebFetchResponse): boolean {
+  const status = result.error?.failure?.httpStatus;
+  return result.error?.code === 'HTTP_STATUS' && typeof status === 'number' && status >= 400 && status <= 599;
+}
+
 /**
  * One provider under the #55 policy: skip when cooling down or disabled,
  * retry exactly once on transient, record state. Never falls back itself.
@@ -282,6 +287,12 @@ export function withFetchPolicy(primary: FetchPage, fallback: FetchPage | undefi
         first = await primary(input);
         throwIfAborted(input.signal);
         failure = failureOf(first);
+      }
+      // This is the model-chosen page's response, not a Firecrawl service
+      // failure. Keep its diagnostic intact for the orchestrator and do not
+      // penalize Firecrawl or replace it with an HTTP reread.
+      if (isTargetHttpFailure(first)) {
+        return finish({ ...first, metadata: { ...first.metadata, attempts } });
       }
       if (failure) {
         const detail = detailFor(failure, first.error?.message);

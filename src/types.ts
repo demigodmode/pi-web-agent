@@ -1,5 +1,6 @@
 import type { PresentationEnvelope } from './presentation/types.js';
 import type { PresentationStats } from './orchestration/presentation-stats.js';
+import type { LengthLimit, ModelResultSelection } from './results/types.js';
 
 export const TOOL_STATUSES = [
   'ok',
@@ -110,6 +111,11 @@ export type FetchMetadata = {
   fallbackFrom?: 'firecrawl';
   fallbackReason?: string;
   contentType?: string;
+  /** The producer knows that source text existed beyond what it returned. */
+  retrievalCut?: boolean;
+  /** The producer intentionally selected part of a fetched/read source. */
+  selectionOmitted?: boolean;
+  /** @deprecated Compatibility marker; it does not establish why text was omitted. */
   truncated?: boolean;
   /** GitHub thread comments could not be completely read within the bounded reader request. */
   partialComments?: boolean;
@@ -179,7 +185,12 @@ export type WebExploreResponse = {
     method?: FetchMethod;
     excerpts: Array<{ text: string; anchor?: string }>;
     retrievedAt?: string;
-    truncated: boolean;
+    /** @deprecated Old persisted records can retain this ambiguous marker. */
+    truncated?: boolean;
+    retrievalCut?: boolean;
+    selectionOmitted?: boolean;
+    spaceCut?: boolean;
+    samePassageAs?: Array<{ sourceId: string; excerptIndex: number; relation: 'same' | 'covered' }>;
   }>;
   caveat?: string;
   searchUnavailable?: SearchUnavailable[];
@@ -204,7 +215,14 @@ export type WebExploreResponse = {
     attempts?: Attempt[];
     requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
     presentationStats?: PresentationStats;
+    executedQueries?: string[];
+    /** Final rule-detected task gaps; excludes historical page failures. */
+    openGaps?: string[];
+    /** Unexecuted, rule-based proposals for the caller. */
+    suggestedQueries?: string[];
+    resultLength?: { setting: LengthLimit; effectiveChars?: number; contentChars: number; requiredOverflowChars: number; cutSourceIds: string[] };
   };
+  modelResult?: ModelResultSelection;
   presentation?: PresentationEnvelope;
   error?: ToolError;
 };

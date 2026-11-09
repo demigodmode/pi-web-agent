@@ -5,7 +5,237 @@ import { fakeLookup } from './fake-lookup.js';
 import type { GuardProxy, Refusal } from '../../src/fetch/guard-proxy.js';
 import { BlockedAddressError, UnverifiedDestinationError, type GuardError } from '../../src/fetch/network-guard.js';
 
+function eventedStatusPage(goto: (events: { response: (status: number, frame?: object, navigation?: boolean) => void }) => Promise<unknown>) {
+  const listeners = new Map<string, Array<(payload: unknown) => void>>();
+  const mainFrame = {};
+  const fire = (event: string, payload: unknown) => {
+    for (const listener of listeners.get(event) ?? []) listener(payload);
+  };
+  return {
+    on: vi.fn((event: string, listener: (payload: unknown) => void) => {
+      listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+    }),
+    mainFrame: () => mainFrame,
+    goto: vi.fn(() => goto({
+      response: (status, frame = mainFrame, navigation = true) => {
+        fire('response', {
+          status: () => status,
+          frame: () => frame,
+          request: () => ({ isNavigationRequest: () => navigation })
+        });
+      }
+    })),
+    emitResponse: (status: number, frame = mainFrame, navigation = true) => fire('response', {
+      status: () => status,
+      frame: () => frame,
+      request: () => ({ isNavigationRequest: () => navigation })
+    }),
+    waitForLoadState: vi.fn(async (_state?: string) => undefined),
+    content: vi.fn(async () => `<html><body><article><p>${'Useful rendered page content. '.repeat(12)}</p></article></body></html>`),
+    close: vi.fn(async () => undefined)
+  };
+}
+
+function statusLaunchBrowser(page: ReturnType<typeof eventedStatusPage>) {
+  return vi.fn(async () => ({
+    newContext: async () => ({ newPage: async () => page, close: async () => undefined }),
+    close: async () => undefined
+  }));
+}
+
 describe('headless fetch', () => {
+  it('rethrows cancellation after navigation returns an HTTP error and still closes resources', async () => {
+    const controller = new AbortController();
+    const closePage = vi.fn(async () => undefined);
+    const closeContext = vi.fn(async () => undefined);
+    const closeBrowser = vi.fn(async () => undefined);
+    const pending = headlessFetch('https://example.com/missing', {
+      signal: controller.signal,
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => { controller.abort(); return { status: () => 404 }; },
+            waitForLoadState: async () => undefined,
+            content: async () => '',
+            close: closePage
+          }),
+          close: closeContext
+        }),
+        close: closeBrowser
+      }))
+    });
+    await expect(pending).rejects.toThrow('Operation aborted');
+    expect(closePage).toHaveBeenCalledOnce();
+    expect(closeContext).toHaveBeenCalledOnce();
+    expect(closeBrowser).toHaveBeenCalled();
+  });
+
+  it.each([404, 410, 500, 502, 503])('does not extract a rendered HTTP %s error page', async (status) => {
+    const content = vi.fn(async () => `<html><body><article>${'Long error content. '.repeat(100)}</article></body></html>`);
+    const result = await headlessFetch('https://example.com/missing', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            goto: async () => ({ status: () => status }),
+            waitForLoadState: async () => undefined,
+            content,
+            close: async () => undefined
+          }),
+          close: async () => undefined
+        }),
+        close: async () => undefined
+      }))
+    });
+
+    expect(result).toMatchObject({
+      status: 'error',
+      error: { code: 'HTTP_STATUS', failure: { httpStatus: status } }
+    });
+    expect(result.error?.message).toContain(`HTTP ${status}`);
+    expect(content).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 429])('waits for HTTP %s walls and accepts useful rendered text after a successful main-frame navigation', async (status) => {
+    const waitForLoadState = vi.fn(async (_state?: string) => undefined);
+    const content = vi.fn(async () => `<html><body><article><p>${'The published guide has enough useful rendered text. '.repeat(8)}</p></article></body></html>`);
+    const mainFrame = {};
+    const listeners: Array<(response: unknown) => void> = [];
+    const emitMainFrameResponse = (responseStatus: number) => {
+      for (const listener of listeners) {
+        listener({
+          status: () => responseStatus,
+          frame: () => mainFrame,
+          request: () => ({ isNavigationRequest: () => true })
+        });
+      }
+    };
+    waitForLoadState.mockImplementation(async (state) => {
+      if (state === 'load') emitMainFrameResponse(200);
+    });
+    const result = await headlessFetch('https://example.com/wall', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({ newContext: async () => ({ newPage: async () => ({
+        on: (_event: string, listener: (response: unknown) => void) => listeners.push(listener),
+        mainFrame: () => mainFrame,
+        goto: async () => ({ status: () => status }), waitForLoadState, content, close: async () => undefined
+      }), close: async () => undefined }), close: async () => undefined }))
+    });
+    expect(result).toMatchObject({ status: 'ok' });
+    expect(waitForLoadState).toHaveBeenCalledWith('load', { timeout: 10000 });
+    expect(waitForLoadState).toHaveBeenCalledWith('networkidle', { timeout: 5000 });
+    expect(content).toHaveBeenCalledOnce();
+  });
+
+  it('returns HTTP_STATUS for a rich 403 body when no later main-frame navigation succeeds', async () => {
+    const page = eventedStatusPage(async (events) => {
+      events.response(403);
+      return { status: () => 403 };
+    });
+    const result = await headlessFetch('https://example.com/forbidden', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: statusLaunchBrowser(page)
+    });
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: 403 } } });
+    expect(result.error?.message).toContain('HTTP 403');
+    expect(page.content).not.toHaveBeenCalled();
+  });
+
+  it('accepts a successful latest main-frame navigation that arrives before goto resolves', async () => {
+    const page = eventedStatusPage(async (events) => {
+      events.response(403);
+      events.response(200);
+      return { status: () => 403 };
+    });
+    const result = await headlessFetch('https://example.com/challenge', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: statusLaunchBrowser(page)
+    });
+
+    expect(result).toMatchObject({ status: 'ok' });
+  });
+
+  it('keeps a weak latest-200 page weak after an earlier 403 challenge', async () => {
+    const page = eventedStatusPage(async (events) => {
+      events.response(403);
+      events.response(200);
+      return { status: () => 403 };
+    });
+    page.content.mockResolvedValue('<html><body><p>Show more Show more Show more Show more</p></body></html>');
+    const result = await headlessFetch('https://example.com/challenge', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: statusLaunchBrowser(page)
+    });
+
+    expect(result).toMatchObject({ status: 'blocked', error: { code: 'HEADLESS_EXTRACTION_WEAK' } });
+  });
+
+  it('ignores HTTP 404 responses from a subframe and a non-navigation subresource', async () => {
+    const page = eventedStatusPage(async (events) => {
+      events.response(200);
+      events.response(404, {});
+      events.response(404, undefined, false);
+      return { status: () => 200 };
+    });
+    const result = await headlessFetch('https://example.com/article', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: statusLaunchBrowser(page)
+    });
+
+    expect(result).toMatchObject({ status: 'ok' });
+  });
+
+  it('returns HTTP_STATUS when a newer main-frame 404 arrives during load', async () => {
+    const page = eventedStatusPage(async (events) => {
+      events.response(200);
+      return { status: () => 200 };
+    });
+    page.waitForLoadState.mockImplementation(async (state) => {
+      if (state === 'load') {
+        page.emitResponse(404);
+      }
+    });
+    const result = await headlessFetch('https://example.com/article', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: statusLaunchBrowser(page)
+    });
+
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: 404 } } });
+    expect(page.content).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 402, 405, 451])('waits for a non-wall HTTP %s response but never accepts its rich error body', async (status) => {
+    const waitForLoadState = vi.fn(async () => undefined);
+    const content = vi.fn(async () => `<html><body><article><p>${'Detailed error explanation that must not become research evidence. '.repeat(8)}</p></article></body></html>`);
+    const result = await headlessFetch('https://example.com/error', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({ newContext: async () => ({ newPage: async () => ({ goto: async () => ({ status: () => status }), waitForLoadState, content, close: async () => undefined }), close: async () => undefined }), close: async () => undefined }))
+    });
+    expect(waitForLoadState).toHaveBeenCalledWith('load', { timeout: 10000 });
+    expect(waitForLoadState).toHaveBeenCalledWith('networkidle', { timeout: 5000 });
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: status } } });
+    expect(result.content).toBeUndefined();
+  });
+
+  it.each([401, 403, 429])('returns HTTP_STATUS for an HTTP %s bot wall without returning content', async (status) => {
+    const result = await headlessFetch('https://example.com/wall', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({ newContext: async () => ({ newPage: async () => ({ goto: async () => ({ status: () => status }), waitForLoadState: async () => undefined, content: async () => `<html><body><main>${'Checking your browser before accessing this site. '.repeat(8)}</main></body></html>`, close: async () => undefined }), close: async () => undefined }), close: async () => undefined }))
+    });
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: status } } });
+    expect(result.content).toBeUndefined();
+  });
+
+  it('preserves an HTTP 403 wall when later loading throws', async () => {
+    const result = await headlessFetch('https://example.com/wall', {
+      resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
+      launchBrowser: vi.fn(async () => ({ newContext: async () => ({ newPage: async () => ({ goto: async () => ({ status: () => 403 }), waitForLoadState: async () => { throw new Error('load failed'); }, content: async () => '', close: async () => undefined }), close: async () => undefined }), close: async () => undefined }))
+    });
+    expect(result).toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: 403 } } });
+  });
+
   it('keeps no-query rendered chrome that cleans below the minimum as weak', async () => {
     const result = await headlessFetch('https://example.com/chrome', {
       resolveBrowser: vi.fn().mockResolvedValue({ ok: false, error: { code: 'BROWSER_NOT_FOUND', message: 'missing' } }),
@@ -48,6 +278,8 @@ describe('headless fetch', () => {
     expect(result).toMatchObject({ status: 'ok', content: { sectionAnchor: 'cancellation' }, metadata: { truncated: true } });
     expect(result.content?.text).toContain('48 hours before departure');
     expect(result.content?.text.length).toBeLessThanOrEqual(4000);
+    expect(result.metadata.retrievalCut).toBe(false);
+    expect(result.metadata.selectionOmitted).toBe(true);
   });
 
   it('preserves a raw bot-wall signal omitted by query selection', async () => {

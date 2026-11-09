@@ -16,7 +16,7 @@ env:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -48,7 +48,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     permissions:
       id-token: write

@@ -1,5 +1,16 @@
 import type { SearchResult } from '../types.js';
+import { excludedSiteHosts } from './query-planner.js';
 import { classifySourceProfile, hostOf } from './source-profile.js';
+
+function hostMatchesExcludedSite(url: string, excludedHosts: string[]) {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/\.+$/, '');
+  } catch {
+    return false;
+  }
+  return excludedHosts.some((excluded) => host === excluded || host.endsWith(`.${excluded}`));
+}
 
 function wantsDiscussionSources(query = '') {
   return /reddit|forum|forums|discussion|thread|comments|community|user experience|people recommend/i.test(query);
@@ -39,8 +50,10 @@ export function selectCandidates({
   seenUrls: Set<string>;
   maxCandidates: number;
 }) {
+  const excludedHosts = query ? excludedSiteHosts(query) : [];
   const deduped = new Map<string, SearchResult>();
   for (const result of results) {
+    if (hostMatchesExcludedSite(result.url, excludedHosts)) continue;
     if (seenUrls.has(result.url)) continue;
     if (!deduped.has(result.url)) deduped.set(result.url, result);
   }

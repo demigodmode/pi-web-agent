@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createResearchWorkflow } from '../../src/orchestration/index.js';
 import { createRepoCache, type RepoCache } from '../../src/repo/repo-cache.js';
 import { researchRepo } from '../../src/repo/repo-research.js';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
+import { serializeExploreResult } from '../../src/tools/serialize-explore-result.js';
 import { createFixtureRepo, type FixtureRepo } from './git-fixtures.js';
 
 const fixtures: FixtureRepo[] = [];
@@ -61,16 +63,31 @@ function world() {
   return { repo, cache, research, search, fetchPage, workflow };
 }
 
+async function captureWorkflowResult(workflow: ReturnType<typeof createResearchWorkflow>, query: string) {
+  const workflowResult = await workflow.run({ query });
+  const explore = { run: vi.fn(async () => workflowResult) };
+  const result = await createWebExploreTool({ explore })({ query, results: { lengthLimit: 'standard' } });
+  return { workflowResult, result, explore };
+}
+
 describe('repo research end to end', () => {
   it('answers a typed repo URL from the clone, pinned to the commit, without searching', async () => {
     const { repo, research, search, fetchPage, workflow } = world();
-    const result = await workflow.run({ query: 'what is in https://github.com/acme/widget ?' });
+    const query = 'what is in https://github.com/acme/widget ?';
+    const { workflowResult, result, explore } = await captureWorkflowResult(workflow, query);
     expect(research).toHaveBeenCalledTimes(1);
     expect(search).not.toHaveBeenCalled();
     expect(fetchPage).not.toHaveBeenCalled();
-    expect(result.evidence[0]).toMatchObject({ url: `https://github.com/acme/widget/tree/${repo.sha}`, method: 'github' });
-    expect(result.evidence[0].summary).toContain('Widget makes widgets for tests.');
-    expect(result.evidence[0].summary).toContain('[dir] src');
+    expect(explore.run).toHaveBeenCalledWith(expect.objectContaining({ query }));
+    expect(workflowResult.evidence[0]).toMatchObject({ url: `https://github.com/acme/widget/tree/${repo.sha}`, method: 'github' });
+    expect(workflowResult.evidence[0]?.summary).toBeTruthy();
+    expect(Array.from(workflowResult.evidence[0]?.summary ?? '').length).toBeLessThanOrEqual(180);
+    expect(workflowResult.evidence[0]?.readerDocument).toContain('Widget makes widgets for tests.');
+    expect(workflowResult.evidence[0]?.readerDocument).toContain('[dir] src');
+    const modelOutput = serializeExploreResult(result);
+    expect(modelOutput).toContain('Widget makes widgets for tests.');
+    expect(modelOutput).toContain('[dir] src');
+    expect(modelOutput).not.toContain('node_modules');
   });
 
   it('leaves a repo URL that only turns up in search to the README reader', async () => {
@@ -121,12 +138,19 @@ describe('repo code search end to end', () => {
       researchRepo: (input) => researchRepo(input.url, input, { fetchImpl, cache, git: repo.gitEnv(), resolveToken: async () => ({ source: 'none' }) })
     });
 
-    const result = await workflow.run({ query: 'where does this project refresh OAuth tokens? https://github.com/acme/widget' });
+    const query = 'where does this project refresh OAuth tokens? https://github.com/acme/widget';
+    const { workflowResult, result, explore } = await captureWorkflowResult(workflow, query);
 
     expect(search).not.toHaveBeenCalled();
-    const summary = result.evidence[0].summary;
-    expect(summary).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L6`);
-    expect(summary).toContain("return oauthClient.post('/token'");
-    expect(summary).not.toContain('node_modules');
+    expect(explore.run).toHaveBeenCalledWith(expect.objectContaining({ query }));
+    expect(workflowResult.evidence[0]?.summary).toBeTruthy();
+    expect(Array.from(workflowResult.evidence[0]?.summary ?? '').length).toBeLessThanOrEqual(180);
+    expect(workflowResult.evidence[0]?.readerDocument).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L6`);
+    expect(workflowResult.evidence[0]?.readerDocument).toContain("return oauthClient.post('/token'");
+    expect(workflowResult.evidence[0]?.readerDocument).not.toContain('node_modules');
+    const modelOutput = serializeExploreResult(result);
+    expect(modelOutput).toContain(`https://github.com/acme/widget/blob/${repo.sha}/src/auth/token-refresh.ts#L1-L6`);
+    expect(modelOutput).toContain("return oauthClient.post('/token'");
+    expect(modelOutput).not.toContain('node_modules');
   });
 });

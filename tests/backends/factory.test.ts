@@ -460,6 +460,25 @@ describe('backend factory', () => {
     expect(httpFetch).toHaveBeenCalledWith({ url: 'https://example.com', query: 'relevant section' });
   });
 
+  it('returns a Firecrawl target HTTP error instead of invoking its configured HTTP fallback', async () => {
+    const firecrawl = vi.fn(async (url: string) => ({
+      status: 'error' as const, url, metadata: { method: 'firecrawl' as const, cacheHit: false },
+      error: { code: 'HTTP_STATUS', message: 'HTTP 404 (not found)', failure: { kind: 'bad_response' as const, httpStatus: 404 } }
+    }));
+    const httpFallback = vi.fn();
+    let created = 0;
+    const createHttpFetch = (options?: { fetchPage?: (input: { url: string; query?: string }) => Promise<any> }) => {
+      const isFallback = created++ === 0;
+      return async (input: { url: string; query?: string }) => isFallback ? httpFallback(input) : options!.fetchPage!(input);
+    };
+    const backends = createBackendSet(
+      { search: { provider: 'duckduckgo' }, fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002', fallback: 'http' }, headless: { provider: 'local-browser' } },
+      { ...offlineNetworkDeps(), createFirecrawlFetch: () => firecrawl, createHttpFetch: createHttpFetch as never }
+    );
+    await expect(backends.fetchPage({ url: 'https://example.com/missing' })).resolves.toMatchObject({ status: 'error', error: { code: 'HTTP_STATUS', failure: { httpStatus: 404 } } });
+    expect(httpFallback).not.toHaveBeenCalled();
+  });
+
   it('forwards the research query to the headless backend', async () => {
     const headlessTool = vi.fn(async ({ url, query }: { url: string; query?: string }) => ({
       status: 'ok' as const,

@@ -14,6 +14,17 @@ describe('section selection', () => {
     expect(result.text.length).toBeLessThanOrEqual(4000);
   });
 
+  it('drops the anchor when the selected text spans sections with different anchors', () => {
+    const result = selectRelevantContent({
+      source: `<article><h2 id="enable-coverage">Enable coverage</h2><p>Run vitest with --coverage to enable coverage.</p>
+        <h2 id="custom-coverage-reporter">Custom coverage reporter</h2><p>A custom coverage reporter receives coverage results.</p></article>`,
+      format: 'html', query: 'vitest coverage', maxLength: 4000
+    });
+    expect(result.text).toContain('--coverage');
+    expect(result.text).toContain('custom coverage reporter');
+    expect(result.anchor).toBeUndefined();
+  });
+
   it('finds a late body match under an unrelated heading', () => {
     const result = selectRelevantContent({
       source: `<article><h2>Overview</h2><p>${'General information. '.repeat(300)}</p>

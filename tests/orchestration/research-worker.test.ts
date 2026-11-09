@@ -4,8 +4,110 @@ import { createPresentationStats } from '../../src/orchestration/presentation-st
 import { createResearchRunBudget } from '../../src/orchestration/run-budget.js';
 import type { WebFetchResponse } from '../../src/types.js';
 import { createFirecrawlFetcher } from '../../src/fetch/firecrawl-fetch.js';
+import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 
 describe('research worker', () => {
+  it('does not fetch or cite excluded search results when a backend ignores -site', async () => {
+    const fetchPage = vi.fn(async ({ url }: { url: string }) => ({
+      status: 'ok' as const,
+      url,
+      content: { title: url, text: 'Detailed evidence that would otherwise be cited.' },
+      metadata: { method: 'http' as const, cacheHit: false }
+    }));
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({
+        status: 'ok' as const,
+        results: [
+          { title: 'Excluded parent', url: 'https://example.com/guide', snippet: 'rich result' },
+          { title: 'Excluded subdomain', url: 'https://docs.example.com/guide', snippet: 'rich result' },
+          { title: 'Allowed', url: 'https://allowed.test/guide', snippet: 'rich result' }
+        ],
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      })),
+      fetchPage
+    });
+
+    const result = await worker.run({ query: 'guide -site:example.com', maxSearchRounds: 1, maxFetches: 3 });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://allowed.test/guide' }));
+    expect(result.evidence.map((item) => item.url)).toEqual(['https://allowed.test/guide']);
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
+  });
+
+  it('does not fetch or suggest headless when every search result is excluded', async () => {
+    const fetchPage = vi.fn();
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({
+        status: 'ok' as const,
+        results: [{ title: 'Excluded', url: 'https://sub.example.com/guide', snippet: 'rich result' }],
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      })),
+      fetchPage
+    });
+
+    const result = await worker.run({ query: 'guide -site:example.com', maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(result.evidence).toEqual([]);
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
+  });
+
+  it('never emits evidence or a headless suggestion for a long HTTP 404 search result', async () => {
+    const fetchPage = createHttpFetcher({
+      fetchImpl: vi.fn(async () => new Response(`<html><body><article>${'Long error page that must never become evidence. '.repeat(100)}</article></body></html>`, {
+        status: 404,
+        headers: { 'content-type': 'text/html' }
+      }))
+    });
+    const worker = createResearchWorker({
+      search: vi.fn(async () => ({
+        status: 'ok' as const,
+        results: [{ title: 'Missing page', url: 'https://example.com/missing', snippet: 'Result snippet' }],
+        metadata: { backend: 'duckduckgo' as const, cacheHit: false }
+      })),
+      fetchPage: ({ url, query, signal }) => fetchPage(url, query, signal)
+    });
+
+    const result = await worker.run({ query: 'missing page', maxSearchRounds: 1, maxFetches: 1 });
+
+    expect(result.evidence).toEqual([]);
+    expect(result.suggestedHeadlessUrl).toBeUndefined();
+    expect(result.gaps).toContainEqual({ kind: 'fetch-failed', message: 'HTTP 404 (not found)' });
+  });
+
+  it('keeps a discovered reader document and ordered supports while its summary stays short', async () => {
+    const readerText = [
+      'Navigation cookie preferences.',
+      '```ts\nconst apiVersion = "1.4";\n```',
+      'AcmeWidget version 1.4 supports the requested migration.'
+    ].join('\n\n');
+    const worker = createResearchWorker({
+      search: vi.fn().mockResolvedValue({
+        status: 'ok',
+        results: [{ title: 'Widget issue', url: 'https://github.com/acme/widget/issues/1', snippet: 'Widget' }],
+        metadata: { backend: 'duckduckgo', cacheHit: false }
+      }),
+      fetchPage: vi.fn().mockResolvedValue({
+        status: 'ok', url: 'https://github.com/acme/widget/issues/1',
+        content: { text: readerText },
+        metadata: { method: 'github', cacheHit: false, retrievalCut: false, selectionOmitted: false }
+      })
+    });
+
+    const result = await worker.run({ query: 'AcmeWidget API version 1.4', maxSearchRounds: 1, maxFetches: 1 });
+    const evidence = result.evidence[0]!;
+    expect(evidence.sourceKind).toBe('issue-thread');
+    expect(evidence.readerDocument).toBe(readerText);
+    expect(evidence.supports).toEqual([
+      'Navigation cookie preferences.',
+      '```ts\nconst apiVersion = "1.4";\n```',
+      'AcmeWidget version 1.4 supports the requested migration.'
+    ]);
+    expect(Array.from(evidence.summary).length).toBeLessThanOrEqual(180);
+    expect(evidence.summary).not.toBe(readerText);
+  });
+
   it('retains several source passages and extraction metadata from an ordinary page', async () => {
     const worker = createResearchWorker({
       search: vi.fn().mockResolvedValue({
@@ -16,7 +118,10 @@ describe('research worker', () => {
       fetchPage: vi.fn().mockResolvedValue({
         status: 'ok', url: 'https://example.com/coverage',
         content: { title: 'Coverage guide', text: 'First coverage paragraph.\n\nSecond coverage paragraph.\n\nThird coverage paragraph.', sectionAnchor: 'coverage' },
-        metadata: { method: 'http', cacheHit: false, contentType: 'text/html', truncated: true }
+        metadata: {
+          method: 'http', cacheHit: false, contentType: 'text/html', truncated: true,
+          retrievalCut: false, selectionOmitted: true
+        }
       })
     });
 
@@ -24,6 +129,8 @@ describe('research worker', () => {
     expect(result.evidence[0]?.supports).toEqual(['First coverage paragraph.', 'Second coverage paragraph.', 'Third coverage paragraph.']);
     expect(result.evidence[0]?.sectionAnchor).toBe('coverage');
     expect(result.evidence[0]?.truncated).toBe(true);
+    expect(result.evidence[0]?.retrievalCut).toBe(false);
+    expect(result.evidence[0]?.selectionOmitted).toBe(true);
     expect(result.evidence[0]?.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -672,7 +779,10 @@ describe('research worker', () => {
           title: 'Technical Discussion Video',
           text: fullYoutubeText
         },
-        metadata: { method: 'youtube', cacheHit: false, contentType: 'text/plain', truncated: false }
+        metadata: {
+          method: 'youtube', cacheHit: false, contentType: 'text/plain', truncated: false,
+          retrievalCut: true, selectionOmitted: false
+        }
       })
     });
 
@@ -686,8 +796,11 @@ describe('research worker', () => {
     const evidence = result.evidence[0];
     expect(evidence?.sourceKind).toBe('unknown');
     expect(evidence?.method).toBe('youtube');
-    expect(evidence?.summary).toBe(fullYoutubeText);
+    expect(Array.from(evidence?.summary ?? '').length).toBeLessThanOrEqual(180);
+    expect(evidence?.readerDocument).toBe(fullYoutubeText);
     expect(evidence?.supports[0]).toBe(fullYoutubeText);
+    expect(evidence?.retrievalCut).toBe(true);
+    expect(evidence?.selectionOmitted).toBe(false);
   });
 
   it('does not accept an empty reader response as evidence', async () => {

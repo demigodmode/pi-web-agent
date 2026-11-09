@@ -5,6 +5,7 @@ import { hasBotCheckContent } from '../extract/bot-check.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import { BLOCKED_HEADER, type GuardProxy } from './guard-proxy.js';
 import { BLOCKED_PRIVATE_ADDRESS, BlockedAddressError, UPSTREAM_PROXY_REFUSED, type NetworkGuard } from './network-guard.js';
+import { targetStatusFailure, targetStatusMessage } from './target-status.js';
 import type { WebFetchHeadlessResponse } from '../types.js';
 
 export type BrowserProxyOptions = {
@@ -165,6 +166,13 @@ export async function headlessFetch(
   let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined;
   let context: Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>['newContext']>> | undefined;
   let page: any;
+  let targetStatus: number | undefined;
+  const targetFailure = () => targetStatus === undefined || targetStatus < 400 || targetStatus > 599 ? undefined : ({
+    status: 'error' as const,
+    url,
+    metadata: { method: 'headless' as const, cacheHit: false, browser: browserName },
+    error: { code: 'HTTP_STATUS', message: targetStatusMessage(targetStatus), failure: targetStatusFailure(targetStatus) }
+  });
 
   // Closing the browser is what stops goto and the load waits on a cancel.
   const onAbort = () => {
@@ -244,8 +252,24 @@ export async function headlessFetch(
       page = await context.newPage();
     }
 
+    // `goto()` can resolve with an earlier challenge response after client-side
+    // navigation has already reached the real page. Observe the primary page's
+    // main frame instead, and only use `goto()` when no event was seen.
+    page.on?.('response', (response: any) => {
+      try {
+        const request = response.request?.();
+        if (request?.isNavigationRequest?.() && response.frame?.() === page.mainFrame?.()) {
+          const status = response.status?.();
+          if (typeof status === 'number') targetStatus = status;
+        }
+      } catch {
+        // A detached frame is observational only; it must not fail the fetch.
+      }
+    });
+
     const startedAt = now();
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    throwIfAborted(signal);
     if (enforcement && response?.headers?.()[BLOCKED_HEADER]) {
       // Normally already recorded by the 'response' event; this covers it if not.
       try {
@@ -260,10 +284,20 @@ export async function headlessFetch(
       const cause = navigationRefusal();
       if (cause) return errorResult(url, cause.error.code, cause.error.message);
     }
+    const responseStatus = response?.status?.();
+    if (targetStatus === undefined && typeof responseStatus === 'number') targetStatus = responseStatus;
+    if (responseStatus === 404 || responseStatus === 410 || (typeof responseStatus === 'number' && responseStatus >= 500 && responseStatus <= 599)) {
+      const target = targetFailure();
+      if (target) return target;
+    }
     await page.waitForLoadState('load', { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
     throwIfAborted(signal);
+    const statusAfterLoad = targetFailure();
+    if (statusAfterLoad) return statusAfterLoad;
     const html = await page.content();
+    const statusAfterContent = targetFailure();
+    if (statusAfterContent) return statusAfterContent;
     const finishedAt = now();
 
     const blockedSubresources = subresourceRefusals();
@@ -278,6 +312,8 @@ export async function headlessFetch(
     };
 
     if (!cleanedBaselineText || cleanedBaselineText.length < 40) {
+      const target = targetFailure();
+      if (target) return target;
       return {
         status: 'blocked',
         url,
@@ -304,6 +340,8 @@ export async function headlessFetch(
         cacheHit: false,
         browser: browserName,
         navigationMs: finishedAt - startedAt,
+        retrievalCut: false,
+        selectionOmitted: queryExtraction?.omitted ?? false,
         truncated: queryExtraction?.omitted ?? cleanedContent.text.length >= 4000,
         ...(blockedSubresources > 0 ? { blockedSubresources } : {})
       }
@@ -312,6 +350,8 @@ export async function headlessFetch(
     if (signal?.aborted) throw abortError();
     const cause = navigationRefusal();
     if (cause) return errorResult(url, cause.error.code, cause.error.message);
+    const target = targetFailure();
+    if (target) return target;
     const blockedSubresources = subresourceRefusals();
     return {
       status: 'error',

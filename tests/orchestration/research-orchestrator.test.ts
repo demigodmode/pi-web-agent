@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as researchTypes from '../../src/orchestration/research-types.js';
 import type { ResearchProgress } from '../../src/orchestration/progress.js';
 import { createResearchOrchestrator } from '../../src/orchestration/research-orchestrator.js';
+import { createWebExploreTool } from '../../src/tools/web-explore.js';
 import type { WebFetchHeadlessResponse } from '../../src/types.js';
 import type { PresentationStatsCollector } from '../../src/orchestration/presentation-stats.js';
 import type {
@@ -12,6 +13,116 @@ import type {
 } from '../../src/orchestration/research-types.js';
 
 describe('research orchestrator types', () => {
+  it.each([404, 410, 500, 502, 503])('does not retry a direct HTTP %s source in the browser', async (httpStatus) => {
+    const headlessFetch = vi.fn();
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'error' as const, url, metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'HTTP_STATUS', message: `HTTP ${httpStatus} (not found)`, failure: { kind: 'bad_response' as const, httpStatus } }
+      })),
+      headlessFetch
+    }).run({ query: 'Read https://example.com/missing' });
+
+    expect(headlessFetch).not.toHaveBeenCalled();
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ message: `HTTP ${httpStatus} (not found)` }));
+  });
+
+  it.each(['blocked', 'error'] as const)('preserves the initial HTTP wall reason when headless %s', async (headlessStatus) => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } }
+      })),
+      headlessFetch: vi.fn(async ({ url }) => ({
+        status: headlessStatus, url, metadata: { method: 'headless' as const, cacheHit: false },
+        error: { code: 'HEADLESS_EXTRACTION_WEAK', message: 'Rendered page did not produce enough readable content.' }
+      }))
+    }).run({ query: 'Read https://example.com/wall' });
+
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({
+      code: 'HTTP_STATUS', message: expect.stringContaining('HTTP 403 (forbidden)'), failure: expect.objectContaining({ httpStatus: 403 })
+    }));
+  });
+
+  it('preserves the initial HTTP wall reason when headless throws', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false },
+        error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } }
+      })),
+      headlessFetch: vi.fn(async () => { throw new Error('browser crashed'); })
+    }).run({ query: 'Read https://example.com/wall' });
+
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({
+      code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: expect.objectContaining({ httpStatus: 403 })
+    }));
+  });
+
+  it('preserves the HTTP status when headless returns no evidence or error', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'blocked' as const, url, metadata: { method: 'headless' as const, cacheHit: false } }))
+    }).run({ query: 'Read https://example.com/wall' });
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: expect.objectContaining({ httpStatus: 403 }) }));
+  });
+
+  it('keeps a guard refusal primary while retaining the initial HTTP status', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } } })),
+      headlessFetch: vi.fn(async ({ url }) => ({ status: 'error' as const, url, metadata: { method: 'headless' as const, cacheHit: false }, error: { code: 'BLOCKED_PRIVATE_ADDRESS', message: 'Blocked private address.', failure: { kind: 'guard_refused' as const } } }))
+    }).run({ query: 'Read https://example.com/wall' });
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ code: 'BLOCKED_PRIVATE_ADDRESS', message: expect.stringContaining('HTTP 403 (forbidden)'), failure: { kind: 'guard_refused' } }));
+  });
+
+  it('keeps deadline classification while retaining the initial HTTP status', async () => {
+    vi.useFakeTimers();
+    let resolveHeadless!: (value: WebFetchHeadlessResponse) => void;
+    const orchestrator = createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({ status: 'needs_headless' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'HTTP_STATUS', message: 'HTTP 403 (forbidden)', failure: { kind: 'blocked' as const, httpStatus: 403 } } })),
+      headlessFetch: vi.fn(() => new Promise<WebFetchHeadlessResponse>((resolve) => { resolveHeadless = resolve; }))
+    });
+    try {
+      const run = orchestrator.run({ query: 'Read https://example.com/wall' });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await run;
+      expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ reason: 'deadline-in-flight', code: 'DIRECT_SOURCE_DEADLINE', message: expect.stringContaining('HTTP 403 (forbidden)'), failure: expect.objectContaining({ httpStatus: 403 }) }));
+      resolveHeadless({ status: 'blocked', url: 'https://example.com/wall', metadata: { method: 'headless', cacheHit: false } });
+      await orchestrator.drain();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('preserves requested URL and full reader evidence for a direct source', async () => {
+    const url = 'https://github.com/acme/widget/issues/1';
+    const readerText = 'First reader paragraph.\n\n```ts\nconst version = "1.4";\n```\n\nFinal reader paragraph.';
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async () => ({
+        status: 'ok' as const, url,
+        content: { text: readerText, sectionAnchor: 'comment-1' },
+        metadata: { method: 'github' as const, cacheHit: false, retrievalCut: true, selectionOmitted: false, partialComments: true }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: `Read ${url} API version` });
+
+    expect(result.requiredSourceEvidence).toContainEqual(expect.objectContaining({
+      requestedUrl: url,
+      sourceKind: 'issue-thread',
+      readerDocument: readerText,
+      supports: ['First reader paragraph.', '```ts\nconst version = "1.4";\n```', 'Final reader paragraph.'],
+      sectionAnchor: 'comment-1',
+      retrievalCut: true,
+      selectionOmitted: false,
+      partialComments: true
+    }));
+    expect(Array.from(result.requiredSourceEvidence[0]!.summary).length).toBeLessThanOrEqual(180);
+  });
+
   it('reports the first successful direct read in its settled progress snapshot', async () => {
     const events: ResearchProgress[] = [];
     const result = await createResearchOrchestrator({
@@ -220,7 +331,7 @@ describe('research orchestrator types', () => {
       fetchDirect: vi.fn(async ({ url }) => ({
         status: 'ok' as const, url,
         content: { title: 'Guide', text: 'A usable guide with the requested details.' },
-        metadata: { method: 'http' as const, cacheHit: false }
+        metadata: { method: 'http' as const, cacheHit: false, retrievalCut: false, selectionOmitted: true }
       })),
       headlessFetch: vi.fn()
     });
@@ -229,6 +340,7 @@ describe('research orchestrator types', () => {
 
     expect(worker.run).not.toHaveBeenCalled();
     expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({ retrievalCut: false, selectionOmitted: true });
     expect(result.metadata?.searchPasses).toBe(0);
   });
 
@@ -1261,6 +1373,151 @@ describe('orchestrator run budget', () => {
 });
 
 describe('research orchestrator search passes', () => {
+  it('returns final version gaps and proposals when the search budget stops a pass', async () => {
+    const run = vi.fn(async ({ query, budget }: {
+      query: string;
+      budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget;
+    }) => {
+      budget!.claimSearch();
+      return { searchQueries: [query], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true };
+    });
+    const result = await createResearchOrchestrator({ worker: { run }, headlessFetch: vi.fn() })
+      .run({ query: 'Widget versions' });
+    expect(result.metadata.executedQueries).toEqual(['Widget versions']);
+    expect(result.metadata.openGaps).toContain('Need supported version details.');
+    expect(result.metadata.suggestedQueries.length).toBeGreaterThan(0);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count queued work as searched', async () => {
+    const run = vi.fn(async ({ query }: { query: string }) =>
+      ({ searchQueries: [query], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true }));
+    const result = await createResearchOrchestrator({ worker: { run }, headlessFetch: vi.fn() })
+      .run({ query: 'Widget versions' });
+    expect(result.metadata.executedQueries).toEqual([]);
+  });
+
+  it('keeps failed required comparison URLs out of final gaps and proposals', async () => {
+    const run = vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return { searchQueries: [query], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true };
+    });
+    const result = await createResearchOrchestrator({
+      worker: { run },
+      fetchDirect: vi.fn(async ({ url }: { url: string }) => url === 'https://a.test/docs'
+        ? { status: 'ok' as const, url, content: { title: 'A', text: 'A' }, metadata: { method: 'http' as const, cacheHit: false } }
+        : { status: 'error' as const, url, metadata: { method: 'http' as const, cacheHit: false }, error: { code: 'READ_FAILED', message: 'No B' } }),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Compare https://a.test/docs https://b.test/docs' });
+    expect(result.requiredSourceFailures).toContainEqual(expect.objectContaining({ url: 'https://b.test/docs' }));
+    expect(result.metadata.openGaps).not.toContain('Need comparison evidence for target: https://b.test/docs');
+    expect(result.metadata.suggestedQueries.flatMap((suggestion) => suggestion.split(/\s+/))).not.toContain('https://b.test/docs');
+  });
+
+  it('keeps a missing named comparison target in final gaps', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [{ title: 'React', url: 'https://react.dev/', sourceKind: 'official-docs' as const,
+          method: 'http' as const, summary: 'React documentation', supports: ['React documentation'] }],
+        gaps: [], lowValueOutcomes: [], exhaustedBudget: true
+      };
+    }) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Compare React and Vue' });
+    expect(result.metadata.openGaps).toContain('Need comparison evidence for target: Vue');
+  });
+
+  it('has no final gaps or proposals for a confident answer', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [
+          { title: 'Widget docs', url: 'https://a.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'API supported since 1.2.3', supports: ['API supported since 1.2.3'] },
+          { title: 'Widget reference', url: 'https://b.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'API version 1.2.3', supports: ['API version 1.2.3'] }
+        ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      };
+    }) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Widget API versions' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.metadata.openGaps).toEqual([]);
+    expect(result.metadata.suggestedQueries).toEqual([]);
+  });
+
+  it('does not publish heuristic version or API gaps for a confident answer without an x.y token', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [
+          { title: 'Widget guide', url: 'https://guide.widget.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API documents supported releases.', supports: ['Supported release guidance.'] },
+          { title: 'Widget reference', url: 'https://reference.widget.test/api', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API reference describes compatibility.', supports: ['Compatibility details.'] }
+        ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false
+      };
+    }) };
+    const result = await createResearchOrchestrator({ worker, headlessFetch: vi.fn() }).run({ query: 'Widget API versions' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.metadata.openGaps).toEqual([]);
+    expect(result.metadata.suggestedQueries).toEqual([]);
+  });
+
+  it('keeps partial search coverage in the caveat rather than final gaps or proposals for an answer', async () => {
+    const worker = { run: vi.fn(async ({ query, budget }: { query: string; budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+      budget!.claimSearch();
+      return {
+        searchQueries: [query], evidence: [
+          { title: 'Widget guide', url: 'https://guide.widget.test/docs', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API documents supported releases.', supports: ['Supported release guidance.'] },
+          { title: 'Widget reference', url: 'https://reference.widget.test/api', sourceKind: 'official-docs' as const, method: 'http' as const, summary: 'The Widget API reference describes compatibility.', supports: ['Compatibility details.'] }
+        ], gaps: [], lowValueOutcomes: [], exhaustedBudget: false, searchCoveragePartial: true
+      };
+    }) };
+    const orchestrator = createResearchOrchestrator({ worker, headlessFetch: vi.fn() });
+    const result = await orchestrator.run({ query: 'Widget API versions' });
+    expect(result.decision.action).toBe('answer');
+    expect(result.metadata.caveatReasons).toContain('partial-search-coverage');
+    expect(result.metadata.openGaps).toEqual([]);
+    expect(result.metadata.suggestedQueries).toEqual([]);
+
+    const publicResult = await createWebExploreTool({ explore: orchestrator })({ query: 'Widget API versions' });
+    expect(publicResult.caveat).toContain('some search backends were unavailable');
+    expect(publicResult.metadata?.openGaps).toEqual([]);
+    expect(publicResult.metadata?.suggestedQueries).toEqual([]);
+  });
+
+  it('does not propose searches after terminal or unavailable workers', async () => {
+    const terminal = await createResearchOrchestrator({
+      worker: { run: vi.fn(async ({ budget }: { budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+        budget!.claimSearch();
+        return { searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false,
+          terminalFailure: { code: 'TERMINAL', message: 'Stopped' } };
+      }) }, headlessFetch: vi.fn()
+    }).run({ query: 'Widget versions' });
+    const unavailable = await createResearchOrchestrator({
+      worker: { run: vi.fn(async ({ budget }: { budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+        budget!.claimSearch();
+        return { searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false, searchUnavailableOnly: true };
+      }) }, headlessFetch: vi.fn()
+    }).run({ query: 'Widget versions' });
+    expect(terminal.metadata.suggestedQueries).toEqual([]);
+    expect(unavailable.metadata.suggestedQueries).toEqual([]);
+  });
+
+  it('finalizes caller context at the deadline without another worker call', async () => {
+    vi.useFakeTimers();
+    try {
+      const run = vi.fn(async ({ budget }: { budget?: import('../../src/orchestration/run-budget.js').ResearchRunBudget }) => {
+        budget!.claimSearch();
+        return new Promise<never>(() => undefined);
+      });
+      const pending = createResearchOrchestrator({ worker: { run }, headlessFetch: vi.fn() }).run({ query: 'Widget versions' });
+      await vi.advanceTimersByTimeAsync(120_001);
+      const result = await pending;
+      expect(result.metadata.executedQueries).toEqual(['Widget versions']);
+      expect(result.metadata.openGaps).toContain('Need supported version details.');
+      expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not count a planned search the worker refused before starting', async () => {
     const worker = {
       run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: true }))
