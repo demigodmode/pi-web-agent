@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browserDoctorLines, checkBackendHealth } from '../../src/backends/doctor.js';
 import { DEFAULT_BACKEND_CONFIG } from '../../src/backends/config.js';
 
@@ -562,5 +563,202 @@ describe('browser doctor line', () => {
     })).toEqual([
       'browser: warning, Configured browser path was not found: /opt/gone (from PI_WEB_AGENT_BROWSER_PATH)'
     ]);
+  });
+});
+
+describe('degoog doctor checks', () => {
+  const fixture = (name: string) => readFileSync(new URL(`../fixtures/degoog/${name}`, import.meta.url), 'utf8');
+  const enginesFixture = JSON.parse(fixture('engines.json')) as { engines: Array<{ id: string; origin: { kind: string } }>; defaults: Record<string, boolean> };
+  const searchFixture = fixture('search.json');
+  const json = (body: unknown, status = 200) =>
+    new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  const html = (status = 200) => new Response('<!doctype html><html></html>', { status, headers: { 'content-type': 'text/html' } });
+  const degoogConfig = (baseUrl = 'http://localhost:4444') => ({
+    search: { provider: 'degoog' as const, ...(baseUrl ? { baseUrl } : {}) },
+    fetch: { provider: 'http' as const },
+    headless: { provider: 'local-browser' as const }
+  });
+  const routes = (engines: Response | (() => Response), search: Response | (() => Response) = json(JSON.parse(searchFixture))) =>
+    vi.fn(async (input: Parameters<typeof fetch>[0], _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/engines')) return typeof engines === 'function' ? engines() : engines;
+      return typeof search === 'function' ? search() : search;
+    });
+  const defaultEngines = () => json(enginesFixture);
+  const coreOnly = () => json({ engines: enginesFixture.engines.filter((e) => e.origin.kind === 'core'), defaults: { 'degoog-engine': true } });
+  const noneEnabled = () => json({
+    engines: enginesFixture.engines,
+    defaults: Object.fromEntries(Object.keys(enginesFixture.defaults).map((id) => [id, false]))
+  });
+  let savedKey: string | undefined;
+  beforeEach(() => {
+    savedKey = process.env.PI_WEB_AGENT_DEGOOG_API_KEY;
+    delete process.env.PI_WEB_AGENT_DEGOOG_API_KEY;
+  });
+  afterEach(() => {
+    if (savedKey === undefined) delete process.env.PI_WEB_AGENT_DEGOOG_API_KEY;
+    else process.env.PI_WEB_AGENT_DEGOOG_API_KEY = savedKey;
+  });
+
+  it('warns when no baseUrl is configured and makes no request', async () => {
+    const fetchImpl = vi.fn();
+    const result = await checkBackendHealth(degoogConfig(''), { fetchImpl });
+    expect(result).toContain('search backend: degoog warning (missing baseUrl)');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('reports ok when engines are enabled and the probe returns results and engine timings', async () => {
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(defaultEngines()) });
+
+    expect(result).toContain('search backend: degoog ok');
+    expect(result.filter((line) => line.includes('degoog warning'))).toEqual([]);
+  });
+
+  it('probes api/search with q only and no format', async () => {
+    const fetchImpl = routes(defaultEngines());
+    await checkBackendHealth(degoogConfig('http://localhost:4444/'), { fetchImpl });
+
+    const searchCall = fetchImpl.mock.calls.map((call) => String(call[0])).find((url) => url.includes('/api/search'));
+    expect(searchCall).toBe('http://localhost:4444/api/search?q=pi-web-agent-doctor');
+  });
+
+  it('reports a non-2xx engines response with the status and a base URL hint', async () => {
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(html(404)) });
+    expect(result).toContain('search backend: degoog warning (HTTP 404 from /api/engines, check the base URL)');
+  });
+
+  it('reports a non-JSON engines response as an unexpected response, not an HTTP status', async () => {
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(html(200)) });
+    expect(result).toContain('search backend: degoog warning (unexpected response from /api/engines, check the base URL)');
+    expect(result.some((line) => line.includes('HTTP 200'))).toBe(false);
+  });
+
+  it('does not print ok over an engine warning, but the probe still catches a 401', async () => {
+    const result = await checkBackendHealth(degoogConfig(), {
+      fetchImpl: routes(coreOnly(), json({ error: 'You shall not pass!' }, 401))
+    });
+    expect(result).toContain('search backend: degoog warning (HTTP 401, check PI_WEB_AGENT_DEGOOG_API_KEY)');
+    expect(result).not.toContain('search backend: degoog ok');
+  });
+
+  it('names a misconfigured engine (ok status with an error reason and no results) in the failed-probe warning', async () => {
+    const failed = {
+      ...JSON.parse(searchFixture),
+      results: [],
+      engineTimings: [
+        { name: 'Wikipedia', id: 'w', time: 3, resultCount: 0, status: 'ok', errorReason: 'Engine is missing its API token' }
+      ]
+    };
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(defaultEngines(), json(failed)) });
+    expect(result).toContain('search backend: degoog warning (every engine failed: Wikipedia (Engine is missing its API token))');
+  });
+
+  it('does not flag an ok engine with no reason and no results as failed', async () => {
+    const empty = { results: [], engineTimings: [{ name: 'Wikipedia', id: 'w', time: 3, resultCount: 0, status: 'ok' }] };
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(defaultEngines(), json(empty)) });
+    expect(result).toContain('search backend: degoog ok');
+  });
+
+  it('reports a network error on the engines request', async () => {
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      if (String(input).includes('/api/engines')) throw new Error('connect ECONNREFUSED');
+      return json(JSON.parse(searchFixture));
+    });
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl });
+    expect(result).toContain('search backend: degoog warning (connect ECONNREFUSED)');
+  });
+
+  it('warns when only the builtin core engine is installed', async () => {
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(coreOnly()) });
+    expect(result).toContain(
+      "search backend: degoog warning (no search engines installed; install some in degoog's settings, searches will come back empty until then)"
+    );
+  });
+
+  it('warns when web engines exist but none is enabled by default', async () => {
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(noneEnabled()) });
+    expect(result).toContain("search backend: degoog warning (no web search engines are enabled; enable some in degoog's settings)");
+    expect(result).not.toContain(
+      "search backend: degoog warning (no search engines installed; install some in degoog's settings, searches will come back empty until then)"
+    );
+  });
+
+  it('sends the bearer on every request when the key is set', async () => {
+    process.env.PI_WEB_AGENT_DEGOOG_API_KEY = 'd'.repeat(64);
+    const fetchImpl = routes(defaultEngines());
+    await checkBackendHealth(degoogConfig(), { fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    for (const call of fetchImpl.mock.calls) {
+      expect((call[1] as RequestInit).headers).toMatchObject({ Authorization: `Bearer ${'d'.repeat(64)}` });
+    }
+  });
+
+  it('warns on a 401 probe and names the env var', async () => {
+    const result = await checkBackendHealth(degoogConfig(), {
+      fetchImpl: routes(defaultEngines(), json({ error: 'You shall not pass!' }, 401))
+    });
+    expect(result).toContain('search backend: degoog warning (HTTP 401, check PI_WEB_AGENT_DEGOOG_API_KEY)');
+    expect(result).not.toContain('search backend: degoog ok');
+  });
+
+  it('warns on another non-2xx probe status', async () => {
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(defaultEngines(), json('boom', 500)) });
+    expect(result).toContain('search backend: degoog warning (HTTP 500)');
+  });
+
+  it('warns when the probe body is not the native shape', async () => {
+    const result = await checkBackendHealth(degoogConfig(), {
+      fetchImpl: routes(defaultEngines(), json({ results: [] }))
+    });
+    expect(result).toContain('search backend: degoog warning (unexpected response)');
+  });
+
+  it('warns and lists the engines when every engine in the probe failed', async () => {
+    const failed = {
+      ...JSON.parse(searchFixture),
+      results: [],
+      engineTimings: [
+        { name: 'Brave Search', id: 'b', time: 142, resultCount: 0, status: 'rate_limited', errorReason: 'Brave Search upstream returned HTTP 429' },
+        { name: 'DuckDuckGo', id: 'd', time: 900, resultCount: 0, status: 'timeout' }
+      ]
+    };
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl: routes(defaultEngines(), json(failed)) });
+    expect(result).toContain(
+      'search backend: degoog warning (every engine failed: Brave Search (Brave Search upstream returned HTTP 429), DuckDuckGo (timeout))'
+    );
+  });
+
+  it('keeps the order: engine checks come before the probe', async () => {
+    const fetchImpl = routes(coreOnly());
+    const result = await checkBackendHealth(degoogConfig(), { fetchImpl });
+    const emptyIndex = result.findIndex((line) => line.includes('no search engines installed'));
+    expect(emptyIndex).toBe(0);
+    expect(result.filter((line) => line.includes('degoog'))).toHaveLength(1);
+    expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes('/api/search'))).toBe(true);
+  });
+
+  it('skips the probe when the engines request already failed', async () => {
+    const fetchImpl = routes(html(500));
+    await checkBackendHealth(degoogConfig(), { fetchImpl });
+    expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes('/api/search'))).toBe(false);
+  });
+
+  it('warns in fanout when degoog is in the set without a baseUrl', async () => {
+    const result = await checkBackendHealth({
+      search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'degoog'] } },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    }, { fetchImpl: vi.fn() });
+    expect(result).toContain('search fanout provider degoog warning (missing baseUrl)');
+  });
+
+  it('does not warn in fanout when degoog has a baseUrl', async () => {
+    const result = await checkBackendHealth({
+      search: { provider: 'duckduckgo', baseUrls: { degoog: 'http://localhost:4444' }, fanout: { mode: 'on', providers: ['duckduckgo', 'degoog'] } },
+      fetch: { provider: 'http' },
+      headless: { provider: 'local-browser' }
+    }, { fetchImpl: vi.fn() });
+    expect(result.filter((line) => line.includes('degoog warning'))).toEqual([]);
   });
 });

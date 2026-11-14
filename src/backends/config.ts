@@ -24,7 +24,7 @@ export type ProxyConfig = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp';
+  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog';
   /** Endpoint of the selected provider. Under fanout, give the other endpoint-backed providers their own entry in baseUrls. */
   baseUrl?: string;
   /** Per-provider endpoints, so one endpoint-backed provider never has to reuse another's baseUrl (see resolveSearchBaseUrl). */
@@ -67,10 +67,12 @@ export type BackendConfig = {
 export const CLEARABLE_BACKEND_PATHS = [
   'search.endpoints.searxng',
   'search.endpoints.google-serp',
+  'search.endpoints.degoog',
   'search.baseUrl',
   'search.baseUrls',
   'search.baseUrls.searxng',
   'search.baseUrls.google-serp',
+  'search.baseUrls.degoog',
   'search.keyHeader',
   'search.fallback',
   'search.options',
@@ -96,9 +98,10 @@ export const CLEARABLE_BACKEND_PATHS = [
 
 export type BackendClearPath = typeof CLEARABLE_BACKEND_PATHS[number];
 
-export function endpointProviderForClearPath(path: string): 'searxng' | 'google-serp' | undefined {
+export function endpointProviderForClearPath(path: string): 'searxng' | 'google-serp' | 'degoog' | undefined {
   if (path === 'search.endpoints.searxng') return 'searxng';
   if (path === 'search.endpoints.google-serp') return 'google-serp';
+  if (path === 'search.endpoints.degoog') return 'degoog';
   return undefined;
 }
 
@@ -237,10 +240,13 @@ function extractFirecrawlOptions(value: unknown): FirecrawlOptions | undefined {
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
-const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp'];
+const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog'];
 
-/** Providers that talk to an endpoint the user configures in backends.search.baseUrl. */
-export const BASE_URL_SEARCH_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'google-serp'];
+/**
+ * Providers that talk to an endpoint the user configures in backends.search.baseUrl.
+ * Listing a provider here is what stops a baseUrl from being read as the SearXNG endpoint.
+ */
+export const BASE_URL_SEARCH_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'google-serp', 'degoog'];
 
 /**
  * Whether `backends.search.baseUrl` is the key that configures this provider.
@@ -282,7 +288,7 @@ export function resolveSearchBaseUrl(search: SearchBackendConfig, provider: Sear
 }
 
 /** Providers a duckduckgo fallback can fall back from. */
-export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp'];
+export const DUCKDUCKGO_FALLBACK_PROVIDERS: readonly SearchProviderName[] = ['searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog'];
 
 export function usableSearchProviders(
   search: SearchBackendConfig,
@@ -291,6 +297,7 @@ export function usableSearchProviders(
   // Match the provider implementations, which treat a blank/whitespace key as unconfigured.
   const usable: SearchProviderName[] = ['duckduckgo']; // keyless, always usable
   if (resolveSearchBaseUrl(search, 'searxng')) usable.push('searxng');
+  if (resolveSearchBaseUrl(search, 'degoog')) usable.push('degoog');
   if (env.PI_WEB_AGENT_BRAVE_API_KEY?.trim()) usable.push('brave');
   if (env.YDC_API_KEY?.trim()) usable.push('youcom');
   if (env.EXA_API_KEY?.trim()) usable.push('exa');

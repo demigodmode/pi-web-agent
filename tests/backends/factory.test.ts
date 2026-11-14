@@ -1215,6 +1215,42 @@ describe('backend factory private address guard', () => {
     expect(String(searxngFetch.mock.calls[0][0])).toContain('127.0.0.1:8080');
   });
 
+  it('builds the degoog provider from baseUrl and the env key', async () => {
+    const createDegoogSearch = vi.fn(() => async () => ({
+      status: 'ok' as const,
+      results: [],
+      metadata: { backend: 'degoog' as const, cacheHit: false }
+    }));
+    const previous = process.env.PI_WEB_AGENT_DEGOOG_API_KEY;
+    process.env.PI_WEB_AGENT_DEGOOG_API_KEY = 'e'.repeat(64);
+    try {
+      const backends = createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'degoog', baseUrl: 'http://localhost:4444' } },
+        { ...offlineNetworkDeps(), createDegoogSearch }
+      );
+      await backends.search({ query: 'docs' });
+      expect(createDegoogSearch).toHaveBeenCalledWith(expect.objectContaining({
+        baseUrl: 'http://localhost:4444',
+        apiKey: 'e'.repeat(64)
+      }));
+    } finally {
+      if (previous === undefined) delete process.env.PI_WEB_AGENT_DEGOOG_API_KEY;
+      else process.env.PI_WEB_AGENT_DEGOOG_API_KEY = previous;
+    }
+  });
+
+  it('reports a degoog provider without a base URL as not configured', async () => {
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'degoog' } },
+      offlineNetworkDeps()
+    );
+    await expect(backends.search({ query: 'docs' })).resolves.toMatchObject({
+      status: 'error',
+      metadata: { backend: 'degoog' },
+      error: { failure: { kind: 'not_configured' } }
+    });
+  });
+
   it('builds the guard from the configured allow list', async () => {
     vi.stubGlobal(
       'fetch',

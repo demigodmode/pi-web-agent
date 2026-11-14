@@ -110,14 +110,15 @@ For a self-hosted or hosted-backend setup, open:
 
 Choose **Backends** to set:
 
-- search provider: `duckduckgo`, `searxng`, `brave`, `youcom`, `exa`, `tavily`, or `google-serp`
+- search provider: `duckduckgo`, `searxng`, `degoog`, `brave`, `youcom`, `exa`, `tavily`, or `google-serp`
 - SearXNG URL, for example `http://localhost:8080`
+- degoog URL, for example `http://localhost:4444`
 - Google SERP endpoint URL, for example `https://google.serper.dev/search`
 - fetch provider: `http` or `firecrawl`
 - Firecrawl URL, for example `http://localhost:3002`
 - optional fallback behavior
 
-The hosted search backends don't need a `baseUrl` (except `google-serp`, which needs the endpoint of the vendor you use); each reads a key from the environment, then you pick the provider in `/web-agent settings`. They're discovery-only, so `web_explore` still reads pages, ranks sources, and writes caveats itself.
+The hosted search backends don't need a `baseUrl` (except `google-serp`, which needs the endpoint of the vendor you use; degoog is self-hosted and needs its instance URL); each reads a key from the environment, then you pick the provider in `/web-agent settings`. They're discovery-only, so `web_explore` still reads pages, ranks sources, and writes caveats itself.
 
 If your Firecrawl instance requires a key, prefer an environment variable:
 
@@ -127,7 +128,7 @@ PI_WEB_AGENT_FIRECRAWL_API_KEY=...
 
 The settings UI does not write API keys. For local-only configs you can still add `"apiKey": "..."` to the `fetch` config manually. Saving **Backends** replaces that scope's backend section without the Firecrawl `apiKey` or proxy `password`, even if you edited another field. Use environment variables to keep those secrets through settings saves.
 
-Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values, warns when a hosted search provider is selected without its key, checks hosted backends when a key is present, checks configured SearXNG/Firecrawl endpoints with a short timeout, and shows the network allow list and whether the upstream proxy is trusted to resolve names.
+Run `/web-agent doctor` after changing backend config. It validates required `baseUrl` values, warns when a hosted search provider is selected without its key, checks hosted backends when a key is present, checks configured SearXNG, degoog, and Firecrawl endpoints with a short timeout, and shows the network allow list and whether the upstream proxy is trusted to resolve names.
 
 Backend config also supports explicit fallback and a small set of provider options. See [Backends](/self-hosted-backends) for the full shape, including all the hosted search providers.
 
@@ -140,6 +141,7 @@ Secrets live in the environment, not in config the settings UI writes. The ones 
 - `EXA_API_KEY`: Exa search
 - `TAVILY_API_KEY`: Tavily search
 - `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`: Google SERP endpoint search (`baseUrl` + header key, any vendor)
+- `PI_WEB_AGENT_DEGOOG_API_KEY`: degoog search, only if the instance has API-key protection on
 - `PI_WEB_AGENT_FIRECRAWL_API_KEY`: Firecrawl fetch
 - `GITHUB_TOKEN`: optional for public GitHub content; private GitHub reader and repo-research access need `GITHUB_TOKEN` or `gh auth login`
 
