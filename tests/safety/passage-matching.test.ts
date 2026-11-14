@@ -164,7 +164,8 @@ describe('passage matching on very long flagged spans', () => {
     const started = performance.now();
     const matched = matchFlaggedParagraphs(emitted, [flaggedSpan]);
     const marked = markMatchedParagraphs(emitted, matched, ' <directed>');
-    expect(performance.now() - started).toBeLessThan(3000);
+    // Runs in ~300ms alone. The bound only has to catch quadratic behaviour, and CI runners under load are ~10x slower.
+    expect(performance.now() - started).toBeLessThan(10000);
     expect(matched).toEqual([flaggedSpan]);
     // Marks land after risky clauses, which for a long span are its pieces; the text itself is unchanged.
     expect(marked).toContain(' <directed>');
