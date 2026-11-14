@@ -63,4 +63,33 @@ describe('web_fetch tool', () => {
       spy.mockRestore();
     }
   });
+
+  it('reads a plain-text llms.txt through the HTTP fetcher without headless escalation', async () => {
+    const response = new Response('# Example\n\nDocs index.\n', { headers: { 'content-type': 'text/plain' } });
+    Object.defineProperty(response, 'url', { value: 'https://example.com/llms.txt' });
+    const webFetch = createWebFetchTool({
+      fetchPage: ({ url, query, signal }) => httpFetch.createHttpFetcher({ fetchImpl: vi.fn().mockResolvedValue(response) })(url, query, signal)
+    });
+
+    await expect(webFetch({ url: 'https://example.com/llms.txt' })).resolves.toMatchObject({
+      status: 'ok',
+      content: { title: 'Example', text: '# Example\n\nDocs index.\n' },
+      metadata: { method: 'http', contentType: 'text/plain' },
+      presentation: { views: { compact: expect.stringContaining('Fetched page') } }
+    });
+  });
+
+  it('shows the plain-text read failure message instead of a generic one', async () => {
+    const fetchPage = vi.fn().mockResolvedValue({
+      status: 'unsupported',
+      url: 'https://example.com/blank.txt',
+      metadata: { method: 'http', cacheHit: false, contentType: 'text/plain' },
+      error: { code: 'EMPTY_BODY', message: 'The page returned no text.' }
+    });
+    const webFetch = createWebFetchTool({ fetchPage });
+
+    await expect(webFetch({ url: 'https://example.com/blank.txt' })).resolves.toMatchObject({
+      presentation: { views: { compact: 'Fetch failed: The page returned no text.' } }
+    });
+  });
 });

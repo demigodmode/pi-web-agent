@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createHttpFetcher } from '../../src/fetch/http-fetch.js';
 import { buildFetchPresentation } from '../../src/presentation/fetch-presentation.js';
 
 describe('buildFetchPresentation', () => {
@@ -81,5 +82,17 @@ describe('fetch presentation blocked subresources', () => {
 
     expect(presentation.views.verbose).toBe('firecrawl: skipped [disabled] (auth_failed)');
     expect(presentation.views.compact).not.toContain('[disabled]');
+  });
+});
+
+describe('fetch presentation for plain-text reads', () => {
+  it('shows the reason a binary plain-text response was not read', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x01, 0x02, 0x03, 0x00, 0x7f, 0x01]);
+    const response = new Response(bytes, { headers: { 'content-type': 'text/plain' } });
+    Object.defineProperty(response, 'url', { value: 'https://example.test/blob.txt' });
+    const result = await createHttpFetcher({ fetchImpl: vi.fn().mockResolvedValue(response) })('https://example.test/blob.txt');
+    const presentation = buildFetchPresentation(result);
+
+    expect(presentation.views.compact).toBe('Fetch failed: The response looks like a binary file, not text.');
   });
 });

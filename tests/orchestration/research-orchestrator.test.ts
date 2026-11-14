@@ -207,6 +207,20 @@ describe('research orchestrator types', () => {
     expect(result.requiredSourceFailures).toEqual([expect.objectContaining({ url: 'https://browser.test/page', code: 'CONFIGURED_BROWSER_NOT_FOUND', message })]);
   });
 
+  it('reports why a required direct plain-text URL could not be read', async () => {
+    const result = await createResearchOrchestrator({
+      worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
+      fetchDirect: vi.fn(async ({ url }) => ({
+        status: 'unsupported' as const,
+        url,
+        metadata: { method: 'http' as const, cacheHit: false, contentType: 'text/plain' },
+        error: { code: 'EMPTY_BODY', message: 'The page returned no text.' }
+      })),
+      headlessFetch: vi.fn()
+    }).run({ query: 'Read https://browser.test/blank.txt' });
+    expect(result.requiredSourceFailures).toEqual([expect.objectContaining({ url: 'https://browser.test/blank.txt', code: 'EMPTY_BODY', message: 'The page returned no text.' })]);
+  });
+
   it('keeps the generic direct read message when the headless retry has no error', async () => {
     const result = await createResearchOrchestrator({
       worker: { run: vi.fn(async () => ({ searchQueries: [], evidence: [], gaps: [], lowValueOutcomes: [], exhaustedBudget: false })) },
