@@ -1,0 +1,107 @@
+{
+  "results": [
+    {
+      "title": "coverage | Config | Vitest",
+      "url": "https://vitest.dev/config/coverage",
+      "snippet": "Vitest calls it for each node of the transformed code, together with the kind of coverage the node counts for. Return true to ignore the node, or 'ignore-this-and-nested-nodes' to also ignore all nodes inside it.",
+      "source": "DuckDuckGo",
+      "score": 23,
+      "sources": [
+        "DuckDuckGo",
+        "Startpage"
+      ],
+      "insecure": false,
+      "isGif": false,
+      "content": "Vitest calls it for each node of the transformed code, together with the kind of coverage the node counts for. Return true to ignore the node, or 'ignore-this-and-nested-nodes' to also ignore all nodes inside it."
+    },
+    {
+      "title": "[React] Setting Up Vitest Test Coverage | DeKu",
+      "url": "https://deku.posstree.com/en/react/vitest-coverage",
+      "snippet": "Mar 10, 2026 ... The vitest run -- coverage command runs Vitest once without watch mode while collecting coverage data. .gitignore Configuration . Since coverage ...",
+      "source": "DuckDuckGo",
+      "score": 11,
+      "sources": [
+        "DuckDuckGo",
+        "Startpage"
+      ],
+      "insecure": false,
+      "isGif": false,
+      "content": "Mar 10, 2026 ... The vitest run -- coverage command runs Vitest once without watch mode while collecting coverage data. .gitignore Configuration . Since coverage ..."
+    },
+    {
+      "title": "Coverage | Guide | Vitest",
+      "url": "https://vitest.dev/guide/coverage.html",
+      "snippet": "Coverage Vitest supports Native code coverage via v8 and instrumented code coverage via istanbul. Coverage Providers Both v8 and istanbul support are optional. By default, v8 will be used. You can select the coverage tool by setting test.coverage.provider to v8 or istanbul:",
+      "source": "DuckDuckGo",
+      "score": 10,
+      "sources": [
+        "DuckDuckGo"
+      ],
+      "insecure": false,
+      "isGif": false,
+      "content": "Coverage Vitest supports Native code coverage via v8 and instrumented code coverage via istanbul. Coverage Providers Both v8 and istanbul support are optional. By default, v8 will be used. You can select the coverage tool by setting test.coverage.provider to v8 or istanbul:"
+    },
+    {
+      "title": "Coverage | Guide - Vitest",
+      "url": "https://vitest.dev/guide/coverage",
+      "snippet": "Nov 1, 2026 ... You can check your coverage report in Vitest UI and HTML reporter. This is integrated with builtin coverage reporters with HTML output ( html , ...",
+      "source": "Startpage",
+      "score": 10,
+      "sources": [
+        "Startpage"
+      ],
+      "insecure": false,
+      "isGif": false,
+      "content": "Nov 1, 2026 ... You can check your coverage report in Vitest UI and HTML reporter. This is integrated with builtin coverage reporters with HTML output ( html , ..."
+    },
+    {
+      "title": "List of unit testing frameworks",
+      "url": "https://en.wikipedia.org/wiki/List_of_unit_testing_frameworks",
+      "snippet": "GitHub. 30 June 2022. &quot;Rethinking Unit Test Assertions&quot;. 11 May 2020. &quot;Vitest&quot;. &quot;EUnit - a Lightweight Unit Testing Framework for Erlang&quot;. svn.process-one",
+      "source": "Wikipedia",
+      "score": 10,
+      "sources": [
+        "Wikipedia"
+      ],
+      "insecure": false,
+      "isGif": false,
+      "content": "GitHub. 30 June 2022. &quot;Rethinking Unit Test Assertions&quot;. 11 May 2020. &quot;Vitest&quot;. &quot;EUnit - a Lightweight Unit Testing Framework for Erlang&quot;. svn.process-one"
+    }
+  ],
+  "query": "vitest coverage setup",
+  "totalTime": 992,
+  "type": "web",
+  "engineTimings": [
+    {
+      "name": "Brave Search",
+      "id": "degoog-org-official-extensions-brave-engine",
+      "time": 142,
+      "resultCount": 0,
+      "status": "rate_limited",
+      "errorReason": "Brave Search upstream returned HTTP 429",
+      "httpStatus": 429
+    },
+    {
+      "name": "DuckDuckGo",
+      "id": "degoog-org-official-extensions-duckduckgo-engine",
+      "time": 982,
+      "resultCount": 10,
+      "status": "ok"
+    },
+    {
+      "name": "Startpage",
+      "id": "degoog-org-official-extensions-startpage-engine",
+      "time": 908,
+      "resultCount": 20,
+      "status": "ok"
+    },
+    {
+      "name": "Wikipedia",
+      "id": "degoog-org-official-extensions-wikipedia-engine",
+      "time": 250,
+      "resultCount": 1,
+      "status": "ok"
+    }
+  ],
+  "relatedSearches": []
+}

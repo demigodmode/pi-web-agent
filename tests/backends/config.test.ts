@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLEARABLE_BACKEND_PATHS,
   DEFAULT_BACKEND_CONFIG,
+  endpointProviderForClearPath,
   extractBackendConfigOverride,
   extractNetworkConfig,
   extractProxyConfig,
   mergeBackendConfigLayers,
+  resolveSearchBaseUrl,
   stripProxyCredentials,
   validateBackendConfig,
   usableSearchProviders
@@ -118,7 +121,7 @@ describe('backend config', () => {
     expect(validateBackendConfig({
       ...DEFAULT_BACKEND_CONFIG,
       search: { provider: 'duckduckgo', fallback: 'duckduckgo' }
-    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, parallel, or google-serp');
+    })).toContain('search fallback duckduckgo is only supported when search provider is searxng, brave, youcom, exa, tavily, parallel, google-serp, or degoog');
   });
 
   it('accepts youcom search provider with duckduckgo fallback', () => {
@@ -777,5 +780,54 @@ describe('headless browser path config', () => {
     );
 
     expect(config.headless).toEqual({ provider: 'local-browser' });
+  });
+});
+
+describe('degoog provider config', () => {
+  it('reads degoog as the selected provider with its baseUrl', () => {
+    const override = extractBackendConfigOverride({ backends: { search: { provider: 'degoog', baseUrl: 'http://localhost:4444' } } });
+    expect(override.search).toEqual({ provider: 'degoog', baseUrl: 'http://localhost:4444' });
+  });
+
+  it('does not hand a degoog baseUrl to SearXNG in a fanout set', () => {
+    const search = { provider: 'degoog' as const, baseUrl: 'http://localhost:4444' };
+    expect(resolveSearchBaseUrl(search, 'searxng')).toBeUndefined();
+    expect(resolveSearchBaseUrl(search, 'degoog')).toBe('http://localhost:4444');
+  });
+
+  it('does not hand a SearXNG baseUrl to degoog', () => {
+    const search = { provider: 'searxng' as const, baseUrl: 'http://localhost:8080' };
+    expect(resolveSearchBaseUrl(search, 'degoog')).toBeUndefined();
+  });
+
+  it('uses baseUrls.degoog for a degoog set beside another provider', () => {
+    const search = { provider: 'duckduckgo' as const, baseUrls: { degoog: 'http://localhost:4444' }, fanout: { mode: 'on' as const, providers: ['duckduckgo' as const, 'degoog' as const] } };
+    expect(resolveSearchBaseUrl(search, 'degoog')).toBe('http://localhost:4444');
+    expect(usableSearchProviders(search, {})).toEqual(['duckduckgo', 'degoog']);
+  });
+
+  it('is usable only with a baseUrl and needs no key', () => {
+    expect(usableSearchProviders({ provider: 'degoog', baseUrl: 'http://localhost:4444' }, {})).toEqual(['duckduckgo', 'degoog']);
+    expect(usableSearchProviders({ provider: 'degoog' }, {})).toEqual(['duckduckgo']);
+  });
+
+  it('requires a baseUrl when degoog is selected', () => {
+    expect(validateBackendConfig({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'degoog' } })).toContain(
+      'search provider degoog requires backends.search.baseUrl'
+    );
+  });
+
+  it('allows the duckduckgo fallback for degoog', () => {
+    const issues = validateBackendConfig({
+      ...DEFAULT_BACKEND_CONFIG,
+      search: { provider: 'degoog', baseUrl: 'http://localhost:4444', fallback: 'duckduckgo' }
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it('clears the degoog endpoint on the clear paths', () => {
+    expect(CLEARABLE_BACKEND_PATHS).toContain('search.endpoints.degoog');
+    expect(CLEARABLE_BACKEND_PATHS).toContain('search.baseUrls.degoog');
+    expect(endpointProviderForClearPath('search.endpoints.degoog')).toBe('degoog');
   });
 });

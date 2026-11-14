@@ -29,7 +29,7 @@ Internally, `web_explore` can do a few things:
 - read HTTP/HTTPS links from the prompt before search
 - strip common tracking params from direct links
 - plan search queries
-- run web search through the configured search backend: DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, or Google SERP
+- run web search through the configured search backend: DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, or Google SERP
 - optionally fan search across multiple configured providers at once when fanout is enabled, dedupe and rerank the merged results
 - read GitHub, PDF, and YouTube links through dedicated readers instead of scraping the page
 - clone and search a GitHub repo when you paste a repo or folder link
@@ -41,6 +41,8 @@ Internally, `web_explore` can do a few things:
 - rank evidence
 - evaluate source quality and source diversity
 - synthesize findings and caveats
+
+Plain-text and Markdown links, such as `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md files (including `raw.githubusercontent.com` links), are read directly. They go through the same passage selection, and text addressed to AI agents is marked the same way.
 
 The important bit: those internal steps are not separate public tools for normal model use. If more web evidence is needed, the model should call `web_explore` again with a narrower query.
 

@@ -383,7 +383,7 @@ export function buildBackendSettingsItems(
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog']
     },
     {
       id: 'backend:search:baseUrl',
@@ -437,6 +437,12 @@ export function buildBackendSettingsItems(
     {
       id: 'backend:secret:google-serp',
       label: 'Google SERP API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:degoog',
+      label: 'degoog API key',
       currentValue: 'env var',
       values: ['env var']
     },
@@ -649,7 +655,7 @@ export function applySettingsValue(
     }
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'parallel' || newValue === 'google-serp')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'parallel' || newValue === 'google-serp' || newValue === 'degoog')) {
     const oldProvider = currentBackends.search.provider as SearchProviderName;
     currentBackends.search.provider = newValue as SearchProviderName;
 
@@ -718,7 +724,7 @@ export function applySettingsValue(
   if (id === 'backend:search:baseUrl') {
     const selectedProvider = currentBackends.search.provider as SearchProviderName;
     if (newValue.trim()) {
-      // Keep an endpoint-backed provider (searxng, google-serp); anything else is promoted to searxng.
+      // Keep an endpoint-backed provider (searxng, google-serp, degoog); anything else is promoted to searxng.
       if (!BASE_URL_SEARCH_PROVIDERS.includes(selectedProvider)) {
         currentBackends.search.provider = 'searxng';
       }
@@ -867,7 +873,8 @@ export function collapseBackendConfigToOverride(
   const removedEndpoints = BASE_URL_SEARCH_PROVIDERS.filter((provider) =>
     resolveSearchBaseUrl(inheritedConfig.search, provider) !== undefined && resolveSearchBaseUrl(config.search, provider) === undefined
   );
-  const legacyProvider = inheritedConfig.search.provider === 'google-serp' ? 'google-serp' : 'searxng';
+  // baseUrl belongs to the inherited endpoint provider when it has one; otherwise it is the legacy SearXNG key.
+  const legacyProvider = BASE_URL_SEARCH_PROVIDERS.includes(inheritedConfig.search.provider) ? inheritedConfig.search.provider : 'searxng';
   const removed = CLEARABLE_BACKEND_PATHS.filter((path) =>
     path !== 'search.baseUrls' &&
     !(path === 'search.baseUrl' && removedEndpoints.includes(legacyProvider)) &&

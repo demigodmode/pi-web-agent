@@ -5,6 +5,7 @@
 Self-hosted options:
 
 - SearXNG for search
+- degoog for search
 - Firecrawl for page fetch/extraction
 
 Hosted options:
@@ -66,8 +67,8 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, and Google SERP
-- edit the search endpoint URL (SearXNG or Google SERP)
+- switch search between DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, and Google SERP
+- edit the search endpoint URL (SearXNG, degoog, or Google SERP)
 - enable a hosted/SearXNG → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
 - edit the Firecrawl base URL
@@ -140,6 +141,35 @@ Supported SearXNG options can stay in config:
 ```
 
 These map to SearXNG search query params. Config loading filters the options before doctor validates the effective config. Unknown options and some malformed values, such as `safesearch: 9` or a categories array containing a non-string, are ignored. Empty categories or a blank language survive loading and produce warnings. `backend config: ok` therefore does not mean every field in the file was accepted. Whether loading should report every rejected field is still an open question.
+
+## degoog search
+
+[degoog](https://github.com/degoog-org/degoog) is a self-hosted metasearch engine. It runs its own engines and returns one merged list of results.
+
+Choose **Settings → Backends**, set search provider to `degoog`, and enter the instance root under **Search endpoint URL**, for example `http://localhost:4444`. The equivalent config is:
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "degoog",
+      "baseUrl": "http://localhost:4444"
+    }
+  }
+}
+```
+
+`pi-web-agent` calls degoog's own JSON API at `/api/search`. The SearXNG-compatibility setting in degoog does not need to be on. Paste the root of the instance: a trailing slash, or a pasted `/api/search` or `/search`, is dropped. If degoog runs under a sub-path, like `https://host/degoog`, keep that path.
+
+If your degoog has API-key protection on, set `PI_WEB_AGENT_DEGOOG_API_KEY` in the environment where Pi runs. The key is sent as a bearer token only when it is set, and it is never written to config or logs. degoog shows the key under **Settings → Server → API key**, and only when `DEGOOG_SETTINGS_PASSWORDS` is set on the instance.
+
+A fresh degoog has no web engines installed, so searches come back empty until you install some in degoog's settings. `/web-agent doctor` reports that, and it also reports a missing base URL, engines that are installed but not enabled, a rejected key, and a search where every engine failed.
+
+Run this after editing config:
+
+```text
+/web-agent doctor
+```
 
 ## Google SERP endpoint
 
@@ -405,7 +435,7 @@ Fanout has three modes:
 - `on`: Every search queries all configured providers and merges the results.
 - `auto`: Runs the primary provider first. If its results look thin (too few, or all from one host), fans out to configured providers for better coverage.
 
-When fanout runs, the provider set defaults to the providers you have actually configured: DuckDuckGo (always, keyless), SearXNG if you gave it a baseUrl, and each hosted provider only when its API key is set. Providers you have not set up are not offered or queried.
+When fanout runs, the provider set defaults to the providers you have actually configured: DuckDuckGo (always, keyless), SearXNG or degoog if you gave it a baseUrl, and each hosted provider only when its API key is set. Providers you have not set up are not offered or queried.
 
 To select which providers fan out, set the fanout mode from **Settings → Backends**, then toggle individual providers on or off. Only usable providers appear in that list. You can also edit `backends.search.fanout.providers` directly in the config file.
 
@@ -413,7 +443,7 @@ The selected primary provider always participates, even if its toggle says `excl
 
 Each provider gets a short timeout during fanout, so one slow or unreachable backend (for example a self-hosted SearXNG that is down) is skipped instead of stalling the whole research pass.
 
-`searxng` and `google-serp` need endpoints. For the selected endpoint provider, `backends.search.baseUrl` takes precedence over its `backends.search.baseUrls.<provider>` entry. Other providers use their own entries. Legacy configs with DuckDuckGo or a hosted provider selected can still use `baseUrl` for SearXNG; Google SERP does not reuse that URL. A fanout set that mixes both endpoint providers looks like this:
+`searxng`, `degoog`, and `google-serp` need endpoints. For the selected endpoint provider, `backends.search.baseUrl` takes precedence over its `backends.search.baseUrls.<provider>` entry. Other providers use their own entries. Legacy configs with DuckDuckGo or a hosted provider selected can still use `baseUrl` for SearXNG; Google SERP does not reuse that URL. A fanout set that mixes both endpoint providers looks like this:
 
 ```json
 {
@@ -468,7 +498,7 @@ Fallback is opt-in. `pi-web-agent` does not silently leave a self-hosted backend
 }
 ```
 
-When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, Brave, You.com, Exa, Tavily, Google SERP, and Firecrawl failures stay visible instead of silently switching to external/default backends.
+When fallback happens, output indicates which backend failed and which fallback was used. This keeps self-hosted privacy expectations explicit: if you do not configure fallback, SearXNG, degoog, Brave, You.com, Exa, Tavily, Google SERP, and Firecrawl failures stay visible instead of silently switching to external/default backends.
 
 Fallback also looks at why a backend failed before moving on:
 
@@ -653,7 +683,7 @@ Check that:
 
 ### Self-hosted privacy expectations
 
-`pi-web-agent` does not silently fall back from SearXNG, Brave, You.com, Exa, Tavily, Parallel, or Google SERP to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
+`pi-web-agent` does not silently fall back from SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, or Google SERP to DuckDuckGo, or from Firecrawl to plain HTTP, when you choose those providers. Fallback only happens when `fallback` is configured because some users choose specific backends to control where requests go.
 
 
 ## Clear inherited backend settings
