@@ -4,7 +4,7 @@ import { READER_TEXT_CAP } from './limits.js';
 import { abortError, PAGE_FETCH_TIMEOUT_MS, raceAbort, requestSignal } from '../abort.js';
 import { parseRetryAfter } from '../backends/failure.js';
 import { resolveGithubToken, type GithubToken } from '../repo/repo-auth.js';
-import { agentFileNote, detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
+import { MAX_FLAGGED_PARAGRAPHS, agentFileNote, detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
 import type { SourceSafety } from '../safety/types.js';
 
 const TOKEN_CACHE_MS = 60_000;
@@ -201,7 +201,7 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
     const label = kind === 'pulls' && comments.length ? 'Review comments:\n' : '';
     const bodyParts = [item.body ?? '', label + comments.join('\n\n---\n\n')].filter(Boolean);
     const body = bodyParts.join('\n\n---\n\n');
-    return okResponse(url, item.title ?? `${owner}/${repo} ${kind} #${num}`, body, partial || (comments.length > 0 && body.length >= READER_TEXT_CAP), { flaggedParagraphs: [...flagged], agentNotes: [] });
+    return okResponse(url, item.title ?? `${owner}/${repo} ${kind} #${num}`, body, partial || (comments.length > 0 && body.length >= READER_TEXT_CAP), { flaggedParagraphs: [...flagged].slice(0, MAX_FLAGGED_PARAGRAPHS), agentNotes: [] });
   }
 
   async function readRepoRoot(url: string, owner: string, repo: string, signal: AbortSignal, credential: GithubToken): Promise<WebFetchResponse> {

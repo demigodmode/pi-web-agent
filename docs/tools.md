@@ -42,6 +42,8 @@ Internally, `web_explore` can do a few things:
 - evaluate source quality and source diversity
 - synthesize findings and caveats
 
+Plain-text and Markdown links, such as `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md files (including `raw.githubusercontent.com` links), are read directly. They go through the same passage selection, and text addressed to AI agents is marked the same way.
+
 The important bit: those internal steps are not separate public tools for normal model use. If more web evidence is needed, the model should call `web_explore` again with a narrower query.
 
 ## GitHub, PDF, and YouTube links
