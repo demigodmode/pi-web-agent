@@ -11,12 +11,41 @@ export function normalizeParagraph(text: string): string {
   return text.replace(/\s+/gu, ' ').trim();
 }
 
+type HtmlNode = { type?: string; name?: string; children?: HtmlNode[]; parent?: HtmlNode | null };
+
+const PROTECTED_TAGS = new Set(PROTECTED_HTML.split(',').map((tag) => tag.trim()));
+const BLOCK_TAGS = new Set(HTML_BLOCKS.split(',').map((tag) => tag.trim()));
+
+/** Nodes with at least one protected ancestor, found in one walk instead of per-element lookups. */
+function nodesUnderProtected(root: HtmlNode): Set<HtmlNode> {
+  const under = new Set<HtmlNode>();
+  const stack: Array<[HtmlNode, boolean]> = (root.children ?? []).map((child) => [child, false]);
+  while (stack.length > 0) {
+    const [node, inside] = stack.pop()!;
+    if (inside) under.add(node);
+    const childInside = inside || (node.name !== undefined && PROTECTED_TAGS.has(node.name));
+    for (const child of node.children ?? []) stack.push([child, childInside]);
+  }
+  return under;
+}
+
+/** Nodes with a block-level descendant. Each node is marked once, so the walk stays linear. */
+function nodesWithBlockDescendant(blocks: HtmlNode[]): Set<HtmlNode> {
+  const marked = new Set<HtmlNode>();
+  for (const block of blocks) {
+    for (let node = block.parent; node && !marked.has(node); node = node.parent) marked.add(node);
+  }
+  return marked;
+}
+
 function htmlHeadings(source: string): string[] {
   const $ = cheerio.load(source);
   const headings: string[] = [];
+  const root = $.root()[0] as unknown as HtmlNode;
+  const under = nodesUnderProtected(root);
   $('h1, h2, h3, h4, h5, h6').each((_, element) => {
     const heading = $(element);
-    if (heading.parents(PROTECTED_HTML).length > 0) return;
+    if (under.has(element as unknown as HtmlNode)) return;
     const text = normalizeParagraph(heading.text());
     if (text) headings.push(text);
   });
@@ -26,14 +55,19 @@ function htmlHeadings(source: string): string[] {
 function htmlParagraphs(source: string): string[] {
   const $ = cheerio.load(source);
   const paragraphs: string[] = [];
+  const root = $.root()[0] as unknown as HtmlNode;
+  const under = nodesUnderProtected(root);
+  const blocks = $(HTML_BLOCKS).toArray() as unknown as HtmlNode[];
+  const withBlockChild = nodesWithBlockDescendant(blocks);
 
   $(HTML_BLOCKS).each((_, element) => {
     const block = $(element);
-    if (block.is(PROTECTED_HTML) || block.parents(PROTECTED_HTML).length > 0) return;
+    const node = element as unknown as HtmlNode;
+    if ((node.name !== undefined && PROTECTED_TAGS.has(node.name)) || under.has(node)) return;
 
     // Only leaf blocks are eligible. A parent may contain both a recipient
     // and action in separate children, so its combined text is not prose.
-    if (block.find(HTML_BLOCKS).length > 0) return;
+    if (withBlockChild.has(node)) return;
 
     // Protected descendants are dropped, the prose around them is still scanned.
     const copy = block.clone();
@@ -61,6 +95,27 @@ function fenceStart(line: string, atParagraphStart: boolean, asciidoc: boolean):
 function isFenceEnd(line: string, fence: Fence): boolean {
   if (fence.marker === '-') return new RegExp(`^-{${fence.length},}\\s*$`, 'u').test(line);
   return new RegExp(`^ {0,3}${fence.marker}{${fence.length},}\\s*$`, 'u').test(line);
+}
+
+const CLOSER_RUN: Record<Fence['marker'], RegExp> = {
+  '-': /^(-+)\s*$/u,
+  '`': /^ {0,3}(`+)\s*$/u,
+  '~': /^ {0,3}(~+)\s*$/u,
+};
+
+/**
+ * suffix[marker][i] is the longest run of that marker that a line from i onward
+ * could close with. A fence opened at line i has a closer when that is at least its length.
+ */
+function closerSuffixes(lines: string[]): Record<Fence['marker'], Int32Array> {
+  const suffixes = { '`': new Int32Array(lines.length + 1), '~': new Int32Array(lines.length + 1), '-': new Int32Array(lines.length + 1) };
+  for (const marker of ['`', '~', '-'] as const) {
+    const suffix = suffixes[marker];
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      suffix[index] = Math.max(suffix[index + 1]!, lines[index]!.match(CLOSER_RUN[marker])?.[1]?.length ?? 0);
+    }
+  }
+  return suffixes;
 }
 
 function markdownBlocks(source: string, asciidoc: boolean): Blocks {
@@ -117,6 +172,7 @@ function markdownBlocks(source: string, asciidoc: boolean): Blocks {
   };
 
   const sourceLines = source.split(/\r?\n/u);
+  const closers = closerSuffixes(sourceLines);
   for (const [index, rawLine] of sourceLines.entries()) {
     if (fence) {
       if (isFenceEnd(rawLine, fence)) {
@@ -129,7 +185,7 @@ function markdownBlocks(source: string, asciidoc: boolean): Blocks {
     }
 
     const openingFence = fenceStart(rawLine, lines.length === 0 && !quoted, asciidoc);
-    if (openingFence && !sourceLines.slice(index + 1).some((candidate) => isFenceEnd(candidate, openingFence))) {
+    if (openingFence && closers[openingFence.marker][index + 1]! < openingFence.length) {
       // A fence with no closing line is not a fence: what follows is prose.
       finishQuote();
       finish();

@@ -12,6 +12,7 @@ The format is intentionally simple and release-oriented.
 - `llms.txt`, `AGENTS.md`, `CLAUDE.md` and similar files get a short note saying who wrote them.
 - A query or link containing what looks like a credential (GitHub, OpenAI, Anthropic, AWS, Slack, Stripe, Google or npm keys, private keys, `password=` style values) is refused before anything is searched or fetched. Placeholders and signed S3, GCS and Azure links are allowed.
 - New docs page: [Running safely](docs/safety.md).
+- `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md links served as plain text or Markdown are now read directly instead of coming back unreadable.
 
 ### Changed
 - Hidden page text (`hidden`, `aria-hidden`, `display:none`, off-screen and zero-size text) is removed before a page is read. Tabs, `<details>` and accordion panels are kept.
