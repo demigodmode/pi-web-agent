@@ -1,6 +1,8 @@
 import type { PresentationEnvelope } from './presentation/types.js';
 import type { PresentationStats } from './orchestration/presentation-stats.js';
 import type { LengthLimit, ModelResultSelection } from './results/types.js';
+import type { SourceSafety } from './safety/types.js';
+import type { EmittedSourceSafety } from './safety/types.js';
 
 export const TOOL_STATUSES = [
   'ok',
@@ -134,6 +136,8 @@ export type ExtractedContent = {
   botCheck?: boolean;
   /** Anchor of the section chosen for research; direct fetches do not set this. */
   sectionAnchor?: string;
+  /** Internal source-level safety annotations; never exposed in public fetch metadata. */
+  sourceSafety?: SourceSafety;
 };
 
 export type WebSearchResponse = {
@@ -191,6 +195,7 @@ export type WebExploreResponse = {
     selectionOmitted?: boolean;
     spaceCut?: boolean;
     samePassageAs?: Array<{ sourceId: string; excerptIndex: number; relation: 'same' | 'covered' }>;
+    safety?: EmittedSourceSafety;
   }>;
   caveat?: string;
   searchUnavailable?: SearchUnavailable[];

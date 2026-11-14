@@ -29,6 +29,7 @@ export type ResolvedLength =
 import type { FetchMethod } from '../types.js';
 import type { PassageCandidate } from '../orchestration/evidence-passages.js';
 import type { ContextMetadata } from '../presentation/research-context.js';
+import type { EmittedSourceSafety, SourceSafety } from '../safety/types.js';
 
 export type PreparedSource = {
   id: string;
@@ -46,6 +47,8 @@ export type PreparedSource = {
   retrievalCut: boolean;
   selectionOmitted: boolean;
   retrievedAt?: string;
+  /** Internal-only source annotations; not emitted in evidence records. */
+  sourceSafety?: SourceSafety;
 };
 
 export type AllocatedExcerpt = { text: string; anchor?: string };
@@ -62,6 +65,8 @@ export type AllocatedSource = {
   selectionOmitted: boolean;
   spaceCut: boolean;
   retrievedAt?: string;
+  /** Matched source-owned safety annotations safe to expose with this evidence. */
+  safety?: EmittedSourceSafety;
 };
 export type ModelFinding = { index: number; text: string; sourceIds: string[] };
 export type ModelResultSelection = { findings: ModelFinding[]; contextLines: string[]; contentChars: number };

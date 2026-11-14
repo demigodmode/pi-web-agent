@@ -1,4 +1,5 @@
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
+import { finalUrlAgentFileNote } from '../safety/agent-directed.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
 import { RedirectError } from './guarded-fetch.js';
 import { findGuardError } from './network-guard.js';
@@ -127,8 +128,13 @@ export function createHttpFetcher({
     const baselineExtraction = extractReadableContentSafely(html);
     const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
     const extraction = queryExtraction ?? baselineExtraction;
+    const note = finalUrlAgentFileNote(response.url || url);
     const content = {
       ...extraction.content,
+      sourceSafety: {
+        flaggedParagraphs: note ? [] : extraction.content.sourceSafety?.flaggedParagraphs ?? [],
+        agentNotes: note ? [note] : []
+      },
       ...(hasBotCheckContent(html, 'html') ? { botCheck: true } : {})
     };
 

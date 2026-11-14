@@ -39,6 +39,7 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 - **Optional search fanout.** Query several backends at once, dedupe, and rank pages that more than one provider agreed on to the top. Off by default; flip it to `on` or `auto`.
 - **Honest by default.** Weak, narrow, blocked, or cautionary evidence gets flagged instead of dressed up as confidence.
 - **Safe with untrusted pages.** Links the model picks, or finds on a page it read, can't reach localhost, your LAN, or cloud metadata endpoints. That includes redirects and everything a headless page loads. Addresses you configure yourself aren't affected, and an allow list covers the private ranges you do want.
+- **Guards against hostile pages.** Hidden text is removed, text that tells an AI agent to do something risky is marked, and queries containing credentials are refused. [What this covers and what it doesn't](docs/safety.md).
 - **Fallback that knows why.** Rate-limited or misconfigured backends get skipped for a while, flaky ones get one retry, and answers say when some search backends were unavailable.
 - **Presentation and result length are separate.** `compact` / `preview` / `verbose` control the terminal; Auto result length keeps the tool result suited to the calling model.
 - **Zero-config to start.** Runs keyless out of the box (DuckDuckGo search, local browser, the built-in readers). Opt into hosted backends, fallback, search fanout, and per-tool output modes through config when you want more control.

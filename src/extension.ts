@@ -12,7 +12,11 @@ import { sanitizeTerminalText } from './presentation/explore-display-text.js';
 import { renderExploreCall } from './presentation/explore-call.js';
 import type { PresentationConfig } from './presentation/types.js';
 import { createWebExploreTool } from './tools/web-explore.js';
+import { buildExplorePresentation } from './presentation/explore-presentation.js';
 import type { WebExploreResponse } from './types.js';
+import { throwIfAborted } from './abort.js';
+import { detectInputSecret } from './safety/secrets.js';
+import { secretRefusal } from './safety/refusal.js';
 import { getUpdateChangelogNotice } from './changelog-notice.js';
 import { createRepoCache, type RepoCache } from './repo/repo-cache.js';
 import { Text } from '@earendil-works/pi-tui';
@@ -226,6 +230,20 @@ export default function extension(pi: ExtensionAPI) {
       signal?.addEventListener('abort', cancel, { once: true });
       const operation = (async () => {
         try {
+          throwIfAborted(signal);
+          const secret = detectInputSecret(params.query);
+          if (secret) {
+            const result = secretRefusal(secret);
+            const presentation = buildExplorePresentation(result);
+            const mode = resolvePresentationMode('web_explore', DEFAULT_PRESENTATION_CONFIG);
+            const terminalText = selectPresentationView(presentation, mode) ?? 'web_explore result';
+            const terminalTextExpanded = selectPresentationView(presentation, 'verbose') ?? terminalText;
+            return {
+              content: [{ type: 'text' as const, text: serializeExploreResult({ ...result, presentation }) }],
+              details: { ...result, presentation, selectedMode: mode, terminalText, terminalTextExpanded },
+              isError: true
+            };
+          }
           update('Starting web research…', true);
           // Pi's context may contain provider credentials and mutable state; retain
           // only the model facts this call needs before any asynchronous config read.

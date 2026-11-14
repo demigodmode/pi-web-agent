@@ -1,0 +1,3 @@
+# Structural, sanitized agent-file fixture; no live file fetched. Reviewed 2026-11-13.
+
+This page describes the public documentation and its stable URLs.

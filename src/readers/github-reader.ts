@@ -4,6 +4,8 @@ import { READER_TEXT_CAP } from './limits.js';
 import { abortError, PAGE_FETCH_TIMEOUT_MS, raceAbort, requestSignal } from '../abort.js';
 import { parseRetryAfter } from '../backends/failure.js';
 import { resolveGithubToken, type GithubToken } from '../repo/repo-auth.js';
+import { agentFileNote, detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
+import type { SourceSafety } from '../safety/types.js';
 
 const TOKEN_CACHE_MS = 60_000;
 const MAX_COMMENT_PAGES = 3;
@@ -88,12 +90,12 @@ function fail(url: string, message: string, failure?: FailureInfo): WebFetchResp
   };
 }
 
-function okResponse(url: string, title: string, text: string, partialComments = false): WebFetchResponse {
+function okResponse(url: string, title: string, text: string, partialComments = false, sourceSafety: SourceSafety = { flaggedParagraphs: [], agentNotes: [] }): WebFetchResponse {
   const capped = text.slice(0, READER_TEXT_CAP);
   return {
     status: 'ok',
     url,
-    content: { title, text: capped },
+    content: { title, text: capped, sourceSafety },
     metadata: {
       method: 'github', cacheHit: false,
       retrievalCut: text.length > READER_TEXT_CAP,
@@ -163,7 +165,10 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
     const encodedPath = path.split('/').map(encodeSegment).join('/');
     const raw = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeSegment(ref)}/${encodedPath}`;
     const text = await getText(raw, signal, credential);
-    return okResponse(url, `${owner}/${repo}/${path}`, text);
+    const note = agentFileNote(path, 'repo-author');
+    return okResponse(url, `${owner}/${repo}/${path}`, text, false, {
+      flaggedParagraphs: note ? [] : detectAgentDirectedParagraphs(text, 'markdown'), agentNotes: note ? [note] : []
+    });
   }
 
   async function readThread(url: string, owner: string, repo: string, kind: 'issues' | 'pulls', num: string, signal: AbortSignal, callerSignal: AbortSignal | undefined, credential: GithubToken): Promise<WebFetchResponse> {
@@ -172,11 +177,16 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
     const commentsPrefix = `${base}/comments`;
     let target = `${commentsPrefix}?per_page=100`;
     const comments: string[] = [];
+    const flagged = new Set(detectAgentDirectedParagraphs(item.body ?? '', 'markdown'));
     let partial = false;
     for (let page = 0; page < MAX_COMMENT_PAGES; page++) {
       try {
         const response = await getJson<Array<{ body?: string }>>(target, signal, credential);
-        comments.push(...response.data.map((comment) => comment.body ?? '').filter(Boolean));
+        for (const comment of response.data) {
+          const body = comment.body ?? '';
+          if (body) comments.push(body);
+          for (const paragraph of detectAgentDirectedParagraphs(body, 'markdown')) flagged.add(paragraph);
+        }
         const { next, rejected } = nextCommentPage(response.link, commentsPrefix);
         if (rejected) { partial = true; break; }
         if (!next) break;
@@ -191,7 +201,7 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
     const label = kind === 'pulls' && comments.length ? 'Review comments:\n' : '';
     const bodyParts = [item.body ?? '', label + comments.join('\n\n---\n\n')].filter(Boolean);
     const body = bodyParts.join('\n\n---\n\n');
-    return okResponse(url, item.title ?? `${owner}/${repo} ${kind} #${num}`, body, partial || (comments.length > 0 && body.length >= READER_TEXT_CAP));
+    return okResponse(url, item.title ?? `${owner}/${repo} ${kind} #${num}`, body, partial || (comments.length > 0 && body.length >= READER_TEXT_CAP), { flaggedParagraphs: [...flagged], agentNotes: [] });
   }
 
   async function readRepoRoot(url: string, owner: string, repo: string, signal: AbortSignal, credential: GithubToken): Promise<WebFetchResponse> {
@@ -199,7 +209,7 @@ export function createGithubReader({ fetchImpl = fetch, resolveToken = () => res
     const readme = readmeMeta.download_url ? await getText(readmeMeta.download_url, signal, credential) : '';
     const tree = (await getJson<Array<{ name: string; type: string }>>(`https://api.github.com/repos/${owner}/${repo}/contents`, signal, credential)).data;
     const listing = tree.map((entry) => `${entry.type === 'dir' ? '[dir] ' : ''}${entry.name}`).join('\n');
-    return okResponse(url, `${owner}/${repo}`, `${readme}\n\nTop-level contents:\n${listing}`);
+    return okResponse(url, `${owner}/${repo}`, `${readme}\n\nTop-level contents:\n${listing}`, false, { flaggedParagraphs: detectAgentDirectedParagraphs(readme, 'markdown'), agentNotes: [] });
   }
 
   return {

@@ -26,7 +26,8 @@ export function prepareEvidenceSources(items: ResearchEvidence[], query: string,
     ...(item.readerDocument !== undefined ? { readerDocument: item.readerDocument } : {}),
     retrievalCut: item.retrievalCut ?? false,
     selectionOmitted: item.selectionOmitted ?? false,
-    ...(item.retrievedAt ? { retrievedAt: item.retrievedAt } : {})
+    ...(item.retrievedAt ? { retrievedAt: item.retrievedAt } : {}),
+    ...(item.sourceSafety ? { sourceSafety: { flaggedParagraphs: [...item.sourceSafety.flaggedParagraphs], agentNotes: [...item.sourceSafety.agentNotes] } } : {})
   }));
 }
 

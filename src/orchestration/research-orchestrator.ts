@@ -27,6 +27,7 @@ import { createResearchRunBudget, type ResearchBudgetReason, type ResearchBudget
 import type { ResearchProgress } from './progress.js';
 import { createPresentationStats, type PresentationStats } from './presentation-stats.js';
 import { buildCallerContext, collectTaskPlanningGaps } from './caller-context.js';
+import { redactUrlForDisplay } from './url.js';
 
 const DEFAULT_MAX_PASSES = 3;
 const DEFAULT_MAX_FETCHES_PER_PASS = 4;
@@ -54,7 +55,7 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
 
   const passages = selectEvidencePassages(result.content.text, query);
   return {
-    title: result.content.title ?? result.url,
+    title: result.content.title ?? redactUrlForDisplay(result.url),
     url: result.url,
     ...(requestedUrl ? { requestedUrl } : {}),
     sourceKind: classifyEvidenceUrl(result.url),
@@ -66,8 +67,9 @@ function evidenceFromFetch(result: WebFetchResponse, query: string, { trustedCon
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
     retrievalCut: result.metadata.retrievalCut ?? false,
     selectionOmitted: result.metadata.selectionOmitted ?? false,
-    truncated: (result.metadata.truncated ?? false) || passages.truncated
-    , ...(result.metadata.partialComments ? { partialComments: true } : {})
+    truncated: (result.metadata.truncated ?? false) || passages.truncated,
+    ...(result.metadata.partialComments ? { partialComments: true } : {}),
+    sourceSafety: result.content.sourceSafety ?? { flaggedParagraphs: [], agentNotes: [] }
   };
 }
 
@@ -77,7 +79,7 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string, r
 
   const passages = selectEvidencePassages(result.content.text, query);
   return {
-    title: result.content.title ?? result.url,
+    title: result.content.title ?? redactUrlForDisplay(result.url),
     url: result.url,
     ...(requestedUrl ? { requestedUrl } : {}),
     sourceKind: classifyEvidenceUrl(result.url),
@@ -89,7 +91,8 @@ function evidenceFromHeadless(result: WebFetchHeadlessResponse, query: string, r
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
     retrievalCut: result.metadata.retrievalCut ?? false,
     selectionOmitted: result.metadata.selectionOmitted ?? false,
-    truncated: (result.metadata.truncated ?? false) || passages.truncated
+    truncated: (result.metadata.truncated ?? false) || passages.truncated,
+    sourceSafety: result.content.sourceSafety ?? { flaggedParagraphs: [], agentNotes: [] }
   };
 }
 

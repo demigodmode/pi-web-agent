@@ -5,6 +5,7 @@ import { hasBotCheckContent } from '../extract/bot-check.js';
 import { FIRECRAWL_FETCH_TIMEOUT_MS, abortError, requestSignal, throwIfAborted } from '../abort.js';
 import { targetStatusFailure, targetStatusMayNeedHeadless, targetStatusMessage } from './target-status.js';
 import type { FailureInfo, WebFetchResponse } from '../types.js';
+import { detectAgentDirectedParagraphs, finalUrlAgentFileNote } from '../safety/agent-directed.js';
 
 type FirecrawlResponse = {
   success?: boolean;
@@ -138,6 +139,11 @@ export function createFirecrawlFetcher({
       ? selectRelevantContent({ source: text, format: markdown !== undefined ? 'markdown' : 'html', query })
       : undefined;
     const selectedText = selection?.text ?? text;
+    const note = finalUrlAgentFileNote(resolvedUrl);
+    const sourceSafety = {
+      flaggedParagraphs: note ? [] : detectAgentDirectedParagraphs(markdown ?? html!, markdown !== undefined ? 'markdown' : 'html'),
+      agentNotes: note ? [note] : []
+    };
 
     return {
       status: 'ok',
@@ -145,6 +151,7 @@ export function createFirecrawlFetcher({
       content: {
         title,
         text: selectedText,
+        sourceSafety,
         ...(hasBotCheckContent(text, markdown !== undefined ? 'markdown' : 'html') ? { botCheck: true } : {}),
         ...(selection?.anchor ? { sectionAnchor: selection.anchor } : {})
       },

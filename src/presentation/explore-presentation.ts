@@ -3,6 +3,7 @@ import type { PresentationEnvelope } from './types.js';
 import { attemptLines } from './search-presentation.js';
 import { clipTerminalText, endWithPeriod, safeDisplayQuery, sanitizeTerminalText } from './explore-display-text.js';
 import { formatResearchContext } from './research-context.js';
+import { sourceSafetyNotices } from '../safety/result-notices.js';
 
 export { sanitizeTerminalText } from './explore-display-text.js';
 
@@ -31,23 +32,49 @@ export function searchUnavailableNotices(result: Pick<WebExploreResponse, 'searc
   return [...new Set(lines)];
 }
 
+function joinSourceIds(ids: readonly string[]): string {
+  if (ids.length < 2) return ids[0] ?? '';
+  if (ids.length === 2) return `${ids[0]} and ${ids[1]}`;
+  return `${ids.slice(0, -1).join(', ')}, and ${ids.at(-1)}`;
+}
+
+function sourceSafetyLines(result: WebExploreResponse) {
+  const notices = sourceSafetyNotices(result);
+  const directed = notices.flaggedIds.length
+    ? `${joinSourceIds(notices.flaggedIds)} ${notices.flaggedIds.length === 1 ? 'contains' : 'contain'} text addressed to AI agents (marked for the model).`
+    : undefined;
+  const neutral = notices.neutral.map(({ id, author }) => author === 'site-authors'
+    ? `${id} is written for AI agents by the site's authors.`
+    : `${id} includes instructions written for AI agents by the repo's author, not the user.`);
+  return { directed, neutral };
+}
+
+function terminalError(result: WebExploreResponse): string | undefined {
+  if (result.status !== 'error') return undefined;
+  const message = sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.');
+  if (result.error?.code !== 'SECRET_IN_QUERY') return `Research failed: ${message}`;
+  const safe = message.replace(/^(?:Refused:|Research failed:)\s*/iu, '');
+  return safe ? `Refused: ${safe}` : 'Refused: Research request refused.';
+}
+
 function buildLegacyExplorePresentation(result: WebExploreResponse): PresentationEnvelope {
   const notices = (result.requiredSourceFailures ?? []).map((failure) =>
     sanitizeTerminalText(`Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`)
   );
   const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
+  const safety = sourceSafetyLines(result);
   if (result.status === 'error') {
     const successful = result.sources.length
       ? [`Reviewed ${result.sources.length} successful required source${result.sources.length === 1 ? '' : 's'}:`, ...result.sources.map((source) => `- ${methodTag(source.method)}${sanitizeTerminalText(source.title)}: ${sanitizeTerminalText(source.url)}`)]
       : [];
-    const compact = [...searchNotices, ...successful, ...notices,
-      `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`].join('\n');
+    const compact = [...searchNotices, ...successful, ...notices, safety.directed, terminalError(result)].filter(Boolean).join('\n');
     const researchContext = formatResearchContext(result.metadata).join('\n');
     return {
       mode: 'compact',
       views: {
         compact,
-        ...(researchContext ? { verbose: `${compact}\n\n${researchContext}` } : {})
+        preview: compact,
+        verbose: [compact, ...safety.neutral, researchContext].filter(Boolean).join('\n\n')
       }
     };
   }
@@ -74,6 +101,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   const preview = [
     ...searchNotices,
     ...notices,
+    safety.directed,
     ...evidenceLines,
     internalSummary ? `\n${internalSummary}` : undefined
   ]
@@ -82,6 +110,8 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   const verbose = [
     ...searchNotices,
     ...notices,
+    safety.directed,
+    ...safety.neutral,
     'Findings',
     ...(verboseFindings.length ? verboseFindings : evidenceLines),
     '',
@@ -112,7 +142,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   return {
     mode: 'compact',
     views: {
-      compact: [...searchNotices, compactBody].join('\n'),
+      compact: [...searchNotices, compactBody, safety.directed].filter(Boolean).join('\n'),
       preview,
       verbose
     },
@@ -183,14 +213,13 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
 
   const failureNotices = requiredNotices(result);
   const compactNotices = requiredNotices(result, true);
+  const safety = sourceSafetyLines(result);
   const noEvidence = result.findings.length === 0 && result.sources.length === 0;
-  const error = result.status === 'error'
-    ? `Research failed: ${sanitizeTerminalText(result.error?.message ?? 'Unknown research failure.')}`
-    : undefined;
+  const error = terminalError(result);
   const limitation = !error && result.caveat ? sanitizeTerminalText(result.caveat) : undefined;
   const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
   const researchContext = formatResearchContext(result.metadata).join('\n');
-  const compact = [summary, ...searchNotices, ...compactNotices, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
+  const compact = [summary, ...searchNotices, ...compactNotices, safety.directed, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
   const previewFindings = result.findings.slice(0, 3).map((finding) =>
     `- ${clipTerminalText(sanitizeTerminalText(finding), 240)}`
   );
@@ -199,6 +228,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     summary,
     ...searchNotices,
     ...failureNotices,
+    safety.directed,
     error ?? (noEvidence ? 'No usable evidence found.' : limitation),
     !error && previewFindings.length ? '\nFindings\n' + previewFindings.join('\n') : undefined
   ].filter(Boolean).join('\n');
@@ -213,6 +243,8 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
     summary,
     ...searchNotices,
     ...failureNotices,
+    safety.directed,
+    ...safety.neutral,
     error,
     noEvidence ? 'No usable evidence found.' : undefined,
     displayQueries.length ? `Queries\n${displayQueries.join('\n')}` : undefined,

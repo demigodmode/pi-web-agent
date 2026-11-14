@@ -56,8 +56,9 @@ function evidenceFromFetch(fetched: WebFetchResponse, fallbackTitle: string, que
     ...(fetched.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {}),
     retrievalCut: fetched.metadata.retrievalCut ?? false,
     selectionOmitted: fetched.metadata.selectionOmitted ?? false,
-    truncated: (fetched.metadata.truncated ?? false) || passages.truncated
-    , ...(fetched.metadata.partialComments ? { partialComments: true } : {})
+    truncated: (fetched.metadata.truncated ?? false) || passages.truncated,
+    ...(fetched.metadata.partialComments ? { partialComments: true } : {}),
+    sourceSafety: content.sourceSafety ?? { flaggedParagraphs: [], agentNotes: [] }
   } satisfies ResearchEvidence;
 }
 
