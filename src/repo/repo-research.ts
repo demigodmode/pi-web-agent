@@ -1,5 +1,9 @@
 import { abortError, throwIfAborted } from '../abort.js';
 import { READER_TEXT_CAP } from '../readers/limits.js';
+import { agentFileNote, detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
+import { matchFlaggedParagraphs } from '../safety/passage-matching.js';
+import type { SourceFormat } from '../safety/paragraphs.js';
+import type { SourceSafety } from '../safety/types.js';
 import type { FailureInfo, WebFetchResponse } from '../types.js';
 import type { GitEnv } from './git-runner.js';
 import type { GithubToken } from './repo-auth.js';
@@ -7,7 +11,7 @@ import type { RepoCache } from './repo-cache.js';
 import { cloneRepo } from './repo-clone.js';
 import { fetchRepoMeta, type RepoMeta } from './repo-meta.js';
 import { readRepoOverview, type RepoOverview } from './repo-overview.js';
-import { searchRepo, type RepoSearchOptions, type RepoSearchResult } from './repo-search.js';
+import { EXEMPT_TEXT_FILES, searchRepo, type RepoSearchOptions, type RepoSearchResult } from './repo-search.js';
 import { parseRepoUrl } from './repo-url.js';
 import { safeSlice } from './safe-slice.js';
 import { repoFailure, type RepoFailure } from './types.js';
@@ -53,9 +57,9 @@ function excerptSection(meta: RepoMeta, path: string, startLine: number, text: s
   return `${path} (lines ${startLine}-${endLine})\n${blobUrl(meta, path, startLine, endLine)}\n${text}`;
 }
 
-function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResult['files'][number]['excerpts'][number], maxChars: number): string | undefined {
+function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResult['files'][number]['excerpts'][number], maxChars: number): { section: string; text: string } | undefined {
   const full = excerptSection(meta, path, excerpt.startLine, excerpt.text);
-  if (full.length <= maxChars) return full;
+  if (full.length <= maxChars) return { section: full, text: excerpt.text };
 
   const lines = excerpt.text.split(/\r?\n/);
   let best: string | undefined;
@@ -64,7 +68,7 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
     if (excerptSection(meta, path, excerpt.startLine, candidate).length > maxChars) break;
     best = candidate;
   }
-  if (best !== undefined && best.length > 0) return excerptSection(meta, path, excerpt.startLine, best);
+  if (best !== undefined && best.length > 0) return { section: excerptSection(meta, path, excerpt.startLine, best), text: best };
 
   const line = lines[0] ?? '';
   let low = 1;
@@ -80,7 +84,32 @@ function fitExcerptSection(meta: RepoMeta, path: string, excerpt: RepoSearchResu
       high = middle - 1;
     }
   }
-  return shortened ? excerptSection(meta, path, excerpt.startLine, shortened) : undefined;
+  return shortened ? { section: excerptSection(meta, path, excerpt.startLine, shortened), text: shortened } : undefined;
+}
+
+type IncludedRepoSource = { path: string; text: string; sourceText: string; format?: SourceFormat; intentional: boolean };
+
+// Only README/docs-style text is scanned. Code and config files stay unscanned.
+function repoSourceFormat(path: string): SourceFormat | undefined {
+  // Build and dependency config is not prose, the same files repo-search exempts from its text penalty.
+  if (EXEMPT_TEXT_FILES.test(path.split('/').pop() ?? '')) return undefined;
+  const name = path.toLowerCase();
+  if (/\.(?:md|markdown|mdx)$/u.test(name)) return 'markdown';
+  if (/\.adoc$/u.test(name)) return 'asciidoc';
+  if (/\.(?:txt|rst|org)$/u.test(name)) return 'text';
+  if (/(?:^|\/)(?:readme|contributing|notice|changelog|authors|history)$/u.test(name)) return 'markdown';
+  return undefined;
+}
+
+function repoSourceSafety(sources: IncludedRepoSource[]): SourceSafety {
+  const agentNotes = sources.some((source) => source.intentional) ? ['repo-author' as const] : [];
+  const candidates = sources.flatMap((source) =>
+    !source.intentional && source.format
+      ? matchFlaggedParagraphs(source.text, detectAgentDirectedParagraphs(source.sourceText, source.format)).map((paragraph) => ({ paragraph, source }))
+      : []
+  );
+  const flaggedParagraphs = [...new Set(candidates.map(({ paragraph }) => paragraph))];
+  return { flaggedParagraphs, agentNotes };
 }
 
 function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: RepoOverview | undefined, reused: boolean): WebFetchResponse {
@@ -97,6 +126,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
   let selectionOmitted = header.length > contentCap;
   let truncated = selectionOmitted || search.partial === true;
   const sections = [safeSlice(header, contentCap)];
+  const includedSources: IncludedRepoSource[] = [];
   let length = sections[0].length;
   let exhausted = false;
 
@@ -106,16 +136,23 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
       if (!excerpt) continue;
       const available = contentCap - length - 2;
       const full = excerptSection(meta, file.path, excerpt.startLine, excerpt.text);
-      const section = fitExcerptSection(meta, file.path, excerpt, available);
-      if (!section) {
+      const fitted = fitExcerptSection(meta, file.path, excerpt, available);
+      if (!fitted) {
         selectionOmitted = true;
         truncated = true;
         exhausted = true;
         break;
       }
-      sections.push(section);
-      length += section.length + 2;
-      if (section !== full) {
+      sections.push(fitted.section);
+      includedSources.push({
+        path: file.path,
+        text: fitted.text,
+        sourceText: file.sourceText ?? fitted.text,
+        format: repoSourceFormat(file.path),
+        intentional: agentFileNote(file.path, 'repo-author') !== undefined
+      });
+      length += fitted.section.length + 2;
+      if (fitted.section !== full) {
         selectionOmitted = true;
         truncated = true;
         exhausted = true;
@@ -124,31 +161,47 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
     }
   }
 
-  const appendPlain = (section: string) => {
+  const appendPlain = (section: string): string | undefined => {
     const available = contentCap - length - 2;
     if (section.length <= available) {
       sections.push(section);
       length += section.length + 2;
-      return;
+      return section;
     }
     if (available > 0) {
       const shortened = safeSlice(section, available);
       if (shortened.length > 0) {
         sections.push(shortened);
         length += shortened.length + 2;
+        selectionOmitted = true;
+        truncated = true;
+        return shortened;
       }
     }
     selectionOmitted = true;
     truncated = true;
+    return undefined;
   };
   if (search.files.length === 0) {
     appendPlain(search.terms.length ? 'No files matched those terms.' : 'The question had no specific terms to search the code for.');
   }
   // The README only fills in when the code search found little (#70).
   if (search.files.length < 2 && overview) {
-    if (overview.readme) {
+    if (overview.readme && overview.readmePath) {
       if (overview.readme.length > README_EXCERPT_CHARS) selectionOmitted = true;
-      appendPlain(`${overview.readmePath}:\n${safeSlice(overview.readme, README_EXCERPT_CHARS)}`);
+      const readme = safeSlice(overview.readme, README_EXCERPT_CHARS);
+      const prefix = `${overview.readmePath}:\n`;
+      const included = appendPlain(`${prefix}${readme}`);
+      const actual = included?.slice(prefix.length);
+      if (actual) {
+        includedSources.push({
+          path: overview.readmePath,
+          text: actual,
+          sourceText: overview.readme,
+          format: repoSourceFormat(overview.readmePath),
+          intentional: agentFileNote(overview.readmePath, 'repo-author') !== undefined
+        });
+      }
     }
     if (search.files.length === 0) {
       const listing = overview.entries.map((entry) => (entry.dir ? `[dir] ${entry.name}` : entry.name)).join('\n');
@@ -160,7 +213,7 @@ function searchResponse(meta: RepoMeta, search: RepoSearchResult, overview: Repo
   return {
     status: 'ok',
     url: treeUrl(meta),
-    content: { title: name, text },
+    content: { title: name, text, sourceSafety: repoSourceSafety(includedSources) },
     metadata: {
       method: 'github', cacheHit: reused,
       retrievalCut: false,

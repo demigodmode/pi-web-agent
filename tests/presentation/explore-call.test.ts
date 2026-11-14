@@ -12,6 +12,18 @@ describe('web_explore call heading', () => {
     expect(formatExploreCall('partial query', false)).toBe('web_explore (…)');
   });
 
+  it('never includes a complete unsafe query in the call heading', () => {
+    expect(formatExploreCall('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij', true)).toBe('web_explore (query refused)');
+  });
+
+  it('hides a marker-free project key in the shared heading', () => {
+    const key = 'sk-proj-Rdr7Nh3PpFjDlJvXBtbL9xnfZVTTVZfnx9LbtBXv';
+    const heading = formatExploreCall(`api.example.com/v1?api_key=${key}`, true);
+
+    expect(heading).toBe('web_explore (query refused)');
+    expect(heading).not.toContain(key);
+  });
+
   it('removes terminal controls and preserves quoted terminal text safely', () => {
     expect(formatExploreCall('  say "hi"\u001b[31m\\now\t ', true)).toBe('web_explore ("say \\"hi\\"\\\\now")');
   });
@@ -24,13 +36,13 @@ describe('web_explore call heading', () => {
 
   it('redacts credentials and tracking from HTTP URLs', () => {
     const heading = formatExploreCall('https://alice:secret@example.com/docs?q=secret#secret', true);
-    expect(heading).toBe('web_explore ("example.com/docs")');
+    expect(heading).toBe('web_explore (query refused)');
     expect(heading).not.toContain('secret');
   });
 
   it('redacts credentials from HTTP URLs embedded in a query', () => {
     const heading = formatExploreCall('Review https://alice:secret@example.com/docs?token=secret#secret now', true);
-    expect(heading).toBe('web_explore ("Review example.com/docs now")');
+    expect(heading).toBe('web_explore (query refused)');
     expect(heading).not.toContain('secret');
   });
 

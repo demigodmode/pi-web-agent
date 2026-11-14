@@ -1,7 +1,10 @@
 import { chromium } from 'playwright';
 import { abortError, throwIfAborted } from '../abort.js';
 import { extractReadableContentForQuery, extractReadableContentSafely } from '../extract/readability.js';
+import { pruneHiddenDocument } from '../extract/hidden-text.js';
+import { SHARP_ASK_PATTERNS } from '../safety/agent-directed.js';
 import { hasBotCheckContent } from '../extract/bot-check.js';
+import { finalUrlAgentFileNote } from '../safety/agent-directed.js';
 import { resolveBrowserExecutable, type BrowserResolutionResult } from './browser-resolution.js';
 import { BLOCKED_HEADER, type GuardProxy } from './guard-proxy.js';
 import { BLOCKED_PRIVATE_ADDRESS, BlockedAddressError, UPSTREAM_PROXY_REFUSED, type NetworkGuard } from './network-guard.js';
@@ -295,19 +298,28 @@ export async function headlessFetch(
     throwIfAborted(signal);
     const statusAfterLoad = targetFailure();
     if (statusAfterLoad) return statusAfterLoad;
+    await page.evaluate(pruneHiddenDocument, { mode: 'rendered', sharpAsks: SHARP_ASK_PATTERNS });
+    throwIfAborted(signal);
+    const statusAfterEvaluation = targetFailure();
+    if (statusAfterEvaluation) return statusAfterEvaluation;
     const html = await page.content();
     const statusAfterContent = targetFailure();
     if (statusAfterContent) return statusAfterContent;
     const finishedAt = now();
 
     const blockedSubresources = subresourceRefusals();
-    const baselineExtraction = extractReadableContentSafely(html);
-    const queryExtraction = query ? extractReadableContentForQuery(html, query) : undefined;
+    const baselineExtraction = extractReadableContentSafely(html, 4000, { hiddenText: 'processed' });
+    const queryExtraction = query ? extractReadableContentForQuery(html, query, 4000, { hiddenText: 'processed' }) : undefined;
     const extraction = queryExtraction ?? baselineExtraction;
     const cleanedBaselineText = cleanupRenderedText(baselineExtraction.content.text);
+    const note = finalUrlAgentFileNote(page.url?.() ?? url);
     const cleanedContent = {
       ...extraction.content,
       text: cleanupRenderedText(extraction.content.text),
+      sourceSafety: {
+        flaggedParagraphs: note ? [] : extraction.content.sourceSafety?.flaggedParagraphs ?? [],
+        agentNotes: note ? [note] : []
+      },
       ...(hasBotCheckContent(html, 'html') ? { botCheck: true } : {})
     };
 

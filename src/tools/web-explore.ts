@@ -12,6 +12,8 @@ import type { ModelContext, ResultsConfig } from '../results/types.js';
 import type { ResearchProgress } from '../orchestration/progress.js';
 import { redactUrlForDisplay, redactUrlsInText } from '../orchestration/url.js';
 import type { PresentationEnvelope } from '../presentation/types.js';
+import { detectInputSecret } from '../safety/secrets.js';
+import { secretRefusal } from '../safety/refusal.js';
 
 // Output-only: the orchestrator keeps raw URLs for fetching, and every view is built from this copy.
 // Findings and evidence excerpts are page content and stay as read.
@@ -47,41 +49,46 @@ function toPublicResponse(response: WebExploreResponse): WebExploreResponse & { 
   return { ...redacted, presentation: buildExplorePresentation(redacted) };
 }
 
+type ExploreInput = { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void };
+type ExploreResult = {
+  decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
+  evidence: ResearchEvidence[];
+  workerPass: unknown;
+  metadata?: WebExploreResponse['metadata'];
+  terminalFailure?: { code: string; message: string };
+  requiredSourceEvidence?: ResearchEvidence[];
+  requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
+  searchUnavailable?: WebExploreResponse['searchUnavailable'];
+};
+type ExploreRunner = (input: ExploreInput) => Promise<ExploreResult>;
+
 export function createWebExploreTool({
-  explore = createResearchWorkflow(),
+  explore,
   now = () => performance.now()
 }: {
   explore?:
     | {
-        run: (input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
-          decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
-          evidence: ResearchEvidence[];
-          workerPass: unknown;
-          metadata?: WebExploreResponse['metadata'];
-          terminalFailure?: { code: string; message: string };
-          requiredSourceEvidence?: ResearchEvidence[];
-          requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
-          searchUnavailable?: WebExploreResponse['searchUnavailable'];
-        }>;
+        run: ExploreRunner;
       }
-    | ((input: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void }) => Promise<{
-        decision: { action: 'answer' | 'research-again' | 'escalate-headless' };
-        evidence: ResearchEvidence[];
-        workerPass: unknown;
-        metadata?: WebExploreResponse['metadata'];
-        terminalFailure?: { code: string; message: string };
-        requiredSourceEvidence?: ResearchEvidence[];
-        requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
-        searchUnavailable?: WebExploreResponse['searchUnavailable'];
-      }>);
+    | ExploreRunner;
   now?: () => number;
 } = {}) {
-  const runExplore = typeof explore === 'function' ? explore : explore.run.bind(explore);
+  let runExplore: ExploreRunner | undefined;
+  const getRunExplore = (): ExploreRunner => {
+    if (!runExplore) {
+      const configured = explore ?? createResearchWorkflow();
+      const runner: ExploreRunner = typeof configured === 'function' ? configured : configured.run.bind(configured);
+      runExplore = runner;
+    }
+    return runExplore;
+  };
 
   return async function webExplore({ query, signal, onProgress, startedAt, results = DEFAULT_RESULTS_CONFIG, modelContext }: { query: string; signal?: AbortSignal; onProgress?: (event: ResearchProgress) => void; startedAt?: number; results?: ResultsConfig; modelContext?: ModelContext }) {
     const localStartedAt = now();
     const durationMs = () => Math.max(0, now() - (startedAt ?? localStartedAt));
     throwIfAborted(signal);
+    const secret = detectInputSecret(query);
+    if (secret) return toPublicResponse({ ...secretRefusal(secret), durationMs: durationMs() });
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
@@ -99,7 +106,7 @@ export function createWebExploreTool({
     const safeProgress = onProgress ? (event: ResearchProgress) => {
       try { onProgress(event); } catch { /* Display callbacks must not fail research. */ }
     } : undefined;
-    const run = runExplore({ query: normalizedQuery, ...(signal ? { signal } : {}), ...(safeProgress ? { onProgress: safeProgress } : {}) });
+    const run = getRunExplore()({ query: normalizedQuery, ...(signal ? { signal } : {}), ...(safeProgress ? { onProgress: safeProgress } : {}) });
     // Backstop: Pi waits for this promise, so answer the cancel right away even if
     // some layer underneath is slow to stop. The run itself keeps its lease in
     // extension.ts until it really settles.

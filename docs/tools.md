@@ -2,6 +2,16 @@
 
 The public tool surface is intentionally small now.
 
+## Safety with untrusted pages
+
+`web_explore` hands the model page text as quoted reference, with a fixed line saying so before the excerpts. Three checks run on every call:
+
+- Text a reader can't see or open is removed before the page is read. Tabs and collapsed sections are kept.
+- An excerpt that speaks to an AI agent directly and asks for something risky (run a command, send data, read secrets, change files, hide something from you, ignore its instructions) stays in the result with a mark after it, and the terminal shows one line naming the source. Docs that only talk about agents, and attack examples quoted in code blocks or blockquotes, are not marked.
+- If the query or a link in it contains what looks like a credential, the whole call is refused before anything is searched or fetched.
+
+These are checks, not a sandbox. See [Running safely](/safety) for what they don't cover.
+
 ## `web_explore`
 
 Use `web_explore` for web research questions:

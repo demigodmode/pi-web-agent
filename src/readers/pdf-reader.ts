@@ -3,6 +3,7 @@ import type { WebFetchResponse } from '../types.js';
 import type { SpecialContentReader } from './types.js';
 import { READER_TEXT_CAP } from './limits.js';
 import { PDF_FETCH_TIMEOUT_MS, requestSignal } from '../abort.js';
+import { detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
 
 type PdfReaderDeps = {
   fetchImpl?: typeof fetch;
@@ -72,7 +73,7 @@ export function createPdfReader({ fetchImpl = fetch, extractPdfText = defaultExt
         return {
           status: 'ok',
           url,
-          content: { title: extracted.title ?? filenameFromUrl(url), text: text.slice(0, READER_TEXT_CAP) },
+          content: { title: extracted.title ?? filenameFromUrl(url), text: text.slice(0, READER_TEXT_CAP), sourceSafety: { flaggedParagraphs: detectAgentDirectedParagraphs(text, 'text'), agentNotes: [] } },
           metadata: {
             method: 'pdf', cacheHit: false, contentType: 'application/pdf',
             retrievalCut: text.length > READER_TEXT_CAP,

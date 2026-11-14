@@ -1,6 +1,7 @@
 import { getSubtitles, getVideoDetails } from 'youtube-caption-extractor';
 import type { WebFetchResponse } from '../types.js';
 import type { SpecialContentReader } from './types.js';
+import { detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
 import { READER_TEXT_CAP } from './limits.js';
 import { PAGE_FETCH_TIMEOUT_MS, fetchWithSignal, requestSignal } from '../abort.js';
 
@@ -83,7 +84,7 @@ export function createYoutubeReader({
         return {
           status: 'ok',
           url,
-          content: { title: details.title ?? `YouTube ${videoID}`, text: transcript.slice(0, READER_TEXT_CAP) },
+          content: { title: details.title ?? `YouTube ${videoID}`, text: transcript.slice(0, READER_TEXT_CAP), sourceSafety: { flaggedParagraphs: detectAgentDirectedParagraphs(transcript, 'text'), agentNotes: [] } },
           metadata: {
             method: 'youtube', cacheHit: false,
             retrievalCut: transcript.length > READER_TEXT_CAP,

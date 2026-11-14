@@ -7,10 +7,14 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
-- None.
+- Every `web_explore` result now tells the model that its excerpts are quoted reference material, not instructions.
+- Text in a page, issue, PDF or repo file that addresses an AI agent and asks for something risky (run a command, send data, read secrets, hide something from you, ignore its instructions) is marked in the result, and the terminal shows a line naming the source. The text is kept. Quoted examples in code blocks and blockquotes are not marked.
+- `llms.txt`, `AGENTS.md`, `CLAUDE.md` and similar files get a short note saying who wrote them.
+- A query or link containing what looks like a credential (GitHub, OpenAI, Anthropic, AWS, Slack, Stripe, Google or npm keys, private keys, `password=` style values) is refused before anything is searched or fetched. Placeholders and signed S3, GCS and Azure links are allowed.
+- New docs page: [Running safely](docs/safety.md).
 
 ### Changed
-- None.
+- Hidden page text (`hidden`, `aria-hidden`, `display:none`, off-screen and zero-size text) is removed before a page is read. Tabs, `<details>` and accordion panels are kept.
 
 ### Fixed
 - None.
