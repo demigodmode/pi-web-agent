@@ -58,6 +58,18 @@ Set `YDC_API_KEY` in the environment where Pi runs, then reload/restart Pi and r
 
 If You.com still reports an HTTP warning, check that the key is valid and that the Pi process can reach the You.com Search API.
 
+## `/web-agent doctor` says degoog returns no results
+
+A fresh degoog has no web engines installed, so every search comes back empty. Doctor reports `no search engines installed` in that case. Install some engines in degoog's settings and enable them.
+
+If doctor says `no web search engines are enabled`, the engines are installed but switched off. Turn one on in degoog.
+
+If doctor says `every engine failed`, degoog is up but each engine it tried errored or was misconfigured. The reasons are listed in the message (rate limits and blocks are common; a misconfigured engine shows its error reason). Try again later, fix the engine's settings, or enable another engine.
+
+A `HTTP 401` warning means degoog wants an API key. Set `PI_WEB_AGENT_DEGOOG_API_KEY` in the environment where Pi runs to the key from degoog, then reload Pi.
+
+`HTTP N from /api/engines` (any non-2xx status, such as a 404) or `unexpected response from /api/engines` (an HTML page or other non-JSON body) means the base URL is wrong. Use the instance root, like `http://localhost:4444`, and keep any sub-path your reverse proxy adds. See [Backends](/self-hosted-backends#degoog-search) for the details.
+
 ## `/web-agent doctor` says Google SERP is missing its endpoint or key
 
 `google-serp` needs both an endpoint and a key. Set `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` in the environment where Pi runs, and set `backends.search.baseUrl` (or **Search endpoint URL** in settings) to your vendor's search URL. Reload/restart Pi and run doctor again.
@@ -133,7 +145,7 @@ If you want the diagnostic report directly, use:
 The settings UI has three sections:
 
 - **Presentation**: `defaultMode` and `web_explore`
-- **Backends**: search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
+- **Backends**: search/fetch providers, SearXNG, degoog, and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
 - **Results**: the result-length limit and its write scope
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.

@@ -20,6 +20,12 @@ export type JsonSearchProviderOptions = {
   normalize: (json: unknown) => Normalized | undefined;
   /** A 200 that is empty only because the provider degraded (e.g. SearXNG engines suspended). */
   isDegradedEmpty?: (json: unknown) => boolean;
+  /** Wording for a degraded empty response; the generic sentence when omitted. */
+  degradedMessage?: (json: unknown) => string;
+  /** Full wording for a non-2xx status, when the default needs a hint (which env var, which setting). */
+  httpFailureMessage?: (status: number) => string | undefined;
+  /** Replaces the generic "did not match the expected format" wording. */
+  badResponseMessage?: string;
   /** Providers that report the failure inside a 2xx body instead of a 4xx (see classifyEnvelopeFailure). */
   bodyFailure?: (json: unknown) => EnvelopeFailure | undefined;
 };
@@ -69,8 +75,16 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
       return error('FETCH_FAILED', `${label} search response could not be read: ${message}`, { kind: 'transient' });
     }
     if (!response.ok) {
-      return error('FETCH_FAILED', `${label} search request failed: HTTP ${response.status}`, classifyHttpFailure(name, parts, now()));
+      const message = options.httpFailureMessage?.(response.status) ?? `${label} search request failed: HTTP ${response.status}`;
+      return error('FETCH_FAILED', message, classifyHttpFailure(name, parts, now()));
     }
+
+    const badResponse = () =>
+      error(
+        'BAD_RESPONSE',
+        options.badResponseMessage ?? `${label} returned a response that did not match the expected format.`,
+        { kind: 'bad_response', httpStatus: response.status }
+      );
 
     const body = parts.json === undefined ? options.decodeBody?.(parts) : parts.json;
 
@@ -84,23 +98,11 @@ export function createJsonSearchProvider(options: JsonSearchProviderOptions) {
     }
 
     const normalized = body === undefined ? undefined : options.normalize(body);
-    if (!normalized) {
-      return error('BAD_RESPONSE', `${label} returned a response that did not match the expected format.`, {
-        kind: 'bad_response',
-        httpStatus: response.status
-      });
-    }
-    if (normalized.rawCount > 0 && normalized.results.length === 0) {
-      return error('BAD_RESPONSE', `${label} returned a response that did not match the expected format.`, {
-        kind: 'bad_response',
-        httpStatus: response.status
-      });
-    }
+    if (!normalized) return badResponse();
+    if (normalized.rawCount > 0 && normalized.results.length === 0) return badResponse();
     if (normalized.results.length === 0 && options.isDegradedEmpty?.(body)) {
-      return error('BAD_RESPONSE', `${label} returned no results because some of its sources were unavailable.`, {
-        kind: 'bad_response',
-        httpStatus: response.status
-      });
+      const message = options.degradedMessage?.(body) ?? `${label} returned no results because some of its sources were unavailable.`;
+      return error('BAD_RESPONSE', message, { kind: 'bad_response', httpStatus: response.status });
     }
 
     return respond({ status: 'ok', results: normalized.results, metadata: { backend: name, cacheHit: false } });

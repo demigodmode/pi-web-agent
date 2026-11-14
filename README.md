@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/search%20backends-475569?style=flat-square" alt="Search backends">
   <img src="https://img.shields.io/badge/DuckDuckGo-475569?style=flat-square&logo=duckduckgo&logoColor=white" alt="DuckDuckGo">
   <img src="https://img.shields.io/badge/SearXNG-475569?style=flat-square&logo=searxng&logoColor=white" alt="SearXNG">
+  <img src="https://img.shields.io/badge/degoog-475569?style=flat-square" alt="degoog">
   <img src="https://img.shields.io/badge/Brave-475569?style=flat-square&logo=brave&logoColor=white" alt="Brave Search">
   <img src="https://img.shields.io/badge/You.com-475569?style=flat-square&logo=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8%2F9hAAABZElEQVQ4jX2TP0sDQRDF3ywbcROCF8HKQgstUiWFX8BWm4BYaJVGERE89AuYzkY4mxQ2WqUQBBtt%2FQIpEhsbG%2Btg%2FiDehhB2LBLD5TKXBwsD835v2dldgqCS3%2FEWh%2B6cAB8AGAj6Wt0%2BB7lu3EtzQC%2Fm7UpBNA%2Fc2zEAgKdXmxhEh6edIiv3JuyYFDAJIqe2tVPugQQYANZWNULrpBYAeEzuXhNQkLppQ8hv6nEdIrQ8ayIUVRJ8cZRFxhAy4zptSLKCDs6%2BGRidlxlYWVbYKiwgEwN%2BLaPeHKDVnj6Snkqj8ZJ2ivTFgOik0ybE5XEW%2BY1R%2B%2BNziJu7H3EO4gxCyxMgWkvSDDSlmwgto%2F4%2BmNSSGGgq5VSZGT3J0Gq7maFF6C%2FlVFnVqrlGP6XWGagkBU1xjB4DFZtSxVo115A%2Bkw%2BGT4Sl6FNmRg%2BEoK9VMPOZ4ir5Hc8M3dX%2BrjkBgMcXex0H%2F%2FUHatWr2uEU4ZoAAAAASUVORK5CYII%3D" alt="You.com">
   <img src="https://img.shields.io/badge/Exa-475569?style=flat-square&logo=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAACgUlEQVR42u2XXUiTYRTHf8%2Feuem7V6sbQcFMsgyJQoigizDqIuhDiW6iksBISrGS7MsP3JhWlBUqWnThjX2RBGlSRCREF0UEkURkGWYSUhCpe7e5ue3pQmaY6Eq3hNq5ex8O5%2Flxzvn%2FeR%2BRuu6bZA7DwBxHFCAKYAyVUF%2Bhkb06ZkbFS07pdD4bnR2AGieYFy8YdEhudHhCXmo2wZ5tsSgG0F1y9h0Ixvx4QW%2B%2Fn1v3p4ewH7agGOB6h4fnXb7w7ICU0NPnx3ZIZUmqMmXexrUm8nLNvOnxY2twhW8JpYQim44AGq0acWYxKScp0cCZUgtOl6TYruPxyvCqoLvXT80lF0sXKVQUqhPnqEBDpcaCBMHRs04%2BfPJHRoYtbR7udnrZlWMmZ4Np%2FPxIvsqq5Uaab49w77E3sj5QftFJ%2F0CAmhILKUkG1mTFULAjlldvfZy%2B7Aq%2FD%2Fwaw7rkYLVOa10CjVUayYkGHE5JoVVn1EdkAISAq7XxE850t2RFhhEpYW%2BZg89fAv%2BoFQdluLvUMf6dlWmktS6Brm4fyYkGLpRpbN43NKMu%2FHEHEjRBfYWG2yMpsukU253EWwRNVo0Y418YQXD7g2p4%2BnKUKzdHWLnMyMn9amQB8nLNbF1v4lq7h%2FZHP%2FV%2BvtnFi9c%2B8rfHsinbFBmAjDSF8gMq7z76qW6aqHefH4rtOt%2BHJeeOWVi8UAkvgBDQWKUhgSKrjtsz2ecHvgY4UevEogoaKjXMJhFegPRUhao6F%2B%2F7pvb5B0%2B8tLR5yExXqCpWw%2BuEgw5JWorC8YLpC4%2F6JP4A7Nxi5s7D0P8EIQFcbsmQQyIYK%2Fo7oTvHRqSpoccgoi%2BjKMB%2FD%2FADRpbjdBgK8S0AAAAASUVORK5CYII%3D" alt="Exa">
@@ -35,7 +36,7 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 - **Reads the real content behind links.** Paste a GitHub, PDF, or YouTube URL and it pulls the actual thing (GitHub files/issues/PRs from the API, PDF text, YouTube transcripts). Public GitHub content is keyless; private GitHub content needs `GITHUB_TOKEN` or `gh auth login`. So "summarize this PDF" or "what does this repo do" works off the source, not the page shell.
 - **Answers questions about a GitHub repo from its code.** Paste a repo or folder link and it clones that exact commit (shallow, over HTTPS), searches the code for your question, and cites excerpts with links pinned to the commit. Needs `git` 2.32+. Public repositories can be read anonymously; private repositories use `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read it says why instead of guessing from the README.
 - **Esc stops it.** Cancelling a running `web_explore` stops searches, page reads, and the headless browser. Page reads give up after 15 seconds (PDFs 60, Firecrawl 45), and one page that fails to load doesn't fail the whole run.
-- **Eight search backends.** DuckDuckGo (keyless default), SearXNG, Brave, You.com, Exa, Tavily, Parallel (keyless, opt-in), and any Google SERP endpoint you point it at.
+- **Nine search backends.** DuckDuckGo (keyless default), SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel (keyless, opt-in), and any Google SERP endpoint you point it at.
 - **Optional search fanout.** Query several backends at once, dedupe, and rank pages that more than one provider agreed on to the top. Off by default; flip it to `on` or `auto`.
 - **Honest by default.** Weak, narrow, blocked, or cautionary evidence gets flagged instead of dressed up as confidence.
 - **Safe with untrusted pages.** Links the model picks, or finds on a page it read, can't reach localhost, your LAN, or cloud metadata endpoints. That includes redirects and everything a headless page loads. Addresses you configure yourself aren't affected, and an allow list covers the private ranges you do want.
@@ -95,6 +96,7 @@ Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Sw
 | --- | --- | --- |
 | DuckDuckGo | search (default) | nothing, keyless |
 | SearXNG | search (self-hosted) | base URL |
+| degoog | search (self-hosted) | base URL, optional `PI_WEB_AGENT_DEGOOG_API_KEY` |
 | Brave | search (hosted) | `PI_WEB_AGENT_BRAVE_API_KEY` |
 | You.com | search (hosted) | `YDC_API_KEY` |
 | Exa | search (hosted) | `EXA_API_KEY` |
