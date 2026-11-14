@@ -17,6 +17,7 @@ The format is intentionally simple and release-oriented.
 
 ### Changed
 - Hidden page text (`hidden`, `aria-hidden`, `display:none`, off-screen and zero-size text) is removed before a page is read. Tabs, `<details>` and accordion panels are kept.
+- Updated undici to 8.12.4 and the Pi dev dependencies to 1.5.2, which clears the open `npm audit` advisories (undici, minimatch).
 
 ### Fixed
 - None.
