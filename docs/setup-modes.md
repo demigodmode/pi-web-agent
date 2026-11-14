@@ -22,6 +22,6 @@ Other hosted research providers may be added later, but do not assume every prov
 
 ## Self-hosted setups
 
-If you already run SearXNG or Firecrawl, `pi-web-agent` can connect to them through backend config.
+If you already run SearXNG, degoog, or Firecrawl, `pi-web-agent` can connect to them through backend config.
 
 See [Backends](/self-hosted-backends) for the config shape, verification steps, and troubleshooting notes.

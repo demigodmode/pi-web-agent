@@ -3,6 +3,7 @@ import { BROWSER_PATH_CONFIG_KEY, BROWSER_PATH_ENV, type BrowserResolutionResult
 import { classifyEnvelopeFailure } from './provider-failure.js';
 import { createParallelSearchTool } from '../search/parallel.js';
 import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
+import { allEnginesFailed, DEGOOG_API_KEY_ENV, degoogApiUrl, degoogHeaders, describeEngineFailures, engineTimingsOf } from '../search/degoog.js';
 
 function withTimeout(timeoutMs: number) {
   const controller = new AbortController();
@@ -45,6 +46,77 @@ function searxngDoctorUrl(baseUrl: string, options: SearxngOptions = {}) {
   if (options.language) url.searchParams.set('language', options.language);
   if (options.safesearch !== undefined) url.searchParams.set('safesearch', String(options.safesearch));
   return url.toString();
+}
+
+type DegoogEngine = { id?: unknown; searchTypes?: unknown; origin?: { kind?: unknown } | null };
+
+/** Installed engines that search the web, leaving out the builtin core engine. */
+function isWebEngine(engine: unknown): boolean {
+  const e = engine as DegoogEngine | null;
+  return !!e && e.origin?.kind !== 'core' && Array.isArray(e.searchTypes) && e.searchTypes.includes('web');
+}
+
+/** Engine checks first, then one probe search. A failed engines request skips the probe. */
+async function degoogDoctorLines(baseUrl: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<string[]> {
+  const headers = degoogHeaders(process.env[DEGOOG_API_KEY_ENV]);
+  const lines: string[] = [];
+
+  let engines: unknown[] = [];
+  let defaults: Record<string, unknown> = {};
+  const enginesTimeout = withTimeout(timeoutMs);
+  try {
+    const response = await fetchImpl(degoogApiUrl(baseUrl, 'api/engines'), { headers, signal: enginesTimeout.signal });
+    const json = (await response.json().catch(() => undefined)) as { engines?: unknown; defaults?: unknown } | undefined;
+    if (!response.ok) {
+      lines.push(`search backend: degoog warning (HTTP ${response.status} from /api/engines, check the base URL)`);
+      return lines;
+    }
+    if (!Array.isArray(json?.engines)) {
+      lines.push('search backend: degoog warning (unexpected response from /api/engines, check the base URL)');
+      return lines;
+    }
+    engines = json.engines;
+    defaults = json.defaults && typeof json.defaults === 'object' ? (json.defaults as Record<string, unknown>) : {};
+  } catch (error) {
+    lines.push(`search backend: degoog warning (${message(error)})`);
+    return lines;
+  } finally {
+    enginesTimeout.done();
+  }
+
+  const webEngines = engines.filter(isWebEngine);
+  // Only engine warnings can be in `lines` at this point, and the probe must not say "ok" over them.
+  if (webEngines.length === 0) {
+    lines.push("search backend: degoog warning (no search engines installed; install some in degoog's settings, searches will come back empty until then)");
+  } else if (!webEngines.some((engine) => defaults[String((engine as DegoogEngine).id)] === true)) {
+    lines.push("search backend: degoog warning (no web search engines are enabled; enable some in degoog's settings)");
+  }
+
+  const probeTimeout = withTimeout(timeoutMs);
+  try {
+    const response = await fetchImpl(degoogApiUrl(baseUrl, 'api/search', { q: 'pi-web-agent-doctor' }), { headers, signal: probeTimeout.signal });
+    if (response.status === 401) {
+      lines.push(`search backend: degoog warning (HTTP 401, check ${DEGOOG_API_KEY_ENV})`);
+    } else if (!response.ok) {
+      lines.push(`search backend: degoog warning (HTTP ${response.status})`);
+    } else {
+      const json = (await response.json().catch(() => undefined)) as { results?: unknown } | undefined;
+      const timings = engineTimingsOf(json);
+      if (!Array.isArray(json?.results) || !timings) {
+        lines.push('search backend: degoog warning (unexpected response)');
+      } else if (allEnginesFailed(timings)) {
+        lines.push(`search backend: degoog warning (every engine failed: ${describeEngineFailures(timings)})`);
+      } else if (lines.length === 0) {
+        lines.push('search backend: degoog ok');
+      }
+    }
+  } catch (error) {
+    lines.push(`search backend: degoog warning (${message(error)})`);
+  } finally {
+    probeTimeout.done();
+  }
+
+  return lines;
 }
 
 function firecrawlDoctorBody(options: FirecrawlOptions = {}) {
@@ -258,6 +330,13 @@ export async function checkBackendHealth(
         timeout.done();
       }
     }
+  } else if (config.search.provider === 'degoog') {
+    const baseUrl = resolveSearchBaseUrl(config.search, 'degoog');
+    if (!baseUrl) {
+      lines.push('search backend: degoog warning (missing baseUrl)');
+    } else {
+      lines.push(...(await degoogDoctorLines(baseUrl, fetchImpl, timeoutMs)));
+    }
   } else if (config.search.provider === 'searxng') {
     const baseUrl = resolveSearchBaseUrl(config.search, 'searxng');
     if (!baseUrl) {
@@ -289,6 +368,8 @@ export async function checkBackendHealth(
     for (const provider of providers) {
       if (provider === 'searxng' && !resolveSearchBaseUrl(config.search, 'searxng')) {
         lines.push('search fanout provider searxng warning (missing baseUrl)');
+      } else if (provider === 'degoog' && !resolveSearchBaseUrl(config.search, 'degoog')) {
+        lines.push('search fanout provider degoog warning (missing baseUrl)');
       } else if (provider === 'google-serp') {
         const apiKey = process.env.PI_WEB_AGENT_GOOGLE_SERP_API_KEY;
         if (!resolveSearchBaseUrl(config.search, 'google-serp')) {

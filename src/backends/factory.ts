@@ -15,6 +15,7 @@ import { createParallelSearchTool } from '../search/parallel.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { createGoogleSerpSearchTool } from '../search/google-serp.js';
+import { createDegoogSearchTool } from '../search/degoog.js';
 import { createFanoutSearch, FANOUT_PROVIDER_TIMEOUT_MS, withCallTimeout } from '../search/fanout.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from './fallback-policy.js';
 import { createProviderHealth, type ProviderHealth } from './provider-health.js';
@@ -54,6 +55,7 @@ export type BackendFactoryDeps = {
   createParallelSearch?: typeof createParallelSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
   createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
+  createDegoogSearch?: typeof createDegoogSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
@@ -105,6 +107,10 @@ function invalidSearxngSearch() {
 
 function invalidGoogleSerpSearch() {
   return invalidConfiguredSearch('google-serp', 'Google SERP search requires backends.search.baseUrl.');
+}
+
+function invalidDegoogSearch() {
+  return invalidConfiguredSearch('degoog', 'Degoog search requires backends.search.baseUrl.');
 }
 
 function invalidFirecrawlFetch() {
@@ -166,6 +172,7 @@ export function createBackendSet(
   const createParallelSearch = deps.createParallelSearch ?? createParallelSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
   const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
+  const createDegoogSearch = deps.createDegoogSearch ?? createDegoogSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
@@ -316,6 +323,12 @@ export function createBackendSet(
               fetchImpl
             })
           : invalidGoogleSerpSearch();
+      }
+      case 'degoog': {
+        const baseUrl = resolveSearchBaseUrl(config.search, 'degoog');
+        return baseUrl
+          ? createDegoogSearch({ baseUrl, apiKey: process.env.PI_WEB_AGENT_DEGOOG_API_KEY, fetchImpl })
+          : invalidDegoogSearch();
       }
       case 'duckduckgo':
       default:
