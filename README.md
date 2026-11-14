@@ -98,6 +98,7 @@ Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Sw
 | Brave | search (hosted) | `PI_WEB_AGENT_BRAVE_API_KEY` |
 | You.com | search (hosted) | `YDC_API_KEY` |
 | Exa | search (hosted) | `EXA_API_KEY` |
+| Keenable | search (hosted, opt-in) | `KEENABLE_API_KEY` |
 | Tavily | search (hosted) | `TAVILY_API_KEY` |
 | Parallel | search (hosted) | select `parallel`, keyless |
 | Google SERP | search (hosted) | base URL + `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` |

@@ -2,6 +2,7 @@ import { resolveSearchBaseUrl, type BackendConfig, type FirecrawlOptions, type S
 import { BROWSER_PATH_CONFIG_KEY, BROWSER_PATH_ENV, type BrowserResolutionResult } from '../fetch/browser-resolution.js';
 import { classifyEnvelopeFailure } from './provider-failure.js';
 import { createParallelSearchTool } from '../search/parallel.js';
+import { createKeenableSearchTool } from '../search/keenable.js';
 import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
 
 function withTimeout(timeoutMs: number) {
@@ -186,6 +187,19 @@ export async function checkBackendHealth(
     } finally {
       timeout.done();
     }
+  } else if (config.search.provider === 'keenable') {
+    if (!process.env.KEENABLE_API_KEY?.trim()) {
+      lines.push('search backend: keenable warning (missing KEENABLE_API_KEY)');
+    } else {
+      const timeout = withTimeout(timeoutMs);
+      try {
+        const result = await createKeenableSearchTool({ apiKey: process.env.KEENABLE_API_KEY, fetchImpl })({ query: 'pi-web-agent web research', signal: timeout.signal });
+        lines.push(result.status === 'ok' ? 'search backend: keenable ok' :
+          `search backend: keenable warning (${result.error?.message ?? 'unexpected response'})`);
+      } finally {
+        timeout.done();
+      }
+    }
   } else if (config.search.provider === 'tavily') {
     const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey?.trim()) {
@@ -315,6 +329,10 @@ export async function checkBackendHealth(
         const apiKey = process.env.TAVILY_API_KEY;
         if (!apiKey?.trim()) {
           lines.push('search fanout provider tavily warning (missing TAVILY_API_KEY)');
+        }
+      } else if (provider === 'keenable') {
+        if (!process.env.KEENABLE_API_KEY?.trim()) {
+          lines.push('search fanout provider keenable warning (missing KEENABLE_API_KEY)');
         }
       }
     }
