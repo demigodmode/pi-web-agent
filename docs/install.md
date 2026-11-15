@@ -110,7 +110,7 @@ For a self-hosted or hosted-backend setup, open:
 
 Choose **Backends** to set:
 
-- search provider: `duckduckgo`, `searxng`, `degoog`, `brave`, `youcom`, `exa`, `tavily`, or `google-serp`
+- search provider: `duckduckgo`, `searxng`, `degoog`, `brave`, `youcom`, `exa`, `tavily`, `keenable`, or `google-serp`
 - SearXNG URL, for example `http://localhost:8080`
 - degoog URL, for example `http://localhost:4444`
 - Google SERP endpoint URL, for example `https://google.serper.dev/search`

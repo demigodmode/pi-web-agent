@@ -282,6 +282,62 @@ describe('backend doctor checks', () => {
     }
   });
 
+  it('warns when keenable search is selected without an API key', async () => {
+    vi.stubEnv('KEENABLE_API_KEY', '');
+    const fetchImpl = vi.fn();
+    try {
+      const lines = await checkBackendHealth({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'keenable' } }, { fetchImpl });
+      expect(lines).toContain('search backend: keenable warning (missing KEENABLE_API_KEY)');
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports keenable ok for a documented 200 response', async () => {
+    vi.stubEnv('KEENABLE_API_KEY', 'kn-key');
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      query: 'pi-web-agent web research',
+      mode: 'pro',
+      results: [{ title: 'A', url: 'https://example.com', snippet: 'text', description: '' }]
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    try {
+      const lines = await checkBackendHealth({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'keenable' } }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+      expect(lines).toContain('search backend: keenable ok');
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://api.keenable.ai/v1/search',
+        expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'X-API-Key': 'kn-key' }) })
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports a keenable HTTP failure as a warning', async () => {
+    vi.stubEnv('KEENABLE_API_KEY', 'kn-key');
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401, headers: { 'content-type': 'application/json' } }));
+    try {
+      const lines = await checkBackendHealth({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'keenable' } }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+      expect(lines).toContain('search backend: keenable warning (Keenable search request failed: HTTP 401)');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('warns when fanout includes keenable without an API key', async () => {
+    vi.stubEnv('KEENABLE_API_KEY', '');
+    try {
+      const result = await checkBackendHealth({
+        search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'keenable'] } },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' }
+      }, { fetchImpl: vi.fn() });
+      expect(result).toContain('search fanout provider keenable warning (missing KEENABLE_API_KEY)');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('reports Firecrawl health check failures as warnings', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
 

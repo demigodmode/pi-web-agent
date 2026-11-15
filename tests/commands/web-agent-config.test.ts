@@ -2242,6 +2242,23 @@ describe('browser path settings', () => {
     effectiveBackends: effective
   });
 
+  it('lists keenable as a search backend with an env-var key row and no DuckDuckGo fallback', () => {
+    const items = buildBackendSettingsItems('project', { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'keenable' } }, theme);
+    expect(items.find((item) => item.id === 'backend:search:provider')).toMatchObject({ currentValue: 'keenable', values: expect.arrayContaining(['keenable']) });
+    expect(items.find((item) => item.id === 'backend:secret:keenable')).toMatchObject({ label: 'Keenable API key', currentValue: 'env var' });
+    expect(items.find((item) => item.id === 'backend:search:fallback')).toMatchObject({ currentValue: 'off', values: ['off'] });
+  });
+
+  it('switches the draft search provider to keenable', () => {
+    const state = createSettingsDraftState({
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    }, 'project');
+    expect(applySettingsValue(state, 'backend:search:provider', 'keenable').backends.search.provider).toBe('keenable');
+  });
+
   it('shows the browser path field and the env var reminder in the backend section', () => {
     const items = buildBackendSettingsItems('project', DEFAULT_BACKEND_CONFIG, theme);
     const field = items.find((item) => item.id === 'backend:headless:executablePath');
