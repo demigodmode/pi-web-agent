@@ -1,0 +1,592 @@
+<!doctype html><html><head><title>argparse</title></head><body><div class="body" role="main"><section id="argumentparser-objects">
+<h2>ArgumentParser objects<a class="headerlink" href="#argumentparser-objects" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="argparse.ArgumentParser">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">ArgumentParser</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prog</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">usage</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epilog</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parents</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">formatter_class</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">argparse.HelpFormatter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix_chars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'-'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fromfile_prefix_chars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">argument_default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">conflict_handler</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'error'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_help</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_abbrev</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exit_on_error</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">suggest_on_error</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#argparse.ArgumentParser" title="Link to this definition">¶</a></dt>
+<dd><p>Create a new <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> object. All parameters should be passed
+as keyword arguments. Each parameter has its own more detailed description
+below, but in short they are:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#prog">prog</a> - The name of the program (default: generated from the <code class="docutils literal notranslate"><span class="pre">__main__</span></code>
+module attributes and <code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code>)</p></li>
+<li><p><a class="reference internal" href="#usage">usage</a> - The string describing the program usage (default: generated from
+arguments added to parser)</p></li>
+<li><p><a class="reference internal" href="#description">description</a> - Text to display before the argument help
+(by default, no text)</p></li>
+<li><p><a class="reference internal" href="#epilog">epilog</a> - Text to display after the argument help (by default, no text)</p></li>
+<li><p><a class="reference internal" href="#parents">parents</a> - A list of <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> objects whose arguments should
+also be included</p></li>
+<li><p><a class="reference internal" href="#formatter-class">formatter_class</a> - A class for customizing the help output</p></li>
+<li><p><a class="reference internal" href="#prefix-chars">prefix_chars</a> - The set of characters that prefix optional arguments
+(default: ‘-‘)</p></li>
+<li><p><a class="reference internal" href="#fromfile-prefix-chars">fromfile_prefix_chars</a> - The set of characters that prefix files from
+which additional arguments should be read (default: <code class="docutils literal notranslate"><span class="pre">None</span></code>)</p></li>
+<li><p><a class="reference internal" href="#argument-default">argument_default</a> - The global default value for arguments
+(default: <code class="docutils literal notranslate"><span class="pre">None</span></code>)</p></li>
+<li><p><a class="reference internal" href="#conflict-handler">conflict_handler</a> - The strategy for resolving conflicting optionals
+(usually unnecessary)</p></li>
+<li><p><a class="reference internal" href="#add-help">add_help</a> - Add a <code class="docutils literal notranslate"><span class="pre">-h/--help</span></code> option to the parser (default: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p><a class="reference internal" href="#allow-abbrev">allow_abbrev</a> - Allows long options to be abbreviated if the
+abbreviation is unambiguous (default: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p><a class="reference internal" href="#exit-on-error">exit_on_error</a> - Determines whether or not <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> exits with
+error info when an error occurs. (default: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p><a class="reference internal" href="#suggest-on-error">suggest_on_error</a> - Enables suggestions for mistyped argument choices
+and subparser names (default: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p><a class="reference internal" href="#color">color</a> - Allow color output (default: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+</ul>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.5: </span><em>allow_abbrev</em> parameter was added.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.8: </span>In previous versions, <em>allow_abbrev</em> also disabled grouping of short
+flags such as <code class="docutils literal notranslate"><span class="pre">-vv</span></code> to mean <code class="docutils literal notranslate"><span class="pre">-v</span> <span class="pre">-v</span></code>.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.9: </span><em>exit_on_error</em> parameter was added.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.14: </span><em>suggest_on_error</em> and <em>color</em> parameters were added.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.15: </span><em>suggest_on_error</em> default changed to <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p>
+</div>
+</dd></dl>
+
+<p>The following sections describe how each of these are used.</p>
+<section id="prog">
+<span id="id1"></span><h3><code class="docutils literal notranslate"><span class="pre">prog</span></code><a class="headerlink" href="#prog" title="Link to this heading">¶</a></h3>
+<p>By default, <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> calculates the name of the program
+to display in help messages depending on the way the Python interpreter was run:</p>
+<ul class="simple">
+<li><p>The <a class="reference internal" href="os.path.html#os.path.basename" title="os.path.basename"><code class="xref py py-func docutils literal notranslate"><span class="pre">base</span> <span class="pre">name</span></code></a> of <code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code> if a file was
+passed as argument.</p></li>
+<li><p>The Python interpreter name followed by <code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code> if a directory or
+a zipfile was passed as argument.</p></li>
+<li><p>The Python interpreter name followed by <code class="docutils literal notranslate"><span class="pre">-m</span></code> followed by the
+module or package name if the <a class="reference internal" href="../using/cmdline.html#cmdoption-m"><code class="xref std std-option docutils literal notranslate"><span class="pre">-m</span></code></a> option was used.</p></li>
+</ul>
+<p>This default is almost always desirable because it will make the help messages
+match the string that was used to invoke the program on the command line.
+However, to change this default behavior, another value can be supplied using
+the <code class="docutils literal notranslate"><span class="pre">prog=</span></code> argument to <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'myprogram'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: myprogram [-h]</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+</pre></div>
+</div>
+<p>Note that the program name, whether determined from <code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code>,
+from the <code class="docutils literal notranslate"><span class="pre">__main__</span></code> module attributes or from the
+<code class="docutils literal notranslate"><span class="pre">prog=</span></code> argument, is available to help messages using the <code class="docutils literal notranslate"><span class="pre">%(prog)s</span></code> format
+specifier.</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'myprogram'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo of the </span><span class="si">%(prog)s</span><span class="s1"> program'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: myprogram [-h] [--foo FOO]</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+<span class="go"> --foo FOO   foo of the myprogram program</span>
+</pre></div>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.14: </span>The default <code class="docutils literal notranslate"><span class="pre">prog</span></code> value now reflects how <code class="docutils literal notranslate"><span class="pre">__main__</span></code> was actually executed,
+rather than always being <code class="docutils literal notranslate"><span class="pre">os.path.basename(sys.argv[0])</span></code>.</p>
+</div>
+</section>
+<section id="usage">
+<h3><code class="docutils literal notranslate"><span class="pre">usage</span></code><a class="headerlink" href="#usage" title="Link to this heading">¶</a></h3>
+<p>By default, <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> calculates the usage message from the
+arguments it contains. The default message can be overridden with the
+<code class="docutils literal notranslate"><span class="pre">usage=</span></code> keyword argument:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">usage</span><span class="o">=</span><span class="s1">'</span><span class="si">%(prog)s</span><span class="s1"> [options]'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'?'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'+'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [options]</span>
+
+<span class="go">positional arguments:</span>
+<span class="go"> bar          bar help</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help   show this help message and exit</span>
+<span class="go"> --foo [FOO]  foo help</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">%(prog)s</span></code> format specifier is available to fill in the program name in
+your usage messages.</p>
+<p>When a custom usage message is specified for the main parser, you may also want to
+consider passing  the <code class="docutils literal notranslate"><span class="pre">prog</span></code> argument to <a class="reference internal" href="#argparse.ArgumentParser.add_subparsers" title="argparse.ArgumentParser.add_subparsers"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_subparsers()</span></code></a>
+or the <code class="docutils literal notranslate"><span class="pre">prog</span></code> and the <code class="docutils literal notranslate"><span class="pre">usage</span></code> arguments to
+<a class="reference internal" href="#argparse._SubParsersAction.add_parser" title="argparse._SubParsersAction.add_parser"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_parser()</span></code></a>, to ensure consistent command prefixes and
+usage information across subparsers.</p>
+</section>
+<section id="description">
+<span id="id2"></span><h3><code class="docutils literal notranslate"><span class="pre">description</span></code><a class="headerlink" href="#description" title="Link to this heading">¶</a></h3>
+<p>Most calls to the <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> constructor will use the
+<code class="docutils literal notranslate"><span class="pre">description=</span></code> keyword argument.  This argument gives a brief description of
+what the program does and how it works.  In help messages, the description is
+displayed between the command-line usage string and the help messages for the
+various arguments.</p>
+<p>By default, the description will be line-wrapped so that it fits within the
+given space.  To change this behavior, see the <a class="reference internal" href="#formatter-class">formatter_class</a> argument.</p>
+</section>
+<section id="epilog">
+<h3><code class="docutils literal notranslate"><span class="pre">epilog</span></code><a class="headerlink" href="#epilog" title="Link to this heading">¶</a></h3>
+<p>Some programs like to display additional description of the program after the
+description of the arguments.  Such text can be specified using the <code class="docutils literal notranslate"><span class="pre">epilog=</span></code>
+argument to <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">description</span><span class="o">=</span><span class="s1">'A foo that bars'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">epilog</span><span class="o">=</span><span class="s2">"And that's how you'd foo a bar"</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: argparse.py [-h]</span>
+
+<span class="go">A foo that bars</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+
+<span class="go">And that's how you'd foo a bar</span>
+</pre></div>
+</div>
+<p>As with the <a class="reference internal" href="#description">description</a> argument, the <code class="docutils literal notranslate"><span class="pre">epilog=</span></code> text is by default
+line-wrapped, but this behavior can be adjusted with the <a class="reference internal" href="#formatter-class">formatter_class</a>
+argument to <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>.</p>
+</section>
+<section id="parents">
+<h3><code class="docutils literal notranslate"><span class="pre">parents</span></code><a class="headerlink" href="#parents" title="Link to this heading">¶</a></h3>
+<p>Sometimes, several parsers share a common set of arguments. Rather than
+repeating the definitions of these arguments, a single parser with all the
+shared arguments and passed to <code class="docutils literal notranslate"><span class="pre">parents=</span></code> argument to <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>
+can be used.  The <code class="docutils literal notranslate"><span class="pre">parents=</span></code> argument takes a list of <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code>
+objects, collects all the positional and optional actions from them, and adds
+these actions to the <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> object being constructed:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parent_parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parent_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--parent'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">foo_parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="p">[</span><span class="n">parent_parser</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">foo_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'foo'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">foo_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--parent'</span><span class="p">,</span> <span class="s1">'2'</span><span class="p">,</span> <span class="s1">'XXX'</span><span class="p">])</span>
+<span class="go">Namespace(foo='XXX', parent=2)</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bar_parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="p">[</span><span class="n">parent_parser</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bar_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bar_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="s1">'YYY'</span><span class="p">])</span>
+<span class="go">Namespace(bar='YYY', parent=None)</span>
+</pre></div>
+</div>
+<p>Note that most parent parsers will specify <code class="docutils literal notranslate"><span class="pre">add_help=False</span></code>.  Otherwise, the
+<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> will see two <code class="docutils literal notranslate"><span class="pre">-h/--help</span></code> options (one in the parent
+and one in the child) and raise an error.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You must fully initialize the parsers before passing them via <code class="docutils literal notranslate"><span class="pre">parents=</span></code>.
+If you change the parent parsers after the child parser, those changes will
+not be reflected in the child.</p>
+</div>
+</section>
+<section id="formatter-class">
+<span id="id3"></span><h3><code class="docutils literal notranslate"><span class="pre">formatter_class</span></code><a class="headerlink" href="#formatter-class" title="Link to this heading">¶</a></h3>
+<p><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> objects allow the help formatting to be customized by
+specifying an alternate formatting class.  Currently, there are four such
+classes:</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="argparse.RawDescriptionHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">RawDescriptionHelpFormatter</span></span><a class="headerlink" href="#argparse.RawDescriptionHelpFormatter" title="Link to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="argparse.RawTextHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">RawTextHelpFormatter</span></span><a class="headerlink" href="#argparse.RawTextHelpFormatter" title="Link to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="argparse.ArgumentDefaultsHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">ArgumentDefaultsHelpFormatter</span></span><a class="headerlink" href="#argparse.ArgumentDefaultsHelpFormatter" title="Link to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="argparse.MetavarTypeHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">MetavarTypeHelpFormatter</span></span><a class="headerlink" href="#argparse.MetavarTypeHelpFormatter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<p><a class="reference internal" href="#argparse.RawDescriptionHelpFormatter" title="argparse.RawDescriptionHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawDescriptionHelpFormatter</span></code></a> and <a class="reference internal" href="#argparse.RawTextHelpFormatter" title="argparse.RawTextHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawTextHelpFormatter</span></code></a> give
+more control over how textual descriptions are displayed.
+By default, <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> objects line-wrap the <a class="reference internal" href="#description">description</a> and
+<a class="reference internal" href="#epilog">epilog</a> texts in command-line help messages:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">description</span><span class="o">=</span><span class="s1">'''this description</span>
+<span class="gp">... </span><span class="s1">        was indented weird</span>
+<span class="gp">... </span><span class="s1">            but that is okay'''</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">epilog</span><span class="o">=</span><span class="s1">'''</span>
+<span class="gp">... </span><span class="s1">            likewise for this epilog whose whitespace will</span>
+<span class="gp">... </span><span class="s1">        be cleaned up and whose words will be wrapped</span>
+<span class="gp">... </span><span class="s1">        across a couple lines'''</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h]</span>
+
+<span class="go">this description was indented weird but that is okay</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+
+<span class="go">likewise for this epilog whose whitespace will be cleaned up and whose words</span>
+<span class="go">will be wrapped across a couple lines</span>
+</pre></div>
+</div>
+<p>Passing <a class="reference internal" href="#argparse.RawDescriptionHelpFormatter" title="argparse.RawDescriptionHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawDescriptionHelpFormatter</span></code></a> as <code class="docutils literal notranslate"><span class="pre">formatter_class=</span></code>
+indicates that <a class="reference internal" href="#description">description</a> and <a class="reference internal" href="#epilog">epilog</a> are already correctly formatted and
+should not be line-wrapped:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">description</span><span class="o">=</span><span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="s1">'''</span><span class="se">\</span>
+<span class="gp">... </span><span class="s1">        Please do not mess up this text!</span>
+<span class="gp">... </span><span class="s1">        --------------------------------</span>
+<span class="gp">... </span><span class="s1">            I have indented it</span>
+<span class="gp">... </span><span class="s1">            exactly the way</span>
+<span class="gp">... </span><span class="s1">            I want it</span>
+<span class="gp">... </span><span class="s1">        '''</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h]</span>
+
+<span class="go">Please do not mess up this text!</span>
+<span class="go">--------------------------------</span>
+<span class="go">   I have indented it</span>
+<span class="go">   exactly the way</span>
+<span class="go">   I want it</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="#argparse.RawTextHelpFormatter" title="argparse.RawTextHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawTextHelpFormatter</span></code></a> maintains whitespace for all sorts of help text,
+including argument descriptions. However, multiple newlines are replaced with
+one. If you wish to preserve multiple blank lines, add spaces between the
+newlines.</p>
+<p><a class="reference internal" href="#argparse.ArgumentDefaultsHelpFormatter" title="argparse.ArgumentDefaultsHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentDefaultsHelpFormatter</span></code></a> automatically adds information about
+default values to each of the argument help messages:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentDefaultsHelpFormatter</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'FOO!'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'*'</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">help</span><span class="o">=</span><span class="s1">'BAR!'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] [--foo FOO] [bar ...]</span>
+
+<span class="go">positional arguments:</span>
+<span class="go"> bar         BAR! (default: [1, 2, 3])</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+<span class="go"> --foo FOO   FOO! (default: 42)</span>
+</pre></div>
+</div>
+<p><a class="reference internal" href="#argparse.MetavarTypeHelpFormatter" title="argparse.MetavarTypeHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">MetavarTypeHelpFormatter</span></code></a> uses the name of the <a class="reference internal" href="#type">type</a> argument for each
+argument as the display name for its values (rather than using the <a class="reference internal" href="#dest">dest</a>
+as the regular formatter does):</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">MetavarTypeHelpFormatter</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] [--foo int] float</span>
+
+<span class="go">positional arguments:</span>
+<span class="go">  float</span>
+
+<span class="go">options:</span>
+<span class="go">  -h, --help  show this help message and exit</span>
+<span class="go">  --foo int</span>
+</pre></div>
+</div>
+</section>
+<section id="prefix-chars">
+<h3><code class="docutils literal notranslate"><span class="pre">prefix_chars</span></code><a class="headerlink" href="#prefix-chars" title="Link to this heading">¶</a></h3>
+<p>Most command-line options will use <code class="docutils literal notranslate"><span class="pre">-</span></code> as the prefix, e.g. <code class="docutils literal notranslate"><span class="pre">-f/--foo</span></code>.
+Parsers that need to support different or additional prefix
+characters, e.g. for options
+like <code class="docutils literal notranslate"><span class="pre">+f</span></code> or <code class="docutils literal notranslate"><span class="pre">/foo</span></code>, may specify them using the <code class="docutils literal notranslate"><span class="pre">prefix_chars=</span></code> argument
+to the <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> constructor:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">prefix_chars</span><span class="o">=</span><span class="s1">'-+'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'+f'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'++bar'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="s1">'+f X ++bar Y'</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+<span class="go">Namespace(bar='Y', f='X')</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">prefix_chars=</span></code> argument defaults to <code class="docutils literal notranslate"><span class="pre">'-'</span></code>. Supplying a set of
+characters that does not include <code class="docutils literal notranslate"><span class="pre">-</span></code> will cause <code class="docutils literal notranslate"><span class="pre">-f/--foo</span></code> options to be
+disallowed.</p>
+</section>
+<section id="fromfile-prefix-chars">
+<h3><code class="docutils literal notranslate"><span class="pre">fromfile_prefix_chars</span></code><a class="headerlink" href="#fromfile-prefix-chars" title="Link to this heading">¶</a></h3>
+<p>Sometimes, when dealing with a particularly long argument list, it
+may make sense to keep the list of arguments in a file rather than typing it out
+at the command line.  If the <code class="docutils literal notranslate"><span class="pre">fromfile_prefix_chars=</span></code> argument is given to the
+<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> constructor, then arguments that start with any of the
+specified characters will be treated as files, and will be replaced by the
+arguments they contain.  For example:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">'args.txt'</span><span class="p">,</span> <span class="s1">'w'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">getfilesystemencoding</span><span class="p">())</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="n">fp</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s1">'-f</span><span class="se">\n</span><span class="s1">bar'</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">fromfile_prefix_chars</span><span class="o">=</span><span class="s1">'@'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'-f'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'-f'</span><span class="p">,</span> <span class="s1">'foo'</span><span class="p">,</span> <span class="s1">'@args.txt'</span><span class="p">])</span>
+<span class="go">Namespace(f='bar')</span>
+</pre></div>
+</div>
+<p>Arguments read from a file must be one per line by default (but see also
+<a class="reference internal" href="#argparse.ArgumentParser.convert_arg_line_to_args" title="argparse.ArgumentParser.convert_arg_line_to_args"><code class="xref py py-meth docutils literal notranslate"><span class="pre">convert_arg_line_to_args()</span></code></a>) and are treated as if they
+were in the same place as the original file referencing argument on the command
+line.  So in the example above, the expression <code class="docutils literal notranslate"><span class="pre">['-f',</span> <span class="pre">'foo',</span> <span class="pre">'&#64;args.txt']</span></code>
+is considered equivalent to the expression <code class="docutils literal notranslate"><span class="pre">['-f',</span> <span class="pre">'foo',</span> <span class="pre">'-f',</span> <span class="pre">'bar']</span></code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Each line is treated as a single argument, so an empty line is read as an
+empty string (<code class="docutils literal notranslate"><span class="pre">''</span></code>).</p>
+</div>
+<p><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> uses <a class="reference internal" href="../glossary.html#term-filesystem-encoding-and-error-handler"><span class="xref std std-term">filesystem encoding and error handler</span></a>
+to read the file containing arguments.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">fromfile_prefix_chars=</span></code> argument defaults to <code class="docutils literal notranslate"><span class="pre">None</span></code>, meaning that
+arguments will never be treated as file references.</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.12: </span><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> changed encoding and errors to read arguments files
+from default (e.g. <a class="reference internal" href="locale.html#locale.getpreferredencoding" title="locale.getpreferredencoding"><code class="xref py py-func docutils literal notranslate"><span class="pre">locale.getpreferredencoding(False)</span></code></a>
+and <code class="docutils literal notranslate"><span class="pre">&quot;strict&quot;</span></code>) to the <a class="reference internal" href="../glossary.html#term-filesystem-encoding-and-error-handler"><span class="xref std std-term">filesystem encoding and error handler</span></a>.
+Arguments file should be encoded in UTF-8 instead of ANSI Codepage on Windows.</p>
+</div>
+</section>
+<section id="argument-default">
+<h3><code class="docutils literal notranslate"><span class="pre">argument_default</span></code><a class="headerlink" href="#argument-default" title="Link to this heading">¶</a></h3>
+<p>Generally, argument defaults are specified either by passing a default to
+<a class="reference internal" href="#argparse.ArgumentParser.add_argument" title="argparse.ArgumentParser.add_argument"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument()</span></code></a> or by calling the
+<a class="reference internal" href="#argparse.ArgumentParser.set_defaults" title="argparse.ArgumentParser.set_defaults"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_defaults()</span></code></a> methods with a specific set of name-value
+pairs.  Sometimes however, it may be useful to specify a single parser-wide
+default for arguments.  This can be accomplished by passing the
+<code class="docutils literal notranslate"><span class="pre">argument_default=</span></code> keyword argument to <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>.  For example,
+to globally suppress attribute creation on <a class="reference internal" href="#argparse.ArgumentParser.parse_args" title="argparse.ArgumentParser.parse_args"><code class="xref py py-meth docutils literal notranslate"><span class="pre">parse_args()</span></code></a>
+calls, we supply <code class="docutils literal notranslate"><span class="pre">argument_default=SUPPRESS</span></code>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">argument_default</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">SUPPRESS</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'?'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="s1">'1'</span><span class="p">,</span> <span class="s1">'BAR'</span><span class="p">])</span>
+<span class="go">Namespace(bar='BAR', foo='1')</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([])</span>
+<span class="go">Namespace()</span>
+</pre></div>
+</div>
+</section>
+<section id="allow-abbrev">
+<span id="id4"></span><h3><code class="docutils literal notranslate"><span class="pre">allow_abbrev</span></code><a class="headerlink" href="#allow-abbrev" title="Link to this heading">¶</a></h3>
+<p>Normally, when you pass an argument list to the
+<a class="reference internal" href="#argparse.ArgumentParser.parse_args" title="argparse.ArgumentParser.parse_args"><code class="xref py py-meth docutils literal notranslate"><span class="pre">parse_args()</span></code></a> method of an <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>,
+it <a class="reference internal" href="#prefix-matching"><span class="std std-ref">recognizes abbreviations</span></a> of long options.</p>
+<p>This feature can be disabled by setting <code class="docutils literal notranslate"><span class="pre">allow_abbrev</span></code> to <code class="docutils literal notranslate"><span class="pre">False</span></code>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">allow_abbrev</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foobar'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_true'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foonley'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_false'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foon'</span><span class="p">])</span>
+<span class="go">usage: PROG [-h] [--foobar] [--foonley]</span>
+<span class="go">PROG: error: unrecognized arguments: --foon</span>
+</pre></div>
+</div>
+<div class="versionadded">
+<p><span class="versionmodified added">Added in version 3.5.</span></p>
+</div>
+</section>
+<section id="conflict-handler">
+<h3><code class="docutils literal notranslate"><span class="pre">conflict_handler</span></code><a class="headerlink" href="#conflict-handler" title="Link to this heading">¶</a></h3>
+<p><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> objects do not allow two actions with the same option
+string.  By default, <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> objects raise an exception if an
+attempt is made to create an argument with an option string that is already in
+use:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'-f'</span><span class="p">,</span> <span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'old foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'new foo help'</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="gr"> ..</span>
+<span class="gr">ArgumentError</span>: <span class="n">argument --foo: conflicting option string(s): --foo</span>
+</pre></div>
+</div>
+<p>Sometimes (e.g. when using <a class="reference internal" href="#parents">parents</a>) it may be useful to simply override any
+older arguments with the same option string.  To get this behavior, the value
+<code class="docutils literal notranslate"><span class="pre">'resolve'</span></code> can be supplied to the <code class="docutils literal notranslate"><span class="pre">conflict_handler=</span></code> argument of
+<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">conflict_handler</span><span class="o">=</span><span class="s1">'resolve'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'-f'</span><span class="p">,</span> <span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'old foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'new foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] [-f FOO] [--foo FOO]</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+<span class="go"> -f FOO      old foo help</span>
+<span class="go"> --foo FOO   new foo help</span>
+</pre></div>
+</div>
+<p>Note that <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> objects only remove an action if all of its
+option strings are overridden.  So, in the example above, the old <code class="docutils literal notranslate"><span class="pre">-f/--foo</span></code>
+action is retained as the <code class="docutils literal notranslate"><span class="pre">-f</span></code> action, because only the <code class="docutils literal notranslate"><span class="pre">--foo</span></code> option
+string was overridden.</p>
+</section>
+<section id="add-help">
+<h3><code class="docutils literal notranslate"><span class="pre">add_help</span></code><a class="headerlink" href="#add-help" title="Link to this heading">¶</a></h3>
+<p>By default, <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> objects add an option which simply displays
+the parser’s help message. If <code class="docutils literal notranslate"><span class="pre">-h</span></code> or <code class="docutils literal notranslate"><span class="pre">--help</span></code> is supplied at the command
+line, the <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> help will be printed.</p>
+<p>Occasionally, it may be useful to disable the addition of this help option.
+This can be achieved by passing <code class="docutils literal notranslate"><span class="pre">False</span></code> as the <code class="docutils literal notranslate"><span class="pre">add_help=</span></code> argument to
+<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [--foo FOO]</span>
+
+<span class="go">options:</span>
+<span class="go"> --foo FOO  foo help</span>
+</pre></div>
+</div>
+<p>The help option is typically <code class="docutils literal notranslate"><span class="pre">-h/--help</span></code>. The exception to this is
+if the <code class="docutils literal notranslate"><span class="pre">prefix_chars=</span></code> is specified and does not include <code class="docutils literal notranslate"><span class="pre">-</span></code>, in
+which case <code class="docutils literal notranslate"><span class="pre">-h</span></code> and <code class="docutils literal notranslate"><span class="pre">--help</span></code> are not valid options.  In
+this case, the first character in <code class="docutils literal notranslate"><span class="pre">prefix_chars</span></code> is used to prefix
+the help options:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">prefix_chars</span><span class="o">=</span><span class="s1">'+/'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [+h]</span>
+
+<span class="go">options:</span>
+<span class="go">  +h, ++help  show this help message and exit</span>
+</pre></div>
+</div>
+</section>
+<section id="argument-groups">
+<h3>Argument groups<a class="headerlink" href="#argument-groups" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="argparse.ArgumentParser.add_argument_group">
+<span class="sig-prename descclassname"><span class="pre">ArgumentParser.</span></span><span class="sig-name descname"><span class="pre">add_argument_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">*</span></span></em><span class="optional">[</span>, <em class="sig-param"><span class="n"><span class="pre">argument_default</span></span></em><span class="optional">]</span><span class="optional">[</span>, <em class="sig-param"><span class="n"><span class="pre">conflict_handler</span></span></em><span class="optional">]</span><span class="sig-paren">)</span><a class="headerlink" href="#argparse.ArgumentParser.add_argument_group" title="Link to this definition">¶</a></dt>
+<dd><p>By default, <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> groups command-line arguments into
+“positional arguments” and “options” when displaying help
+messages. When there is a better conceptual grouping of arguments than this
+default one, appropriate groups can be created using the
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code> method:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'group'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [--foo FOO] bar</span>
+
+<span class="go">group:</span>
+<span class="go">  bar    bar help</span>
+<span class="go">  --foo FOO  foo help</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code> method returns an argument group object which
+has an <a class="reference internal" href="#argparse.ArgumentParser.add_argument" title="argparse.ArgumentParser.add_argument"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument()</span></code></a> method just like a regular
+<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a>.  When an argument is added to the group, the parser
+treats it just like a normal argument, but displays the argument in a
+separate group for help messages.  The <code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code> method
+accepts <em>title</em> and <em>description</em> arguments which can be used to
+customize this display:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group1</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'group1'</span><span class="p">,</span> <span class="s1">'group1 description'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group1</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group2</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'group2'</span><span class="p">,</span> <span class="s1">'group2 description'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group2</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [--bar BAR] foo</span>
+
+<span class="go">group1:</span>
+<span class="go">  group1 description</span>
+
+<span class="go">  foo    foo help</span>
+
+<span class="go">group2:</span>
+<span class="go">  group2 description</span>
+
+<span class="go">  --bar BAR  bar help</span>
+</pre></div>
+</div>
+<p>The optional, keyword-only parameters <a class="reference internal" href="#argument-default">argument_default</a> and <a class="reference internal" href="#conflict-handler">conflict_handler</a>
+allow for finer-grained control of the behavior of the argument group. These
+parameters have the same meaning as in the <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> constructor,
+but apply specifically to the argument group rather than the entire parser.</p>
+<p>Note that any arguments not in your user-defined groups will end up back
+in the usual “positional arguments” and “optional arguments” sections.</p>
+<p>Within each argument group, arguments are displayed in help output in the
+order in which they are added.</p>
+<div class="deprecated-removed">
+<p><span class="versionmodified removed">Deprecated since version 3.11, removed in version 3.14: </span>Calling <code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code> on an argument group now raises an
+exception. This nesting was never supported, often failed to work
+correctly, and was unintentionally exposed through inheritance.</p>
+</div>
+<div class="deprecated">
+<p><span class="versionmodified deprecated">Deprecated since version 3.14: </span>Passing <a class="reference internal" href="#prefix-chars">prefix_chars</a> to <code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code>
+is now deprecated.</p>
+</div>
+</dd></dl>
+
+</section>
+<section id="mutual-exclusion">
+<h3>Mutual exclusion<a class="headerlink" href="#mutual-exclusion" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="argparse.ArgumentParser.add_mutually_exclusive_group">
+<span class="sig-prename descclassname"><span class="pre">ArgumentParser.</span></span><span class="sig-name descname"><span class="pre">add_mutually_exclusive_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#argparse.ArgumentParser.add_mutually_exclusive_group" title="Link to this definition">¶</a></dt>
+<dd><p>Create a mutually exclusive group. <code class="xref py py-mod docutils literal notranslate"><span class="pre">argparse</span></code> will make sure that only
+one of the arguments in the mutually exclusive group was present on the
+command line:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_true'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_false'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foo'</span><span class="p">])</span>
+<span class="go">Namespace(bar=True, foo=True)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--bar'</span><span class="p">])</span>
+<span class="go">Namespace(bar=False, foo=False)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="s1">'--bar'</span><span class="p">])</span>
+<span class="go">usage: PROG [-h] [--foo | --bar]</span>
+<span class="go">PROG: error: argument --bar: not allowed with argument --foo</span>
+</pre></div>
+</div>
+<p>The <code class="xref py py-meth docutils literal notranslate"><span class="pre">add_mutually_exclusive_group()</span></code> method also accepts a <em>required</em>
+argument, to indicate that at least one of the mutually exclusive arguments
+is required:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_true'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_false'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([])</span>
+<span class="go">usage: PROG [-h] (--foo | --bar)</span>
+<span class="go">PROG: error: one of the arguments --foo --bar is required</span>
+</pre></div>
+</div>
+<p>Note that currently mutually exclusive argument groups do not support the
+<em>title</em> and <em>description</em> arguments of
+<a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a>. However, a mutually exclusive
+group can be added to an argument group that has a title and description.
+For example:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'Group title'</span><span class="p">,</span> <span class="s1">'Group description'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">exclusive_group</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">exclusive_group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">exclusive_group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] (--foo FOO | --bar BAR)</span>
+
+<span class="go">options:</span>
+<span class="go">  -h, --help  show this help message and exit</span>
+
+<span class="go">Group title:</span>
+<span class="go">  Group description</span>
+
+<span class="go">  --foo FOO   foo help</span>
+<span class="go">  --bar BAR   bar help</span>
+</pre></div>
+</div>
+<div class="deprecated-removed">
+<p><span class="versionmodified removed">Deprecated since version 3.11, removed in version 3.14: </span>Calling <a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a> or <code class="xref py py-meth docutils literal notranslate"><span class="pre">add_mutually_exclusive_group()</span></code>
+on a mutually exclusive group now raises an exception. This nesting was
+never supported, often failed to work correctly, and was unintentionally
+exposed through inheritance.</p>
+</div>
+</dd></dl>
+
+</section></div></body></html>

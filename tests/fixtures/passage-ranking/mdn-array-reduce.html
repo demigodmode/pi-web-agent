@@ -1,0 +1,713 @@
+<!doctype html><html><head><title>page</title></head><body><main id="content" class="layout__content">
+          <div class="layout__header reference-layout__header">
+            
+            
+            <mdn-survey></mdn-survey>
+            <h1>Array.prototype.reduce()</h1>
+            <details
+      class="baseline-indicator high"
+      data-glean-toggle-open="baseline_toggle_open"
+      
+      
+    >
+      <summary>
+        <span
+          class="indicator"
+          role="img"
+          aria-label="Baseline Check"
+        ></span>
+        <div class="status-title">
+          Baseline
+        </div>
+        <div class="pill">Widely available</div>
+        
+        <div class="browsers">
+                <span class="engine" title="Supported in Chrome and Edge">
+                      <span
+                            class="browser chrome supported"
+                            role="img"
+                            aria-label="Chrome check"
+                          ></span><span
+                            class="browser edge supported"
+                            role="img"
+                            aria-label="Edge check"
+                          ></span>
+                    </span><span class="engine" title="Supported in Firefox">
+                      <span
+                            class="browser firefox supported"
+                            role="img"
+                            aria-label="Firefox check"
+                          ></span>
+                    </span><span class="engine" title="Supported in Safari">
+                      <span
+                            class="browser safari supported"
+                            role="img"
+                            aria-label="Safari check"
+                          ></span>
+                    </span>
+              </div>
+        <span class="icon icon-chevron"></span>
+      </summary>
+      <div class="extra">
+        <p>This feature is well established and works across many devices and browser versions. It’s been available across browsers since July 2015.</p>
+        
+        <ul>
+          <li>
+            <a href="#browser_compatibility" data-glean-id="baseline_link_bcd_table">
+              See full compatibility
+            </a>
+          </li>
+          <li>
+            <a
+              href="/en-US/docs/Glossary/Baseline/Compatibility"
+              data-glean-id="baseline_link_learn_more"
+              target="_blank"
+            >
+              Learn more
+            </a>
+          </li>
+        </ul>
+      </div>
+    </details><?> <section
+    class="content-section"
+    
+  >
+    
+    <p>The <strong><code>reduce()</code></strong> method of <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array"><code>Array</code></a> instances executes a user-supplied "reducer" callback function on each element of the array, in order, passing in the return value from the calculation on the preceding element. The final result of running the reducer across all elements of the array is a single value.</p>
+<p>The first time that the callback is run there is no "return value of the previous calculation". If supplied, an initial value may be used in its place. Otherwise the array element at index 0 is used as the initial value and iteration starts from the next element (index 1 instead of index 0).</p>
+  </section>
+          </div>
+          <aside class="layout__right-sidebar reference-layout__toc">
+            <nav class="reference-toc">
+      <h2>In this article</h2>
+      <ul>
+        <li>
+              <a href="#try_it" data-glean-id="toc_click: #try_it"
+                >Try it</a
+              >
+            </li><li>
+              <a href="#syntax" data-glean-id="toc_click: #syntax"
+                >Syntax</a
+              >
+            </li><li>
+              <a href="#description" data-glean-id="toc_click: #description"
+                >Description</a
+              >
+            </li><li>
+              <a href="#examples" data-glean-id="toc_click: #examples"
+                >Examples</a
+              >
+            </li><li>
+              <a href="#specifications" data-glean-id="toc_click: #specifications"
+                >Specifications</a
+              >
+            </li><li>
+              <a href="#browser_compatibility" data-glean-id="toc_click: #browser_compatibility"
+                >Browser compatibility</a
+              >
+            </li><li>
+              <a href="#see_also" data-glean-id="toc_click: #see_also"
+                >See also</a
+              >
+            </li>
+      </ul>
+    </nav>
+            <mdn-placement-sidebar></mdn-placement-sidebar>
+          </aside>
+          <div class="layout__body reference-layout__body">
+            <section
+    class="content-section"
+    aria-labelledby="try_it"
+  >
+    <!--lit-part J1rEYwaybRw=--><!--lit-node 0--><h2 id="try_it" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#try_it">Try it</a></h2><!--/lit-part-->
+    <interactive-example name="JavaScript Demo: Array.prototype.reduce()"></interactive-example>
+<div class="code-example"><pre class="brush: js interactive-example notranslate"><code>const array = [1, 2, 3, 4];
+
+// 0 + 1 + 2 + 3 + 4
+const initialValue = 0;
+const sumWithInitial = array.reduce(
+  (accumulator, currentValue) =&gt; accumulator + currentValue,
+  initialValue,
+);
+
+console.log(sumWithInitial);
+// Expected output: 10
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="syntax"
+  >
+    <!--lit-part X3RKttXoaxo=--><!--lit-node 0--><h2 id="syntax" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#syntax">Syntax</a></h2><!--/lit-part-->
+    <div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>reduce(callbackFn)
+reduce(callbackFn, initialValue)
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="parameters"
+  >
+    <!--lit-part q+C3FhLECJw=--><!--lit-node 0--><h3 id="parameters" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#parameters">Parameters</a></h3><!--/lit-part-->
+    <dl>
+<dt id="callbackfn"><a href="#callbackfn"><code>callbackFn</code></a></dt>
+<dd>
+<p>A function to execute for each element in the array. Its return value becomes the value of the <code>accumulator</code> parameter on the next invocation of <code>callbackFn</code>. For the last invocation, the return value becomes the return value of <code>reduce()</code>. The function is called with the following arguments:</p>
+<dl>
+<dt id="accumulator"><a href="#accumulator"><code>accumulator</code></a></dt>
+<dd>
+<p>The value resulting from the previous call to <code>callbackFn</code>. On the first call, its value is <code>initialValue</code> if the latter is specified; otherwise its value is <code>array[0]</code>.</p>
+</dd>
+<dt id="currentvalue"><a href="#currentvalue"><code>currentValue</code></a></dt>
+<dd>
+<p>The value of the current element. On the first call, its value is <code>array[0]</code> if <code>initialValue</code> is specified; otherwise its value is <code>array[1]</code>.</p>
+</dd>
+<dt id="currentindex"><a href="#currentindex"><code>currentIndex</code></a></dt>
+<dd>
+<p>The index position of <code>currentValue</code> in the array. On the first call, its value is <code>0</code> if <code>initialValue</code> is specified, otherwise <code>1</code>.</p>
+</dd>
+<dt id="array"><a href="#array"><code>array</code></a></dt>
+<dd>
+<p>The array <code>reduce()</code> was called upon.</p>
+</dd>
+</dl>
+</dd>
+<dt id="initialvalue"><a href="#initialvalue"><code>initialValue</code> <span class="badge inline optional">Optional</span></a></dt>
+<dd>
+<p>A value to which <code>accumulator</code> is initialized the first time the callback is called.
+If <code>initialValue</code> is specified, <code>callbackFn</code> starts executing with the first value in the array as <code>currentValue</code>.
+If <code>initialValue</code> is <em>not</em> specified, <code>accumulator</code> is initialized to the first value in the array, and <code>callbackFn</code> starts executing with the second value in the array as <code>currentValue</code>. In this case, if the array is empty (so that there's no first value to return as <code>accumulator</code>), an error is thrown.</p>
+</dd>
+</dl>
+  </section><section
+    class="content-section"
+    aria-labelledby="return_value"
+  >
+    <!--lit-part ot97hcBGzM0=--><!--lit-node 0--><h3 id="return_value" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#return_value">Return value</a></h3><!--/lit-part-->
+    <p>The value that results from running the "reducer" callback function to completion over the entire array.</p>
+  </section><section
+    class="content-section"
+    aria-labelledby="exceptions"
+  >
+    <!--lit-part M930gBToSqs=--><!--lit-node 0--><h3 id="exceptions" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#exceptions">Exceptions</a></h3><!--/lit-part-->
+    <dl>
+<dt id="typeerror"><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError"><code>TypeError</code></a></dt>
+<dd>
+<p>Thrown if the array contains no elements and <code>initialValue</code> is not provided.</p>
+</dd>
+</dl>
+  </section><section
+    class="content-section"
+    aria-labelledby="description"
+  >
+    <!--lit-part Srkl5+9Rtas=--><!--lit-node 0--><h2 id="description" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#description">Description</a></h2><!--/lit-part-->
+    <p>The <code>reduce()</code> method is an <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#iterative_methods">iterative method</a>. It runs a "reducer" callback function over all elements in the array, in ascending-index order, and accumulates them into a single value. Every time, the return value of <code>callbackFn</code> is passed into <code>callbackFn</code> again on next invocation as <code>accumulator</code>. The final value of <code>accumulator</code> (which is the value returned from <code>callbackFn</code> on the final iteration of the array) becomes the return value of <code>reduce()</code>. Read the <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#iterative_methods">iterative methods</a> section for more information about how these methods work in general.</p>
+<p><code>callbackFn</code> is invoked only for array indexes which have assigned values. It is not invoked for empty slots in <a href="/en-US/docs/Web/JavaScript/Guide/Indexed_collections#sparse_arrays">sparse arrays</a>.</p>
+<p>Unlike other <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#iterative_methods">iterative methods</a>, <code>reduce()</code> does not accept a <code>thisArg</code> argument. <code>callbackFn</code> is always called with <code>undefined</code> as <code>this</code>, which gets substituted with <code>globalThis</code> if <code>callbackFn</code> is non-strict.</p>
+<p><code>reduce()</code> is a central concept in <a href="https://en.wikipedia.org/wiki/Functional_programming" class="external" target="_blank" title="External link (opens in new tab)">functional programming</a>, where it's not possible to mutate any value, so in order to accumulate all values in an array, one must return a new accumulator value on every iteration. This convention propagates to JavaScript's <code>reduce()</code>: you should use <a href="/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax">spreading</a> or other copying methods where possible to create new arrays and objects as the accumulator, rather than mutating the existing one. If you decided to mutate the accumulator instead of copying it, remember to still return the modified object in the callback, or the next iteration will receive undefined. However, note that copying the accumulator may in turn lead to increased memory usage and degraded performance — see <a href="#when_to_not_use_reduce">When to not use reduce()</a> for more details. In such cases, to avoid bad performance and unreadable code, it's better to use a <code>for</code> loop instead.</p>
+<p>The <code>reduce()</code> method is <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#generic_array_methods">generic</a>. It only expects the <code>this</code> value to have a <code>length</code> property and integer-keyed properties.</p>
+  </section><section
+    class="content-section"
+    aria-labelledby="edge_cases"
+  >
+    <!--lit-part xMohAUOGTgk=--><!--lit-node 0--><h3 id="edge_cases" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#edge_cases">Edge cases</a></h3><!--/lit-part-->
+    <p>If the array only has one element (regardless of position) and no <code>initialValue</code> is provided, or if <code>initialValue</code> is provided but the array is empty, the solo value will be returned <em>without</em> calling <code>callbackFn</code>.</p>
+<p>If <code>initialValue</code> is provided and the array is not empty, then the reduce method will always invoke the callback function starting at index 0.</p>
+<p>If <code>initialValue</code> is not provided then the reduce method will act differently for arrays with length larger than 1, equal to 1 and 0, as shown in the following example:</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const getMax = (a, b) =&gt; Math.max(a, b);
+
+// callback is invoked for each element in the array starting at index 0
+[1, 100].reduce(getMax, 50); // 100
+[50].reduce(getMax, 10); // 50
+
+// callback is invoked once for element at index 1
+[1, 100].reduce(getMax); // 100
+
+// callback is not invoked
+[50].reduce(getMax); // 50
+[].reduce(getMax, 1); // 1
+
+[].reduce(getMax); // TypeError
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="examples"
+  >
+    <!--lit-part cjTOnCoGGWc=--><!--lit-node 0--><h2 id="examples" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#examples">Examples</a></h2><!--/lit-part-->
+    <?>
+  </section><section
+    class="content-section"
+    aria-labelledby="how_reduce_works_without_an_initial_value"
+  >
+    <!--lit-part XkLHEUiBjiQ=--><!--lit-node 0--><h3 id="how_reduce_works_without_an_initial_value" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#how_reduce_works_without_an_initial_value">How reduce() works without an initial value</a></h3><!--/lit-part-->
+    <p>The code below shows what happens if we call <code>reduce()</code> with an array and no initial value.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const array = [15, 16, 17, 18, 19];
+
+function reducer(accumulator, currentValue, index) {
+  const returns = accumulator + currentValue;
+  console.log(
+    `accumulator: ${accumulator}, currentValue: ${currentValue}, index: ${index}, returns: ${returns}`,
+  );
+  return returns;
+}
+
+array.reduce(reducer);
+</code></pre></div>
+<p>The callback would be invoked four times, with the arguments and return values in each call being as follows:</p>
+<figure class="table-container"><table>
+<thead>
+<tr>
+<th></th>
+<th><code>accumulator</code></th>
+<th><code>currentValue</code></th>
+<th><code>index</code></th>
+<th>Return value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First call</td>
+<td><code>15</code></td>
+<td><code>16</code></td>
+<td><code>1</code></td>
+<td><code>31</code></td>
+</tr>
+<tr>
+<td>Second call</td>
+<td><code>31</code></td>
+<td><code>17</code></td>
+<td><code>2</code></td>
+<td><code>48</code></td>
+</tr>
+<tr>
+<td>Third call</td>
+<td><code>48</code></td>
+<td><code>18</code></td>
+<td><code>3</code></td>
+<td><code>66</code></td>
+</tr>
+<tr>
+<td>Fourth call</td>
+<td><code>66</code></td>
+<td><code>19</code></td>
+<td><code>4</code></td>
+<td><code>85</code></td>
+</tr>
+</tbody>
+</table></figure>
+<p>The <code>array</code> parameter never changes through the process — it's always <code>[15, 16, 17, 18, 19]</code>. The value returned by <code>reduce()</code> would be that of the last callback invocation (<code>85</code>).</p>
+  </section><section
+    class="content-section"
+    aria-labelledby="how_reduce_works_with_an_initial_value"
+  >
+    <!--lit-part 68HCwzNCLjM=--><!--lit-node 0--><h3 id="how_reduce_works_with_an_initial_value" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#how_reduce_works_with_an_initial_value">How reduce() works with an initial value</a></h3><!--/lit-part-->
+    <p>Here we reduce the same array using the same algorithm, but with an <code>initialValue</code> of <code>10</code> passed as the second argument to <code>reduce()</code>:</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>[15, 16, 17, 18, 19].reduce(
+  (accumulator, currentValue) =&gt; accumulator + currentValue,
+  10,
+);
+</code></pre></div>
+<p>The callback would be invoked five times, with the arguments and return values in each call being as follows:</p>
+<figure class="table-container"><table>
+<thead>
+<tr>
+<th></th>
+<th><code>accumulator</code></th>
+<th><code>currentValue</code></th>
+<th><code>index</code></th>
+<th>Return value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First call</td>
+<td><code>10</code></td>
+<td><code>15</code></td>
+<td><code>0</code></td>
+<td><code>25</code></td>
+</tr>
+<tr>
+<td>Second call</td>
+<td><code>25</code></td>
+<td><code>16</code></td>
+<td><code>1</code></td>
+<td><code>41</code></td>
+</tr>
+<tr>
+<td>Third call</td>
+<td><code>41</code></td>
+<td><code>17</code></td>
+<td><code>2</code></td>
+<td><code>58</code></td>
+</tr>
+<tr>
+<td>Fourth call</td>
+<td><code>58</code></td>
+<td><code>18</code></td>
+<td><code>3</code></td>
+<td><code>76</code></td>
+</tr>
+<tr>
+<td>Fifth call</td>
+<td><code>76</code></td>
+<td><code>19</code></td>
+<td><code>4</code></td>
+<td><code>95</code></td>
+</tr>
+</tbody>
+</table></figure>
+<p>The value returned by <code>reduce()</code> in this case would be <code>95</code>.</p>
+  </section><section
+    class="content-section"
+    aria-labelledby="sum_of_values_in_an_object_array"
+  >
+    <!--lit-part xscdePvOFdQ=--><!--lit-node 0--><h3 id="sum_of_values_in_an_object_array" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#sum_of_values_in_an_object_array">Sum of values in an object array</a></h3><!--/lit-part-->
+    <p>To sum up the values contained in an array of objects, you <strong>must</strong> supply
+an <code>initialValue</code>, so that each item passes through your function.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const objects = [{ x: 1 }, { x: 2 }, { x: 3 }];
+const sum = objects.reduce(
+  (accumulator, currentValue) =&gt; accumulator + currentValue.x,
+  0,
+);
+
+console.log(sum); // 6
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="function_sequential_piping"
+  >
+    <!--lit-part RD9BimWoC2I=--><!--lit-node 0--><h3 id="function_sequential_piping" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#function_sequential_piping">Function sequential piping</a></h3><!--/lit-part-->
+    <p>The <code>pipe</code> function takes a sequence of functions and returns a new function. When the new function is called with an argument, the sequence of functions are called in order, which each one receiving the return value of the previous function.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const pipe =
+  (...functions) =&gt;
+  (initialValue) =&gt;
+    functions.reduce((acc, fn) =&gt; fn(acc), initialValue);
+
+// Building blocks to use for composition
+const double = (x) =&gt; 2 * x;
+const triple = (x) =&gt; 3 * x;
+const quadruple = (x) =&gt; 4 * x;
+
+// Composed functions for multiplication of specific values
+const multiply6 = pipe(double, triple);
+const multiply9 = pipe(triple, triple);
+const multiply16 = pipe(quadruple, quadruple);
+const multiply24 = pipe(double, triple, quadruple);
+
+// Usage
+multiply6(6); // 36
+multiply9(9); // 81
+multiply16(16); // 256
+multiply24(10); // 240
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="running_promises_in_sequence"
+  >
+    <!--lit-part KUv/onkj48U=--><!--lit-node 0--><h3 id="running_promises_in_sequence" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#running_promises_in_sequence">Running promises in sequence</a></h3><!--/lit-part-->
+    <p><a href="/en-US/docs/Web/JavaScript/Guide/Using_promises#composition">Promise sequencing</a> is essentially function piping demonstrated in the previous section, except done asynchronously.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>// Compare this with pipe: fn(acc) is changed to acc.then(fn),
+// and initialValue is ensured to be a promise
+const asyncPipe =
+  (...functions) =&gt;
+  (initialValue) =&gt;
+    functions.reduce((acc, fn) =&gt; acc.then(fn), Promise.resolve(initialValue));
+
+// Building blocks to use for composition
+const p1 = async (a) =&gt; a * 5;
+const p2 = async (a) =&gt; a * 2;
+// The composed functions can also return non-promises, because the values are
+// all eventually wrapped in promises
+const f3 = (a) =&gt; a * 3;
+const p4 = async (a) =&gt; a * 4;
+
+asyncPipe(p1, p2, f3, p4)(10).then(console.log); // 1200
+</code></pre></div>
+<p><code>asyncPipe</code> can also be implemented using <code>async</code>/<code>await</code>, which better demonstrates its similarity with <code>pipe</code>:</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const asyncPipe =
+  (...functions) =&gt;
+  (initialValue) =&gt;
+    functions.reduce(async (acc, fn) =&gt; fn(await acc), initialValue);
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="using_reduce_with_sparse_arrays"
+  >
+    <!--lit-part /slU7BRjGTw=--><!--lit-node 0--><h3 id="using_reduce_with_sparse_arrays" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#using_reduce_with_sparse_arrays">Using reduce() with sparse arrays</a></h3><!--/lit-part-->
+    <p><code>reduce()</code> skips missing elements in sparse arrays, but it does not skip <code>undefined</code> values.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>console.log([1, 2, , 4].reduce((a, b) =&gt; a + b)); // 7
+console.log([1, 2, undefined, 4].reduce((a, b) =&gt; a + b)); // NaN
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="calling_reduce_on_non-array_objects"
+  >
+    <!--lit-part 1cNFyqmZV2A=--><!--lit-node 0--><h3 id="calling_reduce_on_non-array_objects" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#calling_reduce_on_non-array_objects">Calling reduce() on non-array objects</a></h3><!--/lit-part-->
+    <p>The <code>reduce()</code> method reads the <code>length</code> property of <code>this</code> and then accesses each property whose key is a nonnegative integer less than <code>length</code>.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const arrayLike = {
+  length: 3,
+  0: 2,
+  1: 3,
+  2: 4,
+  3: 99, // ignored by reduce() since length is 3
+};
+console.log(Array.prototype.reduce.call(arrayLike, (x, y) =&gt; x + y));
+// 9
+</code></pre></div>
+  </section><section
+    class="content-section"
+    aria-labelledby="when_to_not_use_reduce"
+  >
+    <!--lit-part 6FmyBnNyR5M=--><!--lit-node 0--><h3 id="when_to_not_use_reduce" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#when_to_not_use_reduce">When to not use reduce()</a></h3><!--/lit-part-->
+    <p>Multipurpose higher-order functions like <code>reduce()</code> can be powerful but sometimes difficult to understand, especially for less-experienced JavaScript developers. If code becomes clearer when using other array methods, developers must weigh the readability tradeoff against the other benefits of using <code>reduce()</code>.</p>
+<p>Note that <code>reduce()</code> is always equivalent to a <code>for...of</code> loop, except that instead of mutating a variable in the upper scope, we now return the new value for each iteration:</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js notranslate"><code>const val = array.reduce((acc, cur) =&gt; update(acc, cur), initialValue);
+
+// Is equivalent to:
+let val = initialValue;
+for (const cur of array) {
+  val = update(val, cur);
+}
+</code></pre></div>
+<p>As previously stated, the reason why people may want to use <code>reduce()</code> is to mimic functional programming practices of immutable data. Therefore, developers who uphold the immutability of the accumulator often copy the entire accumulator for each iteration, like this:</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const names = ["Alice", "Bob", "Tiff", "Bruce", "Alice"];
+const countedNames = names.reduce((allNames, name) =&gt; {
+  const currCount = Object.hasOwn(allNames, name) ? allNames[name] : 0;
+  return {
+    ...allNames,
+    [name]: currCount + 1,
+  };
+}, {});
+</code></pre></div>
+<p>This code is ill-performing, because each iteration has to copy the entire <code>allNames</code> object, which could be big, depending how many unique names there are. This code has worst-case <code>O(N^2)</code> performance, where <code>N</code> is the length of <code>names</code>.</p>
+<p>A better alternative is to <em>mutate</em> the <code>allNames</code> object on each iteration. However, if <code>allNames</code> gets mutated anyway, you may want to convert the <code>reduce()</code> to a <code>for</code> loop instead, which is much clearer:</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const names = ["Alice", "Bob", "Tiff", "Bruce", "Alice"];
+const countedNames = names.reduce((allNames, name) =&gt; {
+  const currCount = allNames[name] ?? 0;
+  allNames[name] = currCount + 1;
+  // return allNames, otherwise the next iteration receives undefined
+  return allNames;
+}, Object.create(null));
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const names = ["Alice", "Bob", "Tiff", "Bruce", "Alice"];
+const countedNames = Object.create(null);
+for (const name of names) {
+  const currCount = countedNames[name] ?? 0;
+  countedNames[name] = currCount + 1;
+}
+</code></pre></div>
+<p>Therefore, if your accumulator is an array or an object and you are copying the array or object on each iteration, you may accidentally introduce quadratic complexity into your code, causing performance to quickly degrade on large data. This has happened in real-world code — see for example <a href="https://jpcamara.com/2023/03/07/making-tanstack-table.html" class="external" target="_blank" title="External link (opens in new tab)">Making Tanstack Table 1000x faster with a 1 line change</a>.</p>
+<p>Some of the acceptable use cases of <code>reduce()</code> are given above (most notably, summing an array, promise sequencing, and function piping). There are other cases where better alternatives than <code>reduce()</code> exist.</p>
+<ul>
+<li>
+<p>Flattening an array of arrays. Use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/flat"><code>flat()</code></a> instead.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const flattened = array.reduce((acc, cur) =&gt; acc.concat(cur), []);
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const flattened = array.flat();
+</code></pre></div>
+</li>
+<li>
+<p>Grouping objects by a property. Use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy"><code>Object.groupBy()</code></a> instead.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const groups = array.reduce((acc, obj) =&gt; {
+  const key = obj.name;
+  const curGroup = acc[key] ?? [];
+  return { ...acc, [key]: [...curGroup, obj] };
+}, {});
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const groups = Object.groupBy(array, (obj) =&gt; obj.name);
+</code></pre></div>
+</li>
+<li>
+<p>Concatenating arrays contained in an array of objects. Use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/flatMap"><code>flatMap()</code></a> instead.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const friends = [
+  { name: "Anna", books: ["Bible", "Harry Potter"] },
+  { name: "Bob", books: ["War and peace", "Romeo and Juliet"] },
+  { name: "Alice", books: ["The Lord of the Rings", "The Shining"] },
+];
+const allBooks = friends.reduce((acc, cur) =&gt; [...acc, ...cur.books], []);
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const allBooks = friends.flatMap((person) =&gt; person.books);
+</code></pre></div>
+</li>
+<li>
+<p>Removing duplicate items in an array. Use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set"><code>Set</code></a> and <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/from"><code>Array.from()</code></a> instead.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const uniqArray = array.reduce(
+  (acc, cur) =&gt; (acc.includes(cur) ? acc : [...acc, cur]),
+  [],
+);
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const uniqArray = Array.from(new Set(array));
+</code></pre></div>
+</li>
+<li>
+<p>Eliminating or adding elements in an array. Use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/flatMap"><code>flatMap()</code></a> instead.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>// Takes an array of numbers and splits perfect squares into its square roots
+const roots = array.reduce((acc, cur) =&gt; {
+  if (cur &lt; 0) return acc;
+  const root = Math.sqrt(cur);
+  if (Number.isInteger(root)) return [...acc, root, root];
+  return [...acc, cur];
+}, []);
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const roots = array.flatMap((val) =&gt; {
+  if (val &lt; 0) return [];
+  const root = Math.sqrt(val);
+  if (Number.isInteger(root)) return [root, root];
+  return [val];
+});
+</code></pre></div>
+<p>If you are only eliminating elements from an array, you also can use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/filter"><code>filter()</code></a>.</p>
+</li>
+<li>
+<p>Searching for elements or testing if elements satisfy a condition. Use <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/find"><code>find()</code></a> and <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/find"><code>findIndex()</code></a>, or <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/some"><code>some()</code></a> and <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/every"><code>every()</code></a> instead. These methods have the additional benefit that they return as soon as the result is certain, without iterating the entire array.</p>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-bad notranslate"><code>const allEven = array.reduce((acc, cur) =&gt; acc &amp;&amp; cur % 2 === 0, true);
+</code></pre></div>
+<div class="code-example"><div class="example-header"><span class="language-name">js</span></div><pre class="brush: js example-good notranslate"><code>const allEven = array.every((val) =&gt; val % 2 === 0);
+</code></pre></div>
+</li>
+</ul>
+<p>In cases where <code>reduce()</code> is the best choice, documentation and semantic variable naming can help mitigate readability drawbacks.</p>
+  </section><section
+    class="content-section"
+    aria-labelledby="specifications"
+  >
+    <!--lit-part s915xX5HiM4=--><!--lit-node 0--><h2 id="specifications" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#specifications">Specifications</a></h2><!--/lit-part-->
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">
+            Specification
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+              <td><a class="external" href="https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.reduce" rel="noopener" target="_blank"
+      >ECMAScript® 2027 Language Specification<?><br /># sec-array.prototype.reduce<?></a
+    ></td>
+            </tr>
+      </tbody>
+    </table>
+  </section><section
+      class="content-section"
+      aria-labelledby="browser_compatibility"
+    >
+      <!--lit-part y0+5SMr/T3s=--><!--lit-node 0--><h2 id="browser_compatibility" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#browser_compatibility">Browser compatibility</a></h2><!--/lit-part-->
+      <mdn-compat-table-lazy
+        
+        
+       locale="en-US" query="javascript.builtins.Array.reduce"><template shadowroot="open" shadowrootmode="open"><!--lit-part y6RVfKR7hws=--><p><!--lit-part hRoZS/r0nwc=--><noscript>Enable JavaScript to view this browser compatibility table.</noscript><!--/lit-part--></p><!--/lit-part--></template></mdn-compat-table-lazy>
+    </section><section
+    class="content-section"
+    aria-labelledby="see_also"
+  >
+    <!--lit-part p88DAUaBJzA=--><!--lit-node 0--><h2 id="see_also" class="heading"><!--lit-node 1--><a class="heading-anchor" href="#see_also">See also</a></h2><!--/lit-part-->
+    <ul>
+<li><a href="https://core-js.io/docs/features/ecmascript/array" class="external" target="_blank" title="External link (opens in new tab)">Polyfill of <code>Array.prototype.reduce</code> in <code>core-js</code></a></li>
+<li><a href="https://www.npmjs.com/package/array.prototype.reduce" class="external" target="_blank" title="External link (opens in new tab)">es-shims polyfill of <code>Array.prototype.reduce</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Guide/Indexed_collections">Indexed collections</a> guide</li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array"><code>Array</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map"><code>Array.prototype.map()</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/flat"><code>Array.prototype.flat()</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/flatMap"><code>Array.prototype.flatMap()</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/reduceRight"><code>Array.prototype.reduceRight()</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypedArray/reduce"><code>TypedArray.prototype.reduce()</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy"><code>Object.groupBy()</code></a></li>
+<li><a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/groupBy"><code>Map.groupBy()</code></a></li>
+</ul>
+  </section> 
+      <section
+        class="content-section article-footer"
+        aria-labelledby="feedback"
+      >
+        <div class="article-footer__inner">
+          <div class="article-footer__svg-container"><!--lit-part OWLzZqRMsCU=--><!--/lit-part--></div>
+          <h2 id="feedback">
+            Help improve MDN
+          </h2>
+          <mdn-content-feedback  locale="en-US"><template shadowroot="open" shadowrootmode="open"><!--lit-part wnhNI9MhleE=--><fieldset class="content-feedback">
+      <!--lit-part abqF9JTZmM8=--><label
+        ><!--lit-part-->Was this page helpful to you?<!--/lit-part-->
+      </label>
+      <div class="content-feedback--buttons">
+        <!--lit-node 3--><mdn-button
+          
+          
+          
+          
+          
+         data-vote="yes" variant="secondary" action="positive" defer-hydration><template shadowroot="open" shadowrootmode="open"><!--lit-part O1S+ZMb7umU=-->
+        <!--lit-node 0--><button
+          class="button"
+          aria-labelledby="label-do55697o4kl"
+          
+          
+          
+          
+          data-variant="secondary"
+          data-action="positive"
+          part="button"
+        >
+          <!--lit-part--><!--lit-part bRP2a5ux/uw=--><span class="icon" part="icon"><!--lit-part GjE5cW6UBoM=--><!--/lit-part--></span><!--/lit-part--><!--lit-part rI2hX8LXYZM=-->
+    <!--lit-node 0--><span id="label-do55697o4kl" class="label"  part="label"
+      ><!--lit-part Pz0gobCCM4E=--><slot></slot><!--/lit-part--></span
+    >
+  <!--/lit-part--><!--/lit-part-->
+        </button>
+      <!--/lit-part--></template>
+          <!--lit-part-->Yes<!--/lit-part-->
+        </mdn-button>
+        <!--lit-node 5--><mdn-button
+          
+          
+          
+          
+          
+         data-vote="no" variant="secondary" action="negative" defer-hydration><template shadowroot="open" shadowrootmode="open"><!--lit-part O1S+ZMb7umU=-->
+        <!--lit-node 0--><button
+          class="button"
+          aria-labelledby="label-92z8k9a254b"
+          
+          
+          
+          
+          data-variant="secondary"
+          data-action="negative"
+          part="button"
+        >
+          <!--lit-part--><!--lit-part bRP2a5ux/uw=--><span class="icon" part="icon"><!--lit-part IggRHjbPj/Q=--><!--/lit-part--></span><!--/lit-part--><!--lit-part rI2hX8LXYZM=-->
+    <!--lit-node 0--><span id="label-92z8k9a254b" class="label"  part="label"
+      ><!--lit-part Pz0gobCCM4E=--><slot></slot><!--/lit-part--></span
+    >
+  <!--/lit-part--><!--/lit-part-->
+        </button>
+      <!--/lit-part--></template>
+          <!--lit-part-->No<!--/lit-part-->
+        </mdn-button>
+      </div><!--/lit-part-->
+    </fieldset><!--/lit-part--></template></mdn-content-feedback>
+          <a
+    class="article-footer__contribute"
+    href="/en-US/docs/MDN/Community/Getting_started"
+    >Learn how to contribute</a
+  > <p class="article-footer__last-modified">
+    This page was last modified on <time datetime="2026-10-26T04:56:01.000Z">Oct 26, 2026</time> by <a href="/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/reduce/contributors.txt">MDN contributors</a>.
+  </p> <div class="article-footer__links">
+    <a
+    class="external"
+    href="https://github.com/mdn/content/blob/main/files/en-us/web/javascript/reference/global_objects/array/reduce/index.md?plain=1"
+    title="Folder: en-us/web/javascript/reference/global_objects/array/reduce (Opens in a new tab)"
+    target="_blank"
+    rel="noopener"
+    >View this page on GitHub</a
+  > • <a
+    class="external"
+    href="https://github.com/mdn/content/issues/new?template=page-report.yml&amp;mdn-url=https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb%2FJavaScript%2FReference%2FGlobal_Objects%2FArray%2Freduce&amp;metadata=%3C%21--+Do+not+make+changes+below+this+line+--%3E%0A%3Cdetails%3E%0A%3Csummary%3EPage+report+details%3C%2Fsummary%3E%0A%0A*+Folder%3A+%60en-us%2Fweb%2Fjavascript%2Freference%2Fglobal_objects%2Farray%2Freduce%60%0A*+MDN+URL%3A+https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb%2FJavaScript%2FReference%2FGlobal_Objects%2FArray%2Freduce%0A*+GitHub+URL%3A+https%3A%2F%2Fgithub.com%2Fmdn%2Fcontent%2Fblob%2Fmain%2Ffiles%2Fen-us%2Fweb%2Fjavascript%2Freference%2Fglobal_objects%2Farray%2Freduce%2Findex.md%0A*+Last+commit%3A+https%3A%2F%2Fgithub.com%2Fmdn%2Fcontent%2Fcommit%2F9de14917b151f7db567a65d44c2685cea754b12a%0A*+Document+last+modified%3A+2026-10-26T04%3A56%3A01.000Z%0A%0A%3C%2Fdetails%3E"
+    title="This will take you to GitHub to file a new issue."
+    target="_blank"
+    rel="noopener"
+    >Report a problem with this content</a
+  >
+  </div>
+        </div>
+      </section>
+    
+          </div>
+        </main></body></html>

@@ -1,0 +1,477 @@
+<!doctype html><html><head><title>argparse</title></head><body><div class="body" role="main"><section id="argumentparser-objects">
+<h2 class="translated">ArgumentParser オブジェクト<a class="headerlink" href="#argumentparser-objects" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="argparse.ArgumentParser">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">ArgumentParser</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prog</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">usage</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epilog</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parents</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">formatter_class</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">argparse.HelpFormatter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix_chars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'-'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fromfile_prefix_chars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">argument_default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">conflict_handler</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'error'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_help</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_abbrev</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exit_on_error</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">suggest_on_error</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#argparse.ArgumentParser" title="Link to this definition">¶</a></dt>
+<dd><p class="translated">新しい <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトを生成します。すべての引数はキーワード引数として渡すべきです。各引数についてはあとで詳しく説明しますが、簡単に言うと:</p>
+<ul class="simple">
+<li><p class="translated"><a class="reference internal" href="#prog">prog</a> - プログラム名 (デフォルト: <code class="docutils literal notranslate"><span class="pre">__main__</span></code> モジュールの属性と <code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code> から生成)</p></li>
+<li><p class="translated"><a class="reference internal" href="#usage">usage</a> - プログラムの利用方法を記述する文字列 (デフォルト: パーサーに追加された引数から生成されます)</p></li>
+<li><p class="translated"><a class="reference internal" href="#description">description</a> - 引数のヘルプの前に表示されるテキスト (デフォルトはテキストなしです)</p></li>
+<li><p class="translated"><a class="reference internal" href="#epilog">epilog</a> - 引数のヘルプの後に表示されるテキスト (デフォルトはテキストなしです)</p></li>
+<li><p class="translated"><a class="reference internal" href="#parents">parents</a> - <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトのリストで、このオブジェクトの引数が追加されます</p></li>
+<li><p class="translated"><a class="reference internal" href="#formatter-class">formatter_class</a> - ヘルプ出力をカスタマイズするためのクラス</p></li>
+<li><p class="translated"><a class="reference internal" href="#prefix-chars">prefix_chars</a> - オプションの引数の prefix になる文字集合 (デフォルト: '-')</p></li>
+<li><p class="translated"><a class="reference internal" href="#fromfile-prefix-chars">fromfile_prefix_chars</a> - 追加の引数を読み込むファイルの prefix になる文字集合 (デフォルト: <code class="docutils literal notranslate"><span class="pre">None</span></code>)</p></li>
+<li><p class="translated"><a class="reference internal" href="#argument-default">argument_default</a> - 引数のグローバルなデフォルト値 (デフォルト: <code class="docutils literal notranslate"><span class="pre">None</span></code>)</p></li>
+<li><p class="translated"><a class="reference internal" href="#conflict-handler">conflict_handler</a> - 衝突するオプションを解決する方法 (通常は不要)</p></li>
+<li><p class="translated"><a class="reference internal" href="#add-help">add_help</a> - <code class="docutils literal notranslate"><span class="pre">-h/--help</span></code> オプションをパーサーに追加する (デフォルト: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p class="translated"><a class="reference internal" href="#allow-abbrev">allow_abbrev</a> - 意味が一意に決まる場合に、長いオプションの省略を許可する (デフォルト: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p class="translated"><a class="reference internal" href="#exit-on-error">exit_on_error</a> - エラーが起きたときに、<code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> がエラー情報を表示して終了するかどうか (デフォルト: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p class="translated"><a class="reference internal" href="#suggest-on-error">suggest_on_error</a> - 引数の選択肢やサブパーサー名の入力ミスに対して候補を提示する (デフォルト: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+<li><p class="translated"><a class="reference internal" href="#color">color</a> - 色付きの出力を許可する (デフォルト: <code class="docutils literal notranslate"><span class="pre">True</span></code>)</p></li>
+</ul>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.5 で変更: </span><em>allow_abbrev</em> 引数が追加されました。</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.8 で変更: </span>以前のバージョンでは、 <em>allow_abbrev</em> は、<code class="docutils literal notranslate"><span class="pre">-vv</span></code> が <code class="docutils literal notranslate"><span class="pre">-v</span> <span class="pre">-v</span></code> と等価になるような、短いフラグのグループ化を無効にしていました。</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.9 で変更: </span><em>exit_on_error</em> 引数が追加されました。</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.14 で変更: </span><code class="docutils literal notranslate"><span class="pre">suggest_on_error</span></code> と <code class="docutils literal notranslate"><span class="pre">color</span></code> パラメーターが追加されました。</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.15 で変更: </span><code class="docutils literal notranslate"><span class="pre">suggest_on_error</span></code> のデフォルト値が <code class="docutils literal notranslate"><span class="pre">True</span></code> に変わりました。</p>
+</div>
+</dd></dl>
+
+<p class="translated">以下の節では各オプションの利用方法を説明します。</p>
+<section id="prog">
+<span id="id1"></span><h3 class="translated"><code class="docutils literal notranslate"><span class="pre">prog</span></code><a class="headerlink" href="#prog" title="Link to this heading">¶</a></h3>
+<p class="translated">デフォルトでは、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> は Python インタープリタの実行方法に応じて、ヘルプに表示するプログラム名を求めます。</p>
+<ul class="simple">
+<li><p class="translated">ファイルを引数に渡した場合は、<code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code> の <a class="reference internal" href="os.path.html#os.path.basename" title="os.path.basename"><code class="xref py py-func docutils literal notranslate"><span class="pre">ベース名</span></code></a>。</p></li>
+<li><p class="translated">ディレクトリか ZIP ファイルを引数に渡した場合は、Python インタープリタの名前に <code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code> を続けたもの。</p></li>
+<li><p class="translated"><a class="reference internal" href="../using/cmdline.html#cmdoption-m"><code class="xref std std-option docutils literal notranslate"><span class="pre">-m</span></code></a> オプションを使った場合は、Python インタープリタの名前に <code class="docutils literal notranslate"><span class="pre">-m</span></code>、モジュール名またはパッケージ名を続けたもの。</p></li>
+</ul>
+<p class="translated">このデフォルトの動作では、コマンドラインでプログラムを実行した文字列とヘルプの表記が一致するので、ほとんどの場合に適しています。
+変更したい場合は、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <code class="docutils literal notranslate"><span class="pre">prog=</span></code> 引数に別の値を指定できます。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'myprogram'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: myprogram [-h]</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+</pre></div>
+</div>
+<p class="translated">プログラム名は、<code class="docutils literal notranslate"><span class="pre">sys.argv[0]</span></code>、<code class="docutils literal notranslate"><span class="pre">__main__</span></code> モジュールの属性、<code class="docutils literal notranslate"><span class="pre">prog=</span></code> 引数のどれから決まった場合でも、ヘルプ内で書式指定子 <code class="docutils literal notranslate"><span class="pre">%(prog)s</span></code> を使って参照できます。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'myprogram'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo of the </span><span class="si">%(prog)s</span><span class="s1"> program'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: myprogram [-h] [--foo FOO]</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+<span class="go"> --foo FOO   foo of the myprogram program</span>
+</pre></div>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.14 で変更: </span>デフォルトの <code class="docutils literal notranslate"><span class="pre">prog</span></code> 値は、常に <code class="docutils literal notranslate"><span class="pre">os.path.basename(sys.argv[0])</span></code> になるのではなく、<code class="docutils literal notranslate"><span class="pre">__main__</span></code> の実際の実行方法を反映するようになりました。</p>
+</div>
+</section>
+<section id="usage">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">usage</span></code><a class="headerlink" href="#usage" title="Link to this heading">¶</a></h3>
+<p class="translated">デフォルトでは、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> は登録された引数から使用法のメッセージを生成します。
+<code class="docutils literal notranslate"><span class="pre">usage=</span></code> キーワード引数を指定すると、このメッセージを置き換えられます。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">usage</span><span class="o">=</span><span class="s1">'</span><span class="si">%(prog)s</span><span class="s1"> [options]'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'?'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'+'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [options]</span>
+
+<span class="go">positional arguments:</span>
+<span class="go"> bar          bar help</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help   show this help message and exit</span>
+<span class="go"> --foo [FOO]  foo help</span>
+</pre></div>
+</div>
+<p class="translated"><code class="docutils literal notranslate"><span class="pre">%(prog)s</span></code> フォーマット指定子を、使用法メッセージ内でプログラム名として利用できます。</p>
+<p class="translated">メインのパーサーに独自の使用法メッセージを指定する場合は、サブパーサー間でコマンドの先頭部分や使用法の情報を揃えるため、<a class="reference internal" href="#argparse.ArgumentParser.add_subparsers" title="argparse.ArgumentParser.add_subparsers"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_subparsers()</span></code></a> に <code class="docutils literal notranslate"><span class="pre">prog</span></code> 引数を渡すか、<a class="reference internal" href="#argparse._SubParsersAction.add_parser" title="argparse._SubParsersAction.add_parser"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_parser()</span></code></a> に <code class="docutils literal notranslate"><span class="pre">prog</span></code> と <code class="docutils literal notranslate"><span class="pre">usage</span></code> 引数を渡すことも検討してください。</p>
+</section>
+<section id="description">
+<span id="id2"></span><h3 class="translated"><code class="docutils literal notranslate"><span class="pre">description</span></code><a class="headerlink" href="#description" title="Link to this heading">¶</a></h3>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> コンストラクターを呼ぶ際は、多くの場合 <code class="docutils literal notranslate"><span class="pre">description=</span></code> キーワード引数を使います。
+この引数には、プログラムが何をどのように行うかの簡潔な説明を指定します。
+ヘルプでは、コマンドラインの使用法を示す文字列と各引数のヘルプの間に表示されます。</p>
+<p class="translated">デフォルトでは、説明は与えられたスペースに合わせて折り返されます。この挙動を変更するには、<a class="reference internal" href="#formatter-class">formatter_class</a> 引数を参照してください。</p>
+</section>
+<section id="epilog">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">epilog</span></code><a class="headerlink" href="#epilog" title="Link to this heading">¶</a></h3>
+<p class="translated">いくつかのプログラムは、プログラムについての追加の説明を引数の説明の後に表示します。このテキストは <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <code class="docutils literal notranslate"><span class="pre">epilog=</span></code> 引数に指定できます:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">description</span><span class="o">=</span><span class="s1">'A foo that bars'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">epilog</span><span class="o">=</span><span class="s2">"And that's how you'd foo a bar"</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: argparse.py [-h]</span>
+
+<span class="go">A foo that bars</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+
+<span class="go">And that's how you'd foo a bar</span>
+</pre></div>
+</div>
+<p class="translated"><a class="reference internal" href="#description">description</a> 引数と同じく、<code class="docutils literal notranslate"><span class="pre">epilog=</span></code> テキストもデフォルトで折り返され、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <a class="reference internal" href="#formatter-class">formatter_class</a> 引数で動作を調整できます。</p>
+</section>
+<section id="parents">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">parents</span></code><a class="headerlink" href="#parents" title="Link to this heading">¶</a></h3>
+<p class="translated">ときどき、いくつかのパーサーが共通の引数セットを共有することがあります。それらの引数を繰り返し定義する代わりに、すべての共通引数を持ったパーサーを <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <code class="docutils literal notranslate"><span class="pre">parents=</span></code> 引数に渡すことができます。 <code class="docutils literal notranslate"><span class="pre">parents=</span></code> 引数は <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> オブジェクトのリストを受け取り、すべての位置アクションとオプションのアクションをそれらから集め、そのアクションを構築中の <code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> オブジェクトに追加します:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parent_parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parent_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--parent'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">foo_parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="p">[</span><span class="n">parent_parser</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">foo_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'foo'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">foo_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--parent'</span><span class="p">,</span> <span class="s1">'2'</span><span class="p">,</span> <span class="s1">'XXX'</span><span class="p">])</span>
+<span class="go">Namespace(foo='XXX', parent=2)</span>
+
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bar_parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="p">[</span><span class="n">parent_parser</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bar_parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bar_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="s1">'YYY'</span><span class="p">])</span>
+<span class="go">Namespace(bar='YYY', parent=None)</span>
+</pre></div>
+</div>
+<p class="translated">多くの親パーサーでは <code class="docutils literal notranslate"><span class="pre">add_help=False</span></code> を指定します。
+そうしないと、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> は親と子に一つずつ、計二つの <code class="docutils literal notranslate"><span class="pre">-h/--help</span></code> オプションを検出してエラーを発生させます。</p>
+<div class="admonition note">
+<p class="admonition-title">注釈</p>
+<p class="translated"><code class="docutils literal notranslate"><span class="pre">parents=</span></code> に渡す前にパーサーを完全に初期化する必要があります。子パーサーを作成してから親パーサーを変更した場合、その変更は子パーサーに反映されません。</p>
+</div>
+</section>
+<section id="formatter-class">
+<span id="id3"></span><h3 class="translated"><code class="docutils literal notranslate"><span class="pre">formatter_class</span></code><a class="headerlink" href="#formatter-class" title="Link to this heading">¶</a></h3>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトは代わりのフォーマットクラスを指定することでヘルプのフォーマットをカスタマイズできます。現在、4つのフォーマットクラスがあります:</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="argparse.RawDescriptionHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">RawDescriptionHelpFormatter</span></span><a class="headerlink" href="#argparse.RawDescriptionHelpFormatter" title="Link to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="argparse.RawTextHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">RawTextHelpFormatter</span></span><a class="headerlink" href="#argparse.RawTextHelpFormatter" title="Link to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="argparse.ArgumentDefaultsHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">ArgumentDefaultsHelpFormatter</span></span><a class="headerlink" href="#argparse.ArgumentDefaultsHelpFormatter" title="Link to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="argparse.MetavarTypeHelpFormatter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">argparse.</span></span><span class="sig-name descname"><span class="pre">MetavarTypeHelpFormatter</span></span><a class="headerlink" href="#argparse.MetavarTypeHelpFormatter" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<p class="translated"><a class="reference internal" href="#argparse.RawDescriptionHelpFormatter" title="argparse.RawDescriptionHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawDescriptionHelpFormatter</span></code></a> と <a class="reference internal" href="#argparse.RawTextHelpFormatter" title="argparse.RawTextHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawTextHelpFormatter</span></code></a> はどのようにテキストの説明を表示するかを指定できます。デフォルトでは <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトはコマンドラインヘルプの中の <a class="reference internal" href="#description">description</a> と <a class="reference internal" href="#epilog">epilog</a> を折り返して表示します:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">description</span><span class="o">=</span><span class="s1">'''this description</span>
+<span class="gp">... </span><span class="s1">        was indented weird</span>
+<span class="gp">... </span><span class="s1">            but that is okay'''</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">epilog</span><span class="o">=</span><span class="s1">'''</span>
+<span class="gp">... </span><span class="s1">            likewise for this epilog whose whitespace will</span>
+<span class="gp">... </span><span class="s1">        be cleaned up and whose words will be wrapped</span>
+<span class="gp">... </span><span class="s1">        across a couple lines'''</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h]</span>
+
+<span class="go">this description was indented weird but that is okay</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+
+<span class="go">likewise for this epilog whose whitespace will be cleaned up and whose words</span>
+<span class="go">will be wrapped across a couple lines</span>
+</pre></div>
+</div>
+<p class="translated"><code class="docutils literal notranslate"><span class="pre">formatter_class=</span></code> に <a class="reference internal" href="#argparse.RawDescriptionHelpFormatter" title="argparse.RawDescriptionHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawDescriptionHelpFormatter</span></code></a> を渡した場合、 <a class="reference internal" href="#description">description</a> と <a class="reference internal" href="#epilog">epilog</a> は整形済みとされ改行されません:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">description</span><span class="o">=</span><span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="s1">'''</span><span class="se">\</span>
+<span class="gp">... </span><span class="s1">        Please do not mess up this text!</span>
+<span class="gp">... </span><span class="s1">        --------------------------------</span>
+<span class="gp">... </span><span class="s1">            I have indented it</span>
+<span class="gp">... </span><span class="s1">            exactly the way</span>
+<span class="gp">... </span><span class="s1">            I want it</span>
+<span class="gp">... </span><span class="s1">        '''</span><span class="p">))</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h]</span>
+
+<span class="go">Please do not mess up this text!</span>
+<span class="go">--------------------------------</span>
+<span class="go">   I have indented it</span>
+<span class="go">   exactly the way</span>
+<span class="go">   I want it</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+</pre></div>
+</div>
+<p class="translated"><a class="reference internal" href="#argparse.RawTextHelpFormatter" title="argparse.RawTextHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">RawTextHelpFormatter</span></code></a> は、引数の説明を含むすべてのヘルプテキストの空白を保持します。
+ただし、連続する改行は一つにまとめられます。
+複数の空行を残したい場合は、改行の間にスペースを入れてください。</p>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentDefaultsHelpFormatter" title="argparse.ArgumentDefaultsHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentDefaultsHelpFormatter</span></code></a> は各引数のデフォルト値を自動的にヘルプに追加します:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentDefaultsHelpFormatter</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'FOO!'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'*'</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="n">help</span><span class="o">=</span><span class="s1">'BAR!'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] [--foo FOO] [bar ...]</span>
+
+<span class="go">positional arguments:</span>
+<span class="go"> bar         BAR! (default: [1, 2, 3])</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+<span class="go"> --foo FOO   FOO! (default: 42)</span>
+</pre></div>
+</div>
+<p class="translated"><a class="reference internal" href="#argparse.MetavarTypeHelpFormatter" title="argparse.MetavarTypeHelpFormatter"><code class="xref py py-class docutils literal notranslate"><span class="pre">MetavarTypeHelpFormatter</span></code></a> は、各引数の値の表示名に <a class="reference internal" href="#type">type</a> 引数の値を使用します (通常は <a class="reference internal" href="#dest">dest</a> の値が使用されます):</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">MetavarTypeHelpFormatter</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] [--foo int] float</span>
+
+<span class="go">positional arguments:</span>
+<span class="go">  float</span>
+
+<span class="go">options:</span>
+<span class="go">  -h, --help  show this help message and exit</span>
+<span class="go">  --foo int</span>
+</pre></div>
+</div>
+</section>
+<section id="prefix-chars">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">prefix_chars</span></code><a class="headerlink" href="#prefix-chars" title="Link to this heading">¶</a></h3>
+<p class="translated">ほとんどのコマンドラインオプションでは、<code class="docutils literal notranslate"><span class="pre">-f/--foo</span></code> のように接頭辞として <code class="docutils literal notranslate"><span class="pre">-</span></code> を使います。
+<code class="docutils literal notranslate"><span class="pre">+f</span></code> や <code class="docutils literal notranslate"><span class="pre">/foo</span></code> のように、別の文字や追加の文字を接頭辞としてサポートする必要があるパーサーでは、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> コンストラクターの <code class="docutils literal notranslate"><span class="pre">prefix_chars=</span></code> 引数でそれらの文字を指定できます。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">prefix_chars</span><span class="o">=</span><span class="s1">'-+'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'+f'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'++bar'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="s1">'+f X ++bar Y'</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+<span class="go">Namespace(bar='Y', f='X')</span>
+</pre></div>
+</div>
+<p class="translated"><code class="docutils literal notranslate"><span class="pre">prefix_chars=</span></code> 引数のデフォルトは <code class="docutils literal notranslate"><span class="pre">'-'</span></code> です。<code class="docutils literal notranslate"><span class="pre">-</span></code> を含まない文字セットを指定すると、<code class="docutils literal notranslate"><span class="pre">-f/--foo</span></code> オプションが使用できなくなります。</p>
+</section>
+<section id="fromfile-prefix-chars">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">fromfile_prefix_chars</span></code><a class="headerlink" href="#fromfile-prefix-chars" title="Link to this heading">¶</a></h3>
+<p class="translated">ときどき、非常に長い引数リストを扱う場合に、その引数リストを毎回コマンドラインにタイプする代わりにファイルに置いておきたい場合があります。<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> のコンストラクターに <code class="docutils literal notranslate"><span class="pre">fromfile_prefix_chars=</span></code> 引数が渡された場合、指定された文字のいずれかで始まる引数はファイルとして扱われ、そのファイルに含まれる引数リストに置換されます。例えば:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">'args.txt'</span><span class="p">,</span> <span class="s1">'w'</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">getfilesystemencoding</span><span class="p">())</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+<span class="gp">... </span>    <span class="n">fp</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s1">'-f</span><span class="se">\n</span><span class="s1">bar'</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">fromfile_prefix_chars</span><span class="o">=</span><span class="s1">'@'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'-f'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'-f'</span><span class="p">,</span> <span class="s1">'foo'</span><span class="p">,</span> <span class="s1">'@args.txt'</span><span class="p">])</span>
+<span class="go">Namespace(f='bar')</span>
+</pre></div>
+</div>
+<p class="translated">デフォルトでは、ファイルから読み込む引数は 1 行に一つずつ記述します (<a class="reference internal" href="#argparse.ArgumentParser.convert_arg_line_to_args" title="argparse.ArgumentParser.convert_arg_line_to_args"><code class="xref py py-meth docutils literal notranslate"><span class="pre">convert_arg_line_to_args()</span></code></a> も参照してください)。
+読み込んだ引数は、コマンドラインでそのファイルを指定した引数の位置にあるものとして扱われます。
+上の例では、<code class="docutils literal notranslate"><span class="pre">['-f',</span> <span class="pre">'foo',</span> <span class="pre">'&#64;args.txt']</span></code> は <code class="docutils literal notranslate"><span class="pre">['-f',</span> <span class="pre">'foo',</span> <span class="pre">'-f',</span> <span class="pre">'bar']</span></code> と同じものとして扱われます。</p>
+<div class="admonition note">
+<p class="admonition-title">注釈</p>
+<p class="translated">各行が一つの引数として扱われるので、空行は空文字列 (<code class="docutils literal notranslate"><span class="pre">''</span></code>) として読み込まれます。</p>
+</div>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> は、引数を記述したファイルを <a class="reference internal" href="../glossary.html#term-filesystem-encoding-and-error-handler"><span class="xref std std-term">filesystem encoding and error handler</span></a> を使って読み込みます。</p>
+<p class="translated"><code class="docutils literal notranslate"><span class="pre">fromfile_prefix_chars=</span></code> 引数のデフォルト値は <code class="docutils literal notranslate"><span class="pre">None</span></code> で、引数がファイル参照として扱われることがないことを意味しています。</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">バージョン 3.12 で変更: </span><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> が引数ファイルの読み込みに使うエンコーディングとエラーハンドラーを、デフォルト値 (<a class="reference internal" href="locale.html#locale.getpreferredencoding" title="locale.getpreferredencoding"><code class="xref py py-func docutils literal notranslate"><span class="pre">locale.getpreferredencoding(False)</span></code></a> と <code class="docutils literal notranslate"><span class="pre">&quot;strict&quot;</span></code> など) から <a class="reference internal" href="../glossary.html#term-filesystem-encoding-and-error-handler"><span class="xref std std-term">filesystem encoding and error handler</span></a> に変更しました。
+Windows では、引数ファイルを ANSI コードページではなく UTF-8 でエンコードしてください。</p>
+</div>
+</section>
+<section id="argument-default">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">argument_default</span></code><a class="headerlink" href="#argument-default" title="Link to this heading">¶</a></h3>
+<p class="translated">一般的には、引数のデフォルト値は <a class="reference internal" href="#argparse.ArgumentParser.add_argument" title="argparse.ArgumentParser.add_argument"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument()</span></code></a> メソッドにデフォルト値を渡すか、<a class="reference internal" href="#argparse.ArgumentParser.set_defaults" title="argparse.ArgumentParser.set_defaults"><code class="xref py py-meth docutils literal notranslate"><span class="pre">set_defaults()</span></code></a> メソッドに名前と値のペアを渡すことで指定します。しかしまれに、1つのパーサー全体に適用されるデフォルト引数が便利なことがあります。これを行うには、 <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> に <code class="docutils literal notranslate"><span class="pre">argument_default=</span></code> キーワード引数を渡します。例えば、全体で <a class="reference internal" href="#argparse.ArgumentParser.parse_args" title="argparse.ArgumentParser.parse_args"><code class="xref py py-meth docutils literal notranslate"><span class="pre">parse_args()</span></code></a> メソッド呼び出しの属性の生成を抑制するには、<code class="docutils literal notranslate"><span class="pre">argument_default=SUPPRESS</span></code> を指定します:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">argument_default</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">SUPPRESS</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">'?'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="s1">'1'</span><span class="p">,</span> <span class="s1">'BAR'</span><span class="p">])</span>
+<span class="go">Namespace(bar='BAR', foo='1')</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([])</span>
+<span class="go">Namespace()</span>
+</pre></div>
+</div>
+</section>
+<section id="allow-abbrev">
+<span id="id4"></span><h3 class="translated"><code class="docutils literal notranslate"><span class="pre">allow_abbrev</span></code><a class="headerlink" href="#allow-abbrev" title="Link to this heading">¶</a></h3>
+<p class="translated">通常、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <a class="reference internal" href="#argparse.ArgumentParser.parse_args" title="argparse.ArgumentParser.parse_args"><code class="xref py py-meth docutils literal notranslate"><span class="pre">parse_args()</span></code></a> に引数のリストを渡すとき、長いオプションは <a class="reference internal" href="#prefix-matching"><span class="std std-ref">短縮しても認識されます</span></a>。</p>
+<p class="translated">この機能は、<code class="docutils literal notranslate"><span class="pre">allow_abbrev</span></code> に <code class="docutils literal notranslate"><span class="pre">False</span></code> を指定することで無効にできます:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">allow_abbrev</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foobar'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_true'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foonley'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_false'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foon'</span><span class="p">])</span>
+<span class="go">usage: PROG [-h] [--foobar] [--foonley]</span>
+<span class="go">PROG: error: unrecognized arguments: --foon</span>
+</pre></div>
+</div>
+<div class="versionadded">
+<p><span class="versionmodified added">Added in version 3.5.</span></p>
+</div>
+</section>
+<section id="conflict-handler">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">conflict_handler</span></code><a class="headerlink" href="#conflict-handler" title="Link to this heading">¶</a></h3>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトは同じオプション文字列に対して複数のアクションを許可していません。
+デフォルトでは、<code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> オブジェクトは、すでに利用されているオプション文字列を使って新しい引数をつくろうとしたときに例外を送出します:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'-f'</span><span class="p">,</span> <span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'old foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'new foo help'</span><span class="p">)</span>
+<span class="gt">Traceback (most recent call last):</span>
+<span class="gr"> ..</span>
+<span class="gr">ArgumentError</span>: <span class="n">argument --foo: conflicting option string(s): --foo</span>
+</pre></div>
+</div>
+<p class="translated">ときどき (例えば <a class="reference internal" href="#parents">parents</a> を利用する場合など)、古い引数を同じオプション文字列で上書きするほうが便利な場合があります。この動作をするには、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <code class="docutils literal notranslate"><span class="pre">conflict_handler=</span></code> 引数に <code class="docutils literal notranslate"><span class="pre">'resolve'</span></code> を渡します:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">conflict_handler</span><span class="o">=</span><span class="s1">'resolve'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'-f'</span><span class="p">,</span> <span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'old foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'new foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] [-f FOO] [--foo FOO]</span>
+
+<span class="go">options:</span>
+<span class="go"> -h, --help  show this help message and exit</span>
+<span class="go"> -f FOO      old foo help</span>
+<span class="go"> --foo FOO   new foo help</span>
+</pre></div>
+</div>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトは、すべてのオプション文字列が上書きされた場合にだけアクションを削除することに注目してください。上の例では、 <code class="docutils literal notranslate"><span class="pre">--foo</span></code> オプション文字列だけが上書きされているので、古い <code class="docutils literal notranslate"><span class="pre">-f/--foo</span></code> アクションは <code class="docutils literal notranslate"><span class="pre">-f</span></code> アクションとして残っています。</p>
+</section>
+<section id="add-help">
+<h3 class="translated"><code class="docutils literal notranslate"><span class="pre">add_help</span></code><a class="headerlink" href="#add-help" title="Link to this heading">¶</a></h3>
+<p class="translated">デフォルトでは、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> オブジェクトに、パーサーのヘルプを表示するオプションが追加されます。
+コマンドラインで <code class="docutils literal notranslate"><span class="pre">-h</span></code> または <code class="docutils literal notranslate"><span class="pre">--help</span></code> を指定すると、<code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code> のヘルプが表示されます。</p>
+<p class="translated">必要に応じて、この help オプションを無効にする場合があります。これは <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> の <code class="docutils literal notranslate"><span class="pre">add_help=</span></code> 引数に <code class="docutils literal notranslate"><span class="pre">False</span></code> を渡すことで可能です:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [--foo FOO]</span>
+
+<span class="go">options:</span>
+<span class="go"> --foo FOO  foo help</span>
+</pre></div>
+</div>
+<p class="translated">ヘルプオプションは通常 <code class="docutils literal notranslate"><span class="pre">-h/--help</span></code> です。例外は <code class="docutils literal notranslate"><span class="pre">prefix_chars=</span></code> が指定されてその中に <code class="docutils literal notranslate"><span class="pre">-</span></code> が無かった場合で、その場合は <code class="docutils literal notranslate"><span class="pre">-h</span></code> と <code class="docutils literal notranslate"><span class="pre">--help</span></code> は有効なオプションではありません。この場合、<code class="docutils literal notranslate"><span class="pre">prefix_chars</span></code> の最初の文字がヘルプオプションの接頭辞として利用されます:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">prefix_chars</span><span class="o">=</span><span class="s1">'+/'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [+h]</span>
+
+<span class="go">options:</span>
+<span class="go">  +h, ++help  show this help message and exit</span>
+</pre></div>
+</div>
+</section>
+<section id="argument-groups">
+<h3 class="translated">引数グループ<a class="headerlink" href="#argument-groups" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="argparse.ArgumentParser.add_argument_group">
+<span class="sig-prename descclassname"><span class="pre">ArgumentParser.</span></span><span class="sig-name descname"><span class="pre">add_argument_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">*</span></span></em><span class="optional">[</span>, <em class="sig-param"><span class="n"><span class="pre">argument_default</span></span></em><span class="optional">]</span><span class="optional">[</span>, <em class="sig-param"><span class="n"><span class="pre">conflict_handler</span></span></em><span class="optional">]</span><span class="sig-paren">)</span><a class="headerlink" href="#argparse.ArgumentParser.add_argument_group" title="Link to this definition">¶</a></dt>
+<dd><p class="translated">デフォルトでは、<a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> はヘルプを表示する際に、コマンドライン引数を &quot;positional arguments&quot; と &quot;options&quot; に分けます。
+引数の意味に応じた別の分け方が適している場合は、<code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code> メソッドでグループを作成できます。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'group'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [--foo FOO] bar</span>
+
+<span class="go">group:</span>
+<span class="go">  bar    bar help</span>
+<span class="go">  --foo FOO  foo help</span>
+</pre></div>
+</div>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a> メソッドは、通常の <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> と同じように <a class="reference internal" href="#argparse.ArgumentParser.add_argument" title="argparse.ArgumentParser.add_argument"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument()</span></code></a> メソッドを持つ引数グループオブジェクトを返します。
+グループに追加した引数は通常の引数と同じように処理されますが、ヘルプでは別のグループに表示されます。
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code> の <em>title</em> と <em>description</em> 引数で、この表示をカスタマイズできます。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">,</span> <span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group1</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'group1'</span><span class="p">,</span> <span class="s1">'group1 description'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group1</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group2</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'group2'</span><span class="p">,</span> <span class="s1">'group2 description'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group2</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [--bar BAR] foo</span>
+
+<span class="go">group1:</span>
+<span class="go">  group1 description</span>
+
+<span class="go">  foo    foo help</span>
+
+<span class="go">group2:</span>
+<span class="go">  group2 description</span>
+
+<span class="go">  --bar BAR  bar help</span>
+</pre></div>
+</div>
+<p class="translated">省略可能なキーワード専用パラメーター <a class="reference internal" href="#argument-default">argument_default</a> と <a class="reference internal" href="#conflict-handler">conflict_handler</a> を使うと、引数グループの動作をより細かく制御できます。
+これらの意味は <a class="reference internal" href="#argparse.ArgumentParser" title="argparse.ArgumentParser"><code class="xref py py-class docutils literal notranslate"><span class="pre">ArgumentParser</span></code></a> コンストラクターと同じですが、パーサー全体ではなく、その引数グループだけに適用されます。</p>
+<p class="translated">ユーザー定義グループにないすべての引数は通常の &quot;位置引数&quot; と &quot;オプション引数&quot; セクションに表示されます。</p>
+<p class="translated">各引数グループ内の引数は、追加した順にヘルプに表示されます。</p>
+<div class="deprecated-removed">
+<p><span class="versionmodified removed">バージョン 3.11 で非推奨、バージョン 3.14 で削除: </span>引数グループに対して <a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a> を呼び出すと、例外が送出されるようになりました。
+この入れ子構造はもともとサポートされておらず、正しく動作しないことも多くありました。
+継承によって意図せず利用可能になっていたものです。</p>
+</div>
+<div class="deprecated">
+<p><span class="versionmodified deprecated">バージョン 3.14 で非推奨: </span><a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a> に <a class="reference internal" href="#prefix-chars">prefix_chars</a> を渡すことは非推奨になりました。</p>
+</div>
+</dd></dl>
+
+</section>
+<section id="mutual-exclusion">
+<h3 class="translated">相互排他<a class="headerlink" href="#mutual-exclusion" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="argparse.ArgumentParser.add_mutually_exclusive_group">
+<span class="sig-prename descclassname"><span class="pre">ArgumentParser.</span></span><span class="sig-name descname"><span class="pre">add_mutually_exclusive_group</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#argparse.ArgumentParser.add_mutually_exclusive_group" title="Link to this definition">¶</a></dt>
+<dd><p class="translated">相互排他グループを作成します。
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">argparse</span></code> は、そのグループに含まれる複数の引数がコマンドラインで同時に指定されないことを確認します。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_true'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_false'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foo'</span><span class="p">])</span>
+<span class="go">Namespace(bar=True, foo=True)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--bar'</span><span class="p">])</span>
+<span class="go">Namespace(bar=False, foo=False)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="s1">'--bar'</span><span class="p">])</span>
+<span class="go">usage: PROG [-h] [--foo | --bar]</span>
+<span class="go">PROG: error: argument --bar: not allowed with argument --foo</span>
+</pre></div>
+</div>
+<p class="translated"><a class="reference internal" href="#argparse.ArgumentParser.add_mutually_exclusive_group" title="argparse.ArgumentParser.add_mutually_exclusive_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_mutually_exclusive_group()</span></code></a> メソッドの引数 <em>required</em> に True 値を指定すると、その相互排他引数のどれか1つを選ぶことが要求されます:</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_true'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">'store_false'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([])</span>
+<span class="go">usage: PROG [-h] (--foo | --bar)</span>
+<span class="go">PROG: error: one of the arguments --foo --bar is required</span>
+</pre></div>
+</div>
+<p class="translated">現在、相互排他引数グループでは <a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a> の <em>title</em> と <em>description</em> 引数はサポートされていません。
+ただし、タイトルと説明を持つ引数グループに、相互排他グループを追加することはできます。
+例えば次のようになります。</p>
+<div class="translated highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s1">'PROG'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">group</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument_group</span><span class="p">(</span><span class="s1">'Group title'</span><span class="p">,</span> <span class="s1">'Group description'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">exclusive_group</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">exclusive_group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--foo'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'foo help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">exclusive_group</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">'--bar'</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">'bar help'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+<span class="go">usage: PROG [-h] (--foo FOO | --bar BAR)</span>
+
+<span class="go">options:</span>
+<span class="go">  -h, --help  show this help message and exit</span>
+
+<span class="go">Group title:</span>
+<span class="go">  Group description</span>
+
+<span class="go">  --foo FOO   foo help</span>
+<span class="go">  --bar BAR   bar help</span>
+</pre></div>
+</div>
+<div class="deprecated-removed">
+<p><span class="versionmodified removed">バージョン 3.11 で非推奨、バージョン 3.14 で削除: </span>相互排他グループに対して <a class="reference internal" href="#argparse.ArgumentParser.add_argument_group" title="argparse.ArgumentParser.add_argument_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_argument_group()</span></code></a> または <a class="reference internal" href="#argparse.ArgumentParser.add_mutually_exclusive_group" title="argparse.ArgumentParser.add_mutually_exclusive_group"><code class="xref py py-meth docutils literal notranslate"><span class="pre">add_mutually_exclusive_group()</span></code></a> を呼び出すと、例外が送出されるようになりました。
+この入れ子構造はもともとサポートされておらず、正しく動作しないことも多くありました。
+継承によって意図せず利用可能になっていたものです。</p>
+</div>
+</dd></dl>
+
+</section></div></body></html>

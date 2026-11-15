@@ -1,0 +1,280 @@
+# Vitest
+
+> Next generation testing framework powered by Vite
+
+## Table of Contents
+
+### Config Reference
+
+- [Configuring Vitest](/config.md)
+- [include | Config](/config/include.md)
+- [exclude | Config](/config/exclude.md)
+- [includeSource | Config](/config/include-source.md)
+- [name | Config](/config/name.md)
+- [server | Config](/config/server.md)
+- [deps | Config](/config/deps.md)
+- [runner | Config](/config/runner.md)
+- [benchmark | Config](/config/benchmark.md)
+- [alias | Config](/config/alias.md)
+- [globals | Config](/config/globals.md)
+- [injectCjsGlobals | Config](/config/injectcjsglobals.md)
+- [environment | Config](/config/environment.md)
+- [environmentOptions | Config](/config/environmentoptions.md)
+- [watch | Config](/config/watch.md)
+- [watchTriggerPatterns | Config](/config/watchtriggerpatterns.md)
+- [root | Config](/config/root.md)
+- [dir | Config](/config/dir.md)
+- [reporters | Config](/config/reporters.md)
+- [outputFile | Config](/config/outputfile.md)
+- [pool | Config](/config/pool.md)
+- [execArgv | Config](/config/execargv.md)
+- [vmMemoryLimit | Config](/config/vmmemorylimit.md)
+- [fileParallelism | Config](/config/fileparallelism.md)
+- [maxWorkers | Config](/config/maxworkers.md)
+- [testTimeout | Config](/config/testtimeout.md)
+- [hookTimeout | Config](/config/hooktimeout.md)
+- [teardownTimeout | Config](/config/teardowntimeout.md)
+- [silent | Config](/config/silent.md)
+- [setupFiles | Config](/config/setupfiles.md)
+- [provide | Config](/config/provide.md)
+- [globalSetup | Config](/config/globalsetup.md)
+- [forceRerunTriggers | Config](/config/forcereruntriggers.md)
+- [coverage | Config](/config/coverage.md)
+- [testNamePattern | Config](/config/testnamepattern.md)
+- [ui | Config](/config/ui.md)
+- [open | Config](/config/open.md)
+- [api | Config](/config/api.md)
+- [clearMocks | Config](/config/clearmocks.md)
+- [mockReset | Config](/config/mockreset.md)
+- [restoreMocks | Config](/config/restoremocks.md)
+- [unstubEnvs | Config](/config/unstubenvs.md)
+- [unstubGlobals | Config](/config/unstubglobals.md)
+- [snapshotFormat | Config](/config/snapshotformat.md)
+- [snapshotSerializers | Config](/config/snapshotserializers.md)
+- [resolveSnapshotPath | Config](/config/resolvesnapshotpath.md)
+- [allowOnly | Config](/config/allowonly.md)
+- [passWithNoTests | Config](/config/passwithnotests.md)
+- [logHeapUsage | Config](/config/logheapusage.md)
+- [css | Config](/config/css.md)
+- [maxConcurrency | Config](/config/maxconcurrency.md)
+- [cache | Config](/config/cache.md)
+- [fsModuleCache | Config](/config/fsmodulecache.md)
+- [fsModuleCachePath | Config](/config/fsmodulecachepath.md)
+- [sequence | Config](/config/sequence.md)
+- [tags | Config](/config/tags.md)
+- [strictTags | Config](/config/stricttags.md)
+- [typecheck | Config](/config/typecheck.md)
+- [slowTestThreshold | Config](/config/slowtestthreshold.md)
+- [chaiConfig | Config](/config/chaiconfig.md)
+- [bail | Config](/config/bail.md)
+- [retry | Config](/config/retry.md)
+- [repeats | Config](/config/repeats.md)
+- [onConsoleLog | Config](/config/onconsolelog.md)
+- [onStackTrace | Config](/config/onstacktrace.md)
+- [onUnhandledError | Config](/config/onunhandlederror.md)
+- [dangerouslyIgnoreUnhandledErrors | Config](/config/dangerouslyignoreunhandlederrors.md)
+- [diff | Config](/config/diff.md)
+- [fakeTimers | Config](/config/faketimers.md)
+- [projects | Config](/config/projects.md)
+- [sharedViteServer | Config](/config/sharedviteserver.md)
+- [isolate | Config](/config/isolate.md)
+- [includeTaskLocation | Config](/config/includetasklocation.md)
+- [snapshotEnvironment | Config](/config/snapshotenvironment.md)
+- [env | Config](/config/env.md)
+- [expect | Config](/config/expect.md)
+- [printConsoleTrace | Config](/config/printconsoletrace.md)
+- [attachmentsDir | Config](/config/attachmentsdir.md)
+- [hideSkippedTests | Config](/config/hideskippedtests.md)
+- [mode | Config](/config/mode.md)
+- [expandSnapshotDiff | Config](/config/expandsnapshotdiff.md)
+- [disableConsoleIntercept | Config](/config/disableconsoleintercept.md)
+- [changed | Config](/config/changed.md)
+- [experimental | Config](/config/experimental.md)
+
+### Browser Mode
+
+- [browser.enabled | Config](/config/browser/enabled.md)
+- [browser.instances | Config](/config/browser/instances.md)
+- [browser.headless | Config](/config/browser/headless.md)
+- [browser.testerHtmlPath | Config](/config/browser/testerhtmlpath.md)
+- [browser.provider | Config](/config/browser/provider.md)
+- [browser.ui | Config](/config/browser/ui.md)
+- [browser.detailsPanelPosition | Config](/config/browser/detailspanelposition.md)
+- [browser.viewport | Config](/config/browser/viewport.md)
+- [browser.locators | Config](/config/browser/locators.md)
+- [browser.screenshotDirectory | Config](/config/browser/screenshotdirectory.md)
+- [browser.screenshotFailures | Config](/config/browser/screenshotfailures.md)
+- [browser.dependencySourcemaps | Config](/config/browser/dependencysourcemaps.md)
+- [browser.orchestratorScripts | Config](/config/browser/orchestratorscripts.md)
+- [browser.commands | Config](/config/browser/commands.md)
+- [browser.connectTimeout | Config](/config/browser/connecttimeout.md)
+- [browser.trace | Config](/config/browser/trace.md)
+- [browser.trackUnhandledErrors | Config](/config/browser/trackunhandlederrors.md)
+- [browser.importMapMocks | Config](/config/browser/importmapmocks.md)
+- [browser.expect | Config](/config/browser/expect.md)
+
+#### Providers
+
+- [Configuring Playwright](/config/browser/playwright.md)
+- [Configuring WebdriverIO](/config/browser/webdriverio.md)
+- [Configuring Preview](/config/browser/preview.md)
+
+### Introduction
+
+- [Why Vitest | Guide](/guide/why.md)
+- [Getting Started | Guide](/guide.md)
+- [Features | Guide](/guide/features.md)
+
+### Learn
+
+- [Writing Tests | Guide](/guide/learn/writing-tests.md)
+- [Using Matchers | Guide](/guide/learn/matchers.md)
+- [Testing Asynchronous Code | Guide](/guide/learn/async.md)
+- [Setup and Teardown | Guide](/guide/learn/setup-teardown.md)
+- [Mock Functions | Guide](/guide/learn/mock-functions.md)
+- [Snapshot Testing | Guide](/guide/learn/snapshots.md)
+- [Testing in Practice | Guide](/guide/learn/testing-in-practice.md)
+- [Debugging Failing Tests | Guide](/guide/learn/debugging-tests.md)
+- [Writing Tests with AI | Guide](/guide/learn/writing-tests-with-ai.md)
+
+### Browser Mode
+
+- [Why Browser Mode | Browser Mode](/guide/browser/why.md)
+- [Browser Mode | Guide](/guide/browser.md)
+- [Multiple Setups](/guide/browser/multiple-setups.md)
+- [Component Testing | Guide](/guide/browser/component-testing.md)
+- [Visual Regression Testing](/guide/browser/visual-regression-testing.md)
+- [Trace View 5.0.0](/guide/browser/trace-view.md)
+- [Playwright Traces](/guide/browser/playwright-traces.md)
+- [ARIA Snapshots | Guide](/guide/browser/aria-snapshots.md)
+
+### Authoring
+
+- [Test Context | Guide](/guide/test-context.md)
+- [Test Run Lifecycle | Guide](/guide/lifecycle.md)
+- [Snapshot | Guide](/guide/snapshot.md)
+- [Mocking | Guide](/guide/mocking.md)
+- [Test Tags | Guide](/guide/test-tags.md)
+- [Test Annotations | Guide](/guide/test-annotations.md)
+- [Extending Matchers | Guide](/guide/extending-matchers.md)
+- [Testing Types | Guide](/guide/testing-types.md)
+- [Benchmarking | Guide](/guide/benchmarking.md)
+- [In-Source Testing | Guide](/guide/in-source.md)
+
+#### Mocking
+
+- [Mocking Dates](/guide/mocking/dates.md)
+- [Mocking Functions](/guide/mocking/functions.md)
+- [Mocking Globals](/guide/mocking/globals.md)
+- [Mocking Modules](/guide/mocking/modules.md)
+- [Mocking the File System](/guide/mocking/file-system.md)
+- [Mocking Requests](/guide/mocking/requests.md)
+- [Timers](/guide/mocking/timers.md)
+- [Mocking Classes](/guide/mocking/classes.md)
+
+### Workflow
+
+- [Command Line Interface | Guide](/guide/cli.md)
+- [Test Filtering | Guide](/guide/filtering.md)
+- [Test Projects | Guide](/guide/projects.md)
+- [Test Environment | Guide](/guide/environment.md)
+- [Parallelism | Guide](/guide/parallelism.md)
+- [Reporters | Guide](/guide/reporters.md)
+- [Vitest UI | Guide](/guide/ui.md)
+- [IDE Integrations | Guide](/guide/ide.md)
+
+### Quality & Debugging
+
+- [Coverage | Guide](/guide/coverage.md)
+- [Debugging | Guide](/guide/debugging.md)
+- [Common Errors | Guide](/guide/common-errors.md)
+- [Open Telemetry Support  {#open-telemetry-support}](/guide/open-telemetry.md)
+
+#### Performance
+
+- [Profiling Test Performance](/guide/profiling-test-performance.md)
+- [Improving Performance](/guide/improving-performance.md)
+
+### Recipes
+
+- [Database Transaction per Test | Recipes](/guide/recipes/db-transaction.md)
+- [Cancellable Test Resources | Recipes](/guide/recipes/cancellable.md)
+- [Waiting for Async Conditions | Recipes](/guide/recipes/wait-for.md)
+- [Type Narrowing in Tests | Recipes](/guide/recipes/type-narrowing.md)
+- [Custom Assertion Helpers | Recipes](/guide/recipes/custom-assertions.md)
+- [Watching Non-Imported Files | Recipes](/guide/recipes/watch-templates.md)
+- [Extending Browser Locators | Recipes](/guide/recipes/browser-locators.md)
+- [Schema-Driven Assertions | Recipes](/guide/recipes/schema-matching.md)
+- [Auto-Cleanup with `using` | Recipes](/guide/recipes/explicit-resources.md)
+- [Conditional Mocking with vi.when | Recipes](/guide/recipes/conditional-mocking.md)
+- [Per-File Isolation Settings | Recipes](/guide/recipes/disable-isolation.md)
+- [Parallel and Sequential Test Files | Recipes](/guide/recipes/parallel-sequential.md)
+- [Running Only Affected Tests | Recipes](/guide/recipes/affected-tests.md)
+
+### Advanced
+
+- [Advanced API](/guide/advanced.md)
+- [Running Tests advanced {#running-tests}](/guide/advanced/tests.md)
+- [Extending Reporters advanced {#extending-reporters}](/guide/advanced/reporters.md)
+- [Custom Pool advanced {#custom-pool}](/guide/advanced/pool.md)
+- [Custom Benchmark Provider 5.0.0 advanced {#custom-benchmark-provider}](/guide/advanced/benchmark-provider.md)
+
+### Migration
+
+- [Migration Guide | Guide](/guide/migration.md)
+- [Migrating from Jest | Guide](/guide/migration/jest.md)
+- [Migrating from Mocha + Chai + Sinon | Guide](/guide/migration/mocha.md)
+
+- [Comparisons with Other Test Runners | Guide](/guide/comparisons.md)
+
+### Test API Reference
+
+- [Test](/api/test.md)
+- [describe](/api/describe.md)
+- [Hooks](/api/hooks.md)
+
+### Browser Mode
+
+- [Context API | Browser Mode](/api/browser/context.md)
+- [Interactivity API | Browser Mode](/api/browser/interactivity.md)
+- [Locators | Browser Mode](/api/browser/locators.md)
+- [Assertion API | Browser Mode](/api/browser/assertions.md)
+- [Commands | Browser Mode](/api/browser/commands.md)
+
+#### Render Function
+
+- [vitest-browser-react](/api/browser/react.md)
+- [vitest-browser-vue](/api/browser/vue.md)
+- [vitest-browser-svelte](/api/browser/svelte.md)
+
+### Advanced
+
+- [Vitest API](/api/advanced/vitest.md)
+- [TestProject](/api/advanced/test-project.md)
+- [TestSpecification](/api/advanced/test-specification.md)
+- [TestCase](/api/advanced/test-case.md)
+- [TestSuite](/api/advanced/test-suite.md)
+- [TestModule](/api/advanced/test-module.md)
+- [TestCollection](/api/advanced/test-collection.md)
+- [Plugin API](/api/advanced/plugin.md)
+- [Runner API advanced](/api/advanced/runner.md)
+- [Reporters](/api/advanced/reporters.md)
+- [Task Metadata advanced](/api/advanced/metadata.md)
+- [Test Artifacts](/api/advanced/artifacts.md)
+
+### Other
+
+- [assert](/api/assert.md)
+- [assertType](/api/assert-type.md)
+- [browser.traceView | Config](/config/browser/traceview.md)
+- [detectAsyncLeaks | Config](/config/detectasyncleaks.md)
+- [expect](/api/expect.md)
+- [expectTypeOf](/api/expect-typeof.md)
+- [Mocks](/api/mock.md)
+- [Releases](/releases.md)
+- [Remove UnoCSS - Migration Complete](/todo.md)
+- [taskTitleValueFormatTruncate | Config](/config/tasktitlevalueformattruncate.md)
+- [Untitled](/api/advanced/import-example.md)
+- [update | Config](/config/update.md)
+- [Using Plugins | Guide](/guide/using-plugins.md)
+- [Vi](/api/vi.md)
