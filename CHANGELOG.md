@@ -17,6 +17,8 @@ The format is intentionally simple and release-oriented.
 
 ### Changed
 - Hidden page text (`hidden`, `aria-hidden`, `display:none`, off-screen and zero-size text) is removed before a page is read. Tabs, `<details>` and accordion panels are kept.
+- Small result lengths pick better excerpts (#133). Passages are now single paragraphs, each excerpt takes in the text around its best paragraph while there is room, and under 4,000 characters the best passages across all sources go first instead of every source getting an equal slice.
+- Fenced code blocks in Markdown and plain-text pages keep their line breaks in excerpts.
 - Updated undici to 8.12.4 and the Pi dev dependencies to 1.5.2, which clears the open `npm audit` advisories (undici, minimatch).
 
 ### Fixed

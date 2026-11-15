@@ -1,0 +1,514 @@
+<!doctype html><html><head><title>page</title></head><body><section id="module-json">
+<span id="json-json-encoder-and-decoder"></span><h1><code class="xref py py-mod docutils literal notranslate"><span class="pre">json</span></code> — JSON encoder and decoder<a class="headerlink" href="#module-json" title="Link to this heading">¶</a></h1>
+<p><strong>Source code:</strong> <a class="extlink-source reference external" href="https://github.com/python/cpython/tree/3.15/Lib/json/__init__.py">Lib/json/__init__.py</a></p>
+<hr class="docutils" />
+<p><a class="reference external" href="https://json.org">JSON (JavaScript Object Notation)</a>, specified by
+<span class="target" id="index-0"></span><a class="rfc reference external" href="https://datatracker.ietf.org/doc/html/rfc7159.html"><strong>RFC 7159</strong></a> (which obsoletes <span class="target" id="index-1"></span><a class="rfc reference external" href="https://datatracker.ietf.org/doc/html/rfc4627.html"><strong>RFC 4627</strong></a>) and by
+<a class="reference external" href="https://ecma-international.org/publications-and-standards/standards/ecma-404/">ECMA-404</a>,
+is a lightweight data interchange format inspired by
+<a class="reference external" href="https://en.wikipedia.org/wiki/JavaScript">JavaScript</a> object literal syntax
+(although it is not a strict subset of JavaScript <a class="footnote-reference brackets" href="#rfc-errata" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> ).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The term “object” in the context of JSON processing in Python can be
+ambiguous. All values in Python are objects. In JSON, an object refers to
+any data wrapped in curly braces, similar to a Python dictionary.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Be cautious when parsing JSON data from untrusted sources. A malicious
+JSON string may cause the decoder to consume considerable CPU and memory
+resources. Limiting the size of data to be parsed is recommended.</p>
+</div>
+<p>This module exposes an API familiar to users of the standard library
+<a class="reference internal" href="marshal.html#module-marshal" title="marshal: Convert Python objects to streams of bytes and back (with different constraints)."><code class="xref py py-mod docutils literal notranslate"><span class="pre">marshal</span></code></a> and <a class="reference internal" href="pickle.html#module-pickle" title="pickle: Convert Python objects to streams of bytes and back."><code class="xref py py-mod docutils literal notranslate"><span class="pre">pickle</span></code></a> modules.</p>
+<p>Encoding basic Python object hierarchies:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">([</span><span class="s1">'foo'</span><span class="p">,</span> <span class="p">{</span><span class="s1">'bar'</span><span class="p">:</span> <span class="p">(</span><span class="s1">'baz'</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)}])</span>
+<span class="go">'["foo", {"bar": ["baz", null, 1.0, 2]}]'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="s2">"</span><span class="se">\"</span><span class="s2">foo</span><span class="se">\b</span><span class="s2">ar"</span><span class="p">))</span>
+<span class="go">"\"foo\bar"</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="s1">'</span><span class="se">\u1234</span><span class="s1">'</span><span class="p">))</span>
+<span class="go">"\u1234"</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="s1">'</span><span class="se">\\</span><span class="s1">'</span><span class="p">))</span>
+<span class="go">"\\"</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">"c"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"b"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"a"</span><span class="p">:</span> <span class="mi">0</span><span class="p">},</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+<span class="go">{"a": 0, "b": 0, "c": 0}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">io</span><span class="w"> </span><span class="kn">import</span> <span class="n">StringIO</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">io</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">([</span><span class="s1">'streaming API'</span><span class="p">],</span> <span class="n">io</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">io</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
+<span class="go">'["streaming API"]'</span>
+</pre></div>
+</div>
+<p>Compact encoding:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="p">{</span><span class="s1">'4'</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span> <span class="s1">'6'</span><span class="p">:</span> <span class="mi">7</span><span class="p">}],</span> <span class="n">separators</span><span class="o">=</span><span class="p">(</span><span class="s1">','</span><span class="p">,</span> <span class="s1">':'</span><span class="p">))</span>
+<span class="go">'[1,2,3,{"4":5,"6":7}]'</span>
+</pre></div>
+</div>
+<p>Pretty printing:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s1">'6'</span><span class="p">:</span> <span class="mi">7</span><span class="p">,</span> <span class="s1">'4'</span><span class="p">:</span> <span class="mi">5</span><span class="p">},</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
+<span class="go">{</span>
+<span class="go">    "4": 5,</span>
+<span class="go">    "6": 7</span>
+<span class="go">}</span>
+</pre></div>
+</div>
+<p>Customizing JSON object encoding:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span><span class="w"> </span><span class="nf">custom_json</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">complex</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">return</span> <span class="p">{</span><span class="s1">'__complex__'</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s1">'real'</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="s1">'imag'</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">imag</span><span class="p">}</span>
+<span class="gp">... </span>    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Cannot serialize object of </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span><span class="n">j</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">custom_json</span><span class="p">)</span>
+<span class="go">'{"__complex__": true, "real": 1.0, "imag": 2.0}'</span>
+</pre></div>
+</div>
+<p>Decoding JSON:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="s1">'["foo", {"bar":["baz", null, 1.0, 2]}]'</span><span class="p">)</span>
+<span class="go">['foo', {'bar': ['baz', None, 1.0, 2]}]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="s1">'"</span><span class="se">\\</span><span class="s1">"foo</span><span class="se">\\</span><span class="s1">bar"'</span><span class="p">)</span>
+<span class="go">'"foo\x08ar'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span><span class="w"> </span><span class="nn">io</span><span class="w"> </span><span class="kn">import</span> <span class="n">StringIO</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">io</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">(</span><span class="s1">'["streaming API"]'</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">io</span><span class="p">)</span>
+<span class="go">['streaming API']</span>
+</pre></div>
+</div>
+<p>Customizing JSON object decoding:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">def</span><span class="w"> </span><span class="nf">as_complex</span><span class="p">(</span><span class="n">dct</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">if</span> <span class="s1">'__complex__'</span> <span class="ow">in</span> <span class="n">dct</span><span class="p">:</span>
+<span class="gp">... </span>        <span class="k">return</span> <span class="nb">complex</span><span class="p">(</span><span class="n">dct</span><span class="p">[</span><span class="s1">'real'</span><span class="p">],</span> <span class="n">dct</span><span class="p">[</span><span class="s1">'imag'</span><span class="p">])</span>
+<span class="gp">... </span>    <span class="k">return</span> <span class="n">dct</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="s1">'{"__complex__": true, "real": 1, "imag": 2}'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">object_hook</span><span class="o">=</span><span class="n">as_complex</span><span class="p">)</span>
+<span class="go">(1+2j)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">decimal</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="s1">'1.1'</span><span class="p">,</span> <span class="n">parse_float</span><span class="o">=</span><span class="n">decimal</span><span class="o">.</span><span class="n">Decimal</span><span class="p">)</span>
+<span class="go">Decimal('1.1')</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="s1">'{"name": "point", "coords": [[1, 2], [3, 4]]}'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">array_hook</span><span class="o">=</span><span class="nb">tuple</span><span class="p">)</span>
+<span class="go">{'name': 'point', 'coords': ((1, 2), (3, 4))}</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="s1">'{"name": "point", "coords": [1, 2]}'</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">object_pairs_hook</span><span class="o">=</span><span class="nb">frozendict</span><span class="p">,</span> <span class="n">array_hook</span><span class="o">=</span><span class="nb">tuple</span><span class="p">)</span>
+<span class="go">frozendict({'name': 'point', 'coords': (1, 2)})</span>
+</pre></div>
+</div>
+<p>Extending <a class="reference internal" href="#json.JSONEncoder" title="json.JSONEncoder"><code class="xref py py-class docutils literal notranslate"><span class="pre">JSONEncoder</span></code></a>:</p>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="k">class</span><span class="w"> </span><span class="nc">ComplexEncoder</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">JSONEncoder</span><span class="p">):</span>
+<span class="gp">... </span>    <span class="k">def</span><span class="w"> </span><span class="nf">default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+<span class="gp">... </span>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">complex</span><span class="p">):</span>
+<span class="gp">... </span>            <span class="k">return</span> <span class="p">[</span><span class="n">obj</span><span class="o">.</span><span class="n">real</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">imag</span><span class="p">]</span>
+<span class="gp">... </span>        <span class="c1"># Let the base class default method raise the TypeError</span>
+<span class="gp">... </span>        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+<span class="gp">...</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span><span class="p">,</span> <span class="bp">cls</span><span class="o">=</span><span class="n">ComplexEncoder</span><span class="p">)</span>
+<span class="go">'[2.0, 1.0]'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">ComplexEncoder</span><span class="p">()</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span><span class="p">)</span>
+<span class="go">'[2.0, 1.0]'</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">list</span><span class="p">(</span><span class="n">ComplexEncoder</span><span class="p">()</span><span class="o">.</span><span class="n">iterencode</span><span class="p">(</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="n">j</span><span class="p">))</span>
+<span class="go">['[2.0', ', 1.0', ']']</span>
+</pre></div>
+</div>
+<p>Using <code class="xref py py-mod docutils literal notranslate"><span class="pre">json</span></code> from the shell to validate and pretty-print:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span><span class="nb">echo</span><span class="w"> </span><span class="s1">'{"json":"obj"}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>json
+<span class="go">{</span>
+<span class="go">    "json": "obj"</span>
+<span class="go">}</span>
+<span class="gp">$ </span><span class="nb">echo</span><span class="w"> </span><span class="s1">'{1.2:3.4}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>json
+<span class="go">Expecting property name enclosed in double quotes: line 1 column 2 (char 1)</span>
+</pre></div>
+</div>
+<p>See <a class="reference internal" href="#json-commandline"><span class="std std-ref">Command-line interface</span></a> for detailed documentation.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>JSON is a subset of <a class="reference external" href="https://yaml.org/">YAML</a> 1.2.  The JSON produced by
+this module’s default settings (in particular, the default <em>separators</em>
+value) is also a subset of YAML 1.0 and 1.1.  This module can thus also be
+used as a YAML serializer.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This module’s encoders and decoders preserve input and output order by
+default.  Order is only lost if the underlying containers are unordered.</p>
+</div>
+<section id="basic-usage">
+<h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="json.dump">
+<span class="sig-prename descclassname"><span class="pre">json.</span></span><span class="sig-name descname"><span class="pre">dump</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fp</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">skipkeys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ensure_ascii</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_circular</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_nan</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">separators</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kw</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.dump" title="Link to this definition">¶</a></dt>
+<dd><p>Serialize <em>obj</em> as a JSON formatted stream to <em>fp</em> (a <code class="docutils literal notranslate"><span class="pre">.write()</span></code>-supporting
+<a class="reference internal" href="../glossary.html#term-file-like-object"><span class="xref std std-term">file-like object</span></a>) using this <a class="reference internal" href="#py-to-json-table"><span class="std std-ref">Python-to-JSON conversion table</span></a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Unlike <a class="reference internal" href="pickle.html#module-pickle" title="pickle: Convert Python objects to streams of bytes and back."><code class="xref py py-mod docutils literal notranslate"><span class="pre">pickle</span></code></a> and <a class="reference internal" href="marshal.html#module-marshal" title="marshal: Convert Python objects to streams of bytes and back (with different constraints)."><code class="xref py py-mod docutils literal notranslate"><span class="pre">marshal</span></code></a>, JSON is not a framed protocol,
+so trying to serialize multiple objects with repeated calls to
+<code class="xref py py-func docutils literal notranslate"><span class="pre">dump()</span></code> using the same <em>fp</em> will result in an invalid JSON file.</p>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>obj</strong> (<a class="reference internal" href="../builtins/functions.html#object" title="object"><em>object</em></a>) – The Python object to be serialized.</p></li>
+<li><p><strong>fp</strong> (<a class="reference internal" href="../glossary.html#term-file-like-object"><span class="xref std std-term">file-like object</span></a>) – The file-like object <em>obj</em> will be serialized to.
+The <code class="xref py py-mod docutils literal notranslate"><span class="pre">json</span></code> module always produces <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a> objects,
+not <a class="reference internal" href="../builtins/stdtypes.html#bytes" title="bytes"><code class="xref py py-class docutils literal notranslate"><span class="pre">bytes</span></code></a> objects,
+therefore <code class="docutils literal notranslate"><span class="pre">fp.write()</span></code> must support <code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code> input.</p></li>
+<li><p><strong>skipkeys</strong> (<a class="reference internal" href="../builtins/functions.html#bool" title="bool"><em>bool</em></a>) – If <code class="docutils literal notranslate"><span class="pre">True</span></code>, keys that are not of a basic type
+(<a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>, <a class="reference internal" href="../builtins/functions.html#int" title="int"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a>, <a class="reference internal" href="../builtins/functions.html#float" title="float"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>, <code class="docutils literal notranslate"><span class="pre">None</span></code>)
+will be skipped instead of raising a <a class="reference internal" href="../builtins/exceptions.html#TypeError" title="TypeError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">TypeError</span></code></a>.
+Default <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
+<li><p><strong>ensure_ascii</strong> (<a class="reference internal" href="../builtins/functions.html#bool" title="bool"><em>bool</em></a>) – If <code class="docutils literal notranslate"><span class="pre">True</span></code> (the default), the output is guaranteed to
+have all incoming non-ASCII and non-printable characters escaped.
+If <code class="docutils literal notranslate"><span class="pre">False</span></code>, all characters will be outputted as-is, except for
+the characters that must be escaped: quotation mark, reverse solidus,
+and the control characters U+0000 through U+001F.</p></li>
+<li><p><strong>check_circular</strong> (<a class="reference internal" href="../builtins/functions.html#bool" title="bool"><em>bool</em></a>) – If <code class="docutils literal notranslate"><span class="pre">False</span></code>, the circular reference check for container types is skipped
+and a circular reference will result in a <a class="reference internal" href="../builtins/exceptions.html#RecursionError" title="RecursionError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">RecursionError</span></code></a> (or worse).
+Default <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p></li>
+<li><p><strong>allow_nan</strong> (<a class="reference internal" href="../builtins/functions.html#bool" title="bool"><em>bool</em></a>) – If <code class="docutils literal notranslate"><span class="pre">False</span></code>, serialization of out-of-range <a class="reference internal" href="../builtins/functions.html#float" title="float"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a> values
+(<code class="docutils literal notranslate"><span class="pre">nan</span></code>, <code class="docutils literal notranslate"><span class="pre">inf</span></code>, <code class="docutils literal notranslate"><span class="pre">-inf</span></code>) will result in a <a class="reference internal" href="../builtins/exceptions.html#ValueError" title="ValueError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">ValueError</span></code></a>,
+in strict compliance with the JSON specification.
+If <code class="docutils literal notranslate"><span class="pre">True</span></code> (the default), their JavaScript equivalents
+(<code class="docutils literal notranslate"><span class="pre">NaN</span></code>, <code class="docutils literal notranslate"><span class="pre">Infinity</span></code>, <code class="docutils literal notranslate"><span class="pre">-Infinity</span></code>) are used.</p></li>
+<li><p><strong>cls</strong> (a <a class="reference internal" href="#json.JSONEncoder" title="json.JSONEncoder"><code class="xref py py-class docutils literal notranslate"><span class="pre">JSONEncoder</span></code></a> subclass) – If set, a custom JSON encoder with the
+<a class="reference internal" href="#json.JSONEncoder.default" title="json.JSONEncoder.default"><code class="xref py py-meth docutils literal notranslate"><span class="pre">default()</span></code></a> method overridden,
+for serializing into custom datatypes.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), <code class="xref py py-class docutils literal notranslate"><span class="pre">JSONEncoder</span></code> is used.</p></li>
+<li><p><strong>indent</strong> (<a class="reference internal" href="../builtins/functions.html#int" title="int"><em>int</em></a><em> | </em><a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><em>str</em></a><em> | </em><a class="reference internal" href="../builtins/constants.html#None" title="None"><em>None</em></a>) – If a positive integer or string, JSON array elements and
+object members will be pretty-printed with that indent level.
+A positive integer indents that many spaces per level;
+a string (such as <code class="docutils literal notranslate"><span class="pre">&quot;\t&quot;</span></code>) is used to indent each level.
+If zero, negative, or <code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code> (the empty string),
+only newlines are inserted.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), no newlines are inserted.</p></li>
+<li><p><strong>separators</strong> (<a class="reference internal" href="../builtins/stdtypes.html#tuple" title="tuple"><em>tuple</em></a><em> | </em><a class="reference internal" href="../builtins/constants.html#None" title="None"><em>None</em></a>) – A two-tuple: <code class="docutils literal notranslate"><span class="pre">(item_separator,</span> <span class="pre">key_separator)</span></code>.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), <em>separators</em> defaults to
+<code class="docutils literal notranslate"><span class="pre">(',</span> <span class="pre">',</span> <span class="pre">':</span> <span class="pre">')</span></code> if <em>indent</em> is <code class="docutils literal notranslate"><span class="pre">None</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">(',',</span> <span class="pre">':</span> <span class="pre">')</span></code> otherwise.
+For the most compact JSON,
+specify <code class="docutils literal notranslate"><span class="pre">(',',</span> <span class="pre">':')</span></code> to eliminate whitespace.</p></li>
+<li><p><strong>default</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – A function that is called for objects that can’t otherwise be serialized.
+It should return a JSON encodable version of the object
+or raise a <a class="reference internal" href="../builtins/exceptions.html#TypeError" title="TypeError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">TypeError</span></code></a>.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), <code class="xref py py-exc docutils literal notranslate"><span class="pre">TypeError</span></code> is raised.</p></li>
+<li><p><strong>sort_keys</strong> (<a class="reference internal" href="../builtins/functions.html#bool" title="bool"><em>bool</em></a>) – If <code class="docutils literal notranslate"><span class="pre">True</span></code>, dictionaries will be outputted sorted by key.
+Default <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Keys in key/value pairs of JSON are always of the type <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>. When
+a dictionary is converted into JSON, all the keys of the dictionary are
+converted to strings. As a result of this, if a dictionary is converted
+into JSON and then back into a dictionary, the dictionary may not equal
+the original one. That is, <code class="docutils literal notranslate"><span class="pre">loads(dumps(x))</span> <span class="pre">!=</span> <span class="pre">x</span></code> if x has non-string
+keys. <em>sort_keys</em> sorts the keys before they are converted to strings,
+so numeric keys are sorted by value, not by their string representation.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.2: </span>Allow strings for <em>indent</em> in addition to integers.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.4: </span>Use <code class="docutils literal notranslate"><span class="pre">(',',</span> <span class="pre">':</span> <span class="pre">')</span></code> as default if <em>indent</em> is not <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.6: </span>All optional parameters are now <a class="reference internal" href="../glossary.html#keyword-only-parameter"><span class="std std-ref">keyword-only</span></a>.</p>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="json.dumps">
+<span class="sig-prename descclassname"><span class="pre">json.</span></span><span class="sig-name descname"><span class="pre">dumps</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">skipkeys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ensure_ascii</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_circular</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_nan</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">separators</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kw</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.dumps" title="Link to this definition">¶</a></dt>
+<dd><p>Serialize <em>obj</em> to a JSON formatted <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a> using this <a class="reference internal" href="#py-to-json-table"><span class="std std-ref">conversion
+table</span></a>.  The arguments have the same meaning as in
+<a class="reference internal" href="#json.dump" title="json.dump"><code class="xref py py-func docutils literal notranslate"><span class="pre">dump()</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="json.load">
+<span class="sig-prename descclassname"><span class="pre">json.</span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fp</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_float</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_int</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_constant</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_pairs_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">array_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kw</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.load" title="Link to this definition">¶</a></dt>
+<dd><p>Deserialize <em>fp</em> to a Python object
+using the <a class="reference internal" href="#json-to-py-table"><span class="std std-ref">JSON-to-Python conversion table</span></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fp</strong> (<a class="reference internal" href="../glossary.html#term-file-like-object"><span class="xref std std-term">file-like object</span></a>) – A <code class="docutils literal notranslate"><span class="pre">.read()</span></code>-supporting <a class="reference internal" href="../glossary.html#term-text-file"><span class="xref std std-term">text file</span></a> or <a class="reference internal" href="../glossary.html#term-binary-file"><span class="xref std std-term">binary file</span></a>
+containing the JSON document to be deserialized.</p></li>
+<li><p><strong>cls</strong> (a <a class="reference internal" href="#json.JSONDecoder" title="json.JSONDecoder"><code class="xref py py-class docutils literal notranslate"><span class="pre">JSONDecoder</span></code></a> subclass) – If set, a custom JSON decoder.
+Additional keyword arguments to <code class="xref py py-func docutils literal notranslate"><span class="pre">load()</span></code>
+will be passed to the constructor of <em>cls</em>.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), <code class="xref py py-class docutils literal notranslate"><span class="pre">JSONDecoder</span></code> is used.</p></li>
+<li><p><strong>object_hook</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – If set, a function that is called with the result of
+any JSON object literal decoded (a <a class="reference internal" href="../builtins/stdtypes.html#dict" title="dict"><code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></a>).
+The return value of this function will be used
+instead of the <code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>.
+This feature can be used to implement custom decoders,
+for example <a class="reference external" href="https://www.jsonrpc.org">JSON-RPC</a> class hinting.
+Default <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><strong>object_pairs_hook</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – If set, a function that is called with the result of
+any JSON object literal decoded with an ordered list of pairs.
+The return value of this function will be used
+instead of the <a class="reference internal" href="../builtins/stdtypes.html#dict" title="dict"><code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></a>.
+This feature can be used to implement custom decoders.
+If <em>object_hook</em> is also set, <em>object_pairs_hook</em> takes priority.
+Default <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><strong>array_hook</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – If set, a function that is called with the result of
+any JSON array literal decoded as a Python list.
+The return value of this function will be used
+instead of the <a class="reference internal" href="../builtins/stdtypes.html#list" title="list"><code class="xref py py-class docutils literal notranslate"><span class="pre">list</span></code></a>.
+This feature can be used to implement custom decoders.
+Default <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><strong>parse_float</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – If set, a function that is called with
+the string of every JSON float to be decoded.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), it is equivalent to <code class="docutils literal notranslate"><span class="pre">float(num_str)</span></code>.
+This can be used to parse JSON floats into custom datatypes,
+for example <a class="reference internal" href="decimal.html#decimal.Decimal" title="decimal.Decimal"><code class="xref py py-class docutils literal notranslate"><span class="pre">decimal.Decimal</span></code></a>.</p></li>
+<li><p><strong>parse_int</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – If set, a function that is called with
+the string of every JSON int to be decoded.
+If <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default), it is equivalent to <code class="docutils literal notranslate"><span class="pre">int(num_str)</span></code>.
+This can be used to parse JSON integers into custom datatypes,
+for example <a class="reference internal" href="../builtins/functions.html#float" title="float"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a>.</p></li>
+<li><p><strong>parse_constant</strong> (<a class="reference internal" href="../glossary.html#term-callable"><span class="xref std std-term">callable</span></a> | None) – If set, a function that is called with one of the following strings:
+<code class="docutils literal notranslate"><span class="pre">'-Infinity'</span></code>, <code class="docutils literal notranslate"><span class="pre">'Infinity'</span></code>, or <code class="docutils literal notranslate"><span class="pre">'NaN'</span></code>.
+This can be used to raise an exception
+if invalid JSON numbers are encountered.
+Default <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference internal" href="#json.JSONDecodeError" title="json.JSONDecodeError"><strong>JSONDecodeError</strong></a> – When the data being deserialized is not a valid JSON document.</p></li>
+<li><p><a class="reference internal" href="../builtins/exceptions.html#UnicodeDecodeError" title="UnicodeDecodeError"><strong>UnicodeDecodeError</strong></a> – When the data being deserialized does not contain
+UTF-8, UTF-16 or UTF-32 encoded data.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.1: </span></p>
+<ul class="simple">
+<li><p>Added the optional <em>object_pairs_hook</em> parameter.</p></li>
+<li><p><em>parse_constant</em> doesn’t get called on ‘null’, ‘true’, ‘false’ anymore.</p></li>
+</ul>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.6: </span></p>
+<ul class="simple">
+<li><p>All optional parameters are now <a class="reference internal" href="../glossary.html#keyword-only-parameter"><span class="std std-ref">keyword-only</span></a>.</p></li>
+<li><p><em>fp</em> can now be a <a class="reference internal" href="../glossary.html#term-binary-file"><span class="xref std std-term">binary file</span></a>.
+The input encoding should be UTF-8, UTF-16 or UTF-32.</p></li>
+</ul>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.11: </span>The default <em>parse_int</em> of <a class="reference internal" href="../builtins/functions.html#int" title="int"><code class="xref py py-func docutils literal notranslate"><span class="pre">int()</span></code></a> now limits the maximum length of
+the integer string via the interpreter’s <a class="reference internal" href="../builtins/stdtypes.html#int-max-str-digits"><span class="std std-ref">integer string
+conversion length limitation</span></a> to help avoid denial
+of service attacks.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.15: </span>Added the optional <em>array_hook</em> parameter.</p>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="json.loads">
+<span class="sig-prename descclassname"><span class="pre">json.</span></span><span class="sig-name descname"><span class="pre">loads</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">cls</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_float</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_int</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_constant</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_pairs_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">array_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kw</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.loads" title="Link to this definition">¶</a></dt>
+<dd><p>Identical to <a class="reference internal" href="#json.load" title="json.load"><code class="xref py py-func docutils literal notranslate"><span class="pre">load()</span></code></a>, but instead of a file-like object,
+deserialize <em>s</em> (a <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>, <a class="reference internal" href="../builtins/stdtypes.html#bytes" title="bytes"><code class="xref py py-class docutils literal notranslate"><span class="pre">bytes</span></code></a> or <a class="reference internal" href="../builtins/stdtypes.html#bytearray" title="bytearray"><code class="xref py py-class docutils literal notranslate"><span class="pre">bytearray</span></code></a>
+instance containing a JSON document) to a Python object using this
+<a class="reference internal" href="#json-to-py-table"><span class="std std-ref">conversion table</span></a>.</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.6: </span><em>s</em> can now be of type <a class="reference internal" href="../builtins/stdtypes.html#bytes" title="bytes"><code class="xref py py-class docutils literal notranslate"><span class="pre">bytes</span></code></a> or <a class="reference internal" href="../builtins/stdtypes.html#bytearray" title="bytearray"><code class="xref py py-class docutils literal notranslate"><span class="pre">bytearray</span></code></a>. The
+input encoding should be UTF-8, UTF-16 or UTF-32.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.9: </span>The keyword argument <em>encoding</em> has been removed.</p>
+</div>
+</dd></dl>
+
+</section>
+<section id="encoders-and-decoders">
+<h2>Encoders and Decoders<a class="headerlink" href="#encoders-and-decoders" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="json.JSONDecoder">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">json.</span></span><span class="sig-name descname"><span class="pre">JSONDecoder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_float</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_int</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_constant</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">object_pairs_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">array_hook</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.JSONDecoder" title="Link to this definition">¶</a></dt>
+<dd><p>Simple JSON decoder.</p>
+<p>Performs the following translations in decoding by default:</p>
+<table class="docutils align-default" id="json-to-py-table">
+<thead>
+<tr class="row-odd"><th class="head"><p>JSON</p></th>
+<th class="head"><p>Python</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>object</p></td>
+<td><p>dict</p></td>
+</tr>
+<tr class="row-odd"><td><p>array</p></td>
+<td><p>list</p></td>
+</tr>
+<tr class="row-even"><td><p>string</p></td>
+<td><p>str</p></td>
+</tr>
+<tr class="row-odd"><td><p>number (int)</p></td>
+<td><p>int</p></td>
+</tr>
+<tr class="row-even"><td><p>number (real)</p></td>
+<td><p>float</p></td>
+</tr>
+<tr class="row-odd"><td><p>true</p></td>
+<td><p>True</p></td>
+</tr>
+<tr class="row-even"><td><p>false</p></td>
+<td><p>False</p></td>
+</tr>
+<tr class="row-odd"><td><p>null</p></td>
+<td><p>None</p></td>
+</tr>
+</tbody>
+</table>
+<p>It also understands <code class="docutils literal notranslate"><span class="pre">NaN</span></code>, <code class="docutils literal notranslate"><span class="pre">Infinity</span></code>, and <code class="docutils literal notranslate"><span class="pre">-Infinity</span></code> as their
+corresponding <code class="docutils literal notranslate"><span class="pre">float</span></code> values, which is outside the JSON spec.</p>
+<p><em>object_hook</em> is an optional function that will be called with the result of
+every JSON object decoded and its return value will be used in place of the
+given <a class="reference internal" href="../builtins/stdtypes.html#dict" title="dict"><code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></a>.  This can be used to provide custom deserializations
+(e.g. to support <a class="reference external" href="https://www.jsonrpc.org">JSON-RPC</a> class hinting).</p>
+<p><em>object_pairs_hook</em> is an optional function that will be called with the
+result of every JSON object decoded with an ordered list of pairs.  The
+return value of <em>object_pairs_hook</em> will be used instead of the
+<a class="reference internal" href="../builtins/stdtypes.html#dict" title="dict"><code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code></a>.  This feature can be used to implement custom decoders.  If
+<em>object_hook</em> is also defined, the <em>object_pairs_hook</em> takes priority.</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.1: </span>Added support for <em>object_pairs_hook</em>.</p>
+</div>
+<p><em>array_hook</em> is an optional function that will be called with the
+result of every JSON array decoded as a list. The return value of
+<em>array_hook</em> will be used instead of the <a class="reference internal" href="../builtins/stdtypes.html#list" title="list"><code class="xref py py-class docutils literal notranslate"><span class="pre">list</span></code></a>. This feature can be
+used to implement custom decoders.</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.15: </span>Added support for <em>array_hook</em>.</p>
+</div>
+<p><em>parse_float</em> is an optional function that will be called with the string of
+every JSON float to be decoded.  By default, this is equivalent to
+<code class="docutils literal notranslate"><span class="pre">float(num_str)</span></code>.  This can be used to use another datatype or parser for
+JSON floats (e.g. <a class="reference internal" href="decimal.html#decimal.Decimal" title="decimal.Decimal"><code class="xref py py-class docutils literal notranslate"><span class="pre">decimal.Decimal</span></code></a>).</p>
+<p><em>parse_int</em> is an optional function that will be called with the string of
+every JSON int to be decoded.  By default, this is equivalent to
+<code class="docutils literal notranslate"><span class="pre">int(num_str)</span></code>.  This can be used to use another datatype or parser for
+JSON integers (e.g. <a class="reference internal" href="../builtins/functions.html#float" title="float"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a>).</p>
+<p><em>parse_constant</em> is an optional function that will be called with one of the
+following strings: <code class="docutils literal notranslate"><span class="pre">'-Infinity'</span></code>, <code class="docutils literal notranslate"><span class="pre">'Infinity'</span></code>, <code class="docutils literal notranslate"><span class="pre">'NaN'</span></code>.  This can be
+used to raise an exception if invalid JSON numbers are encountered.</p>
+<p>If <em>strict</em> is false (<code class="docutils literal notranslate"><span class="pre">True</span></code> is the default), then control characters
+will be allowed inside strings.  Control characters in this context are
+those with character codes in the 0–31 range, including <code class="docutils literal notranslate"><span class="pre">'\t'</span></code> (tab),
+<code class="docutils literal notranslate"><span class="pre">'\n'</span></code>, <code class="docutils literal notranslate"><span class="pre">'\r'</span></code> and <code class="docutils literal notranslate"><span class="pre">'\0'</span></code>.</p>
+<p>If the data being deserialized is not a valid JSON document, a
+<a class="reference internal" href="#json.JSONDecodeError" title="json.JSONDecodeError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">JSONDecodeError</span></code></a> will be raised.</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.6: </span>All parameters are now <a class="reference internal" href="../glossary.html#keyword-only-parameter"><span class="std std-ref">keyword-only</span></a>.</p>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="json.JSONDecoder.decode">
+<span class="sig-name descname"><span class="pre">decode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.JSONDecoder.decode" title="Link to this definition">¶</a></dt>
+<dd><p>Return the Python representation of <em>s</em> (a <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a> instance
+containing a JSON document).</p>
+<p><a class="reference internal" href="#json.JSONDecodeError" title="json.JSONDecodeError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">JSONDecodeError</span></code></a> will be raised if the given JSON document is not
+valid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="json.JSONDecoder.raw_decode">
+<span class="sig-name descname"><span class="pre">raw_decode</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.JSONDecoder.raw_decode" title="Link to this definition">¶</a></dt>
+<dd><p>Decode a JSON document from <em>s</em> (a <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a> beginning with a
+JSON document) and return a 2-tuple of the Python representation
+and the index in <em>s</em> where the document ended.</p>
+<p>This can be used to decode a JSON document from a string that may have
+extraneous data at the end.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="json.JSONEncoder">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">json.</span></span><span class="sig-name descname"><span class="pre">JSONEncoder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">skipkeys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ensure_ascii</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_circular</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_nan</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">separators</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#json.JSONEncoder" title="Link to this definition">¶</a></dt>
+<dd><p>Extensible JSON encoder for Python data structures.</p>
+<p>Supports the following objects and types by default:</p>
+<table class="docutils align-default" id="py-to-json-table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Python</p></th>
+<th class="head"><p>JSON</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>dict, frozendict</p></td>
+<td><p>object</p></td>
+</tr>
+<tr class="row-odd"><td><p>list, tuple</p></td>
+<td><p>array</p></td>
+</tr>
+<tr class="row-even"><td><p>str</p></td>
+<td><p>string</p></td>
+</tr>
+<tr class="row-odd"><td><p>int, float, int- &amp; float-derived Enums</p></td>
+<td><p>number</p></td>
+</tr>
+<tr class="row-even"><td><p>True</p></td>
+<td><p>true</p></td>
+</tr>
+<tr class="row-odd"><td><p>False</p></td>
+<td><p>false</p></td>
+</tr>
+<tr class="row-even"><td><p>None</p></td>
+<td><p>null</p></td>
+</tr>
+</tbody>
+</table>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.4: </span>Added support for int- and float-derived Enum classes.</p>
+</div>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.15: </span>Added support for <a class="reference internal" href="../builtins/stdtypes.html#frozendict" title="frozendict"><code class="xref py py-class docutils literal notranslate"><span class="pre">frozendict</span></code></a>.</p>
+</div>
+<p>To extend this to recognize other objects, subclass and implement a
+<a class="reference internal" href="#json.JSONEncoder.default" title="json.JSONEncoder.default"><code class="xref py py-meth docutils literal notranslate"><span class="pre">default()</span></code></a> method with another method that returns a serializable object
+for <code class="docutils literal notranslate"><span class="pre">o</span></code> if possible, otherwise it should call the superclass implementation
+(to raise <a class="reference internal" href="../builtins/exceptions.html#TypeError" title="TypeError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">TypeError</span></code></a>).</p>
+<p>If <em>skipkeys</em> is false (the default), a <a class="reference internal" href="../builtins/exceptions.html#TypeError" title="TypeError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">TypeError</span></code></a> will be raised when
+trying to encode keys that are not <a class="reference internal" href="../builtins/stdtypes.html#str" title="str"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>, <a class="reference internal" href="../builtins/functions.html#int" title="int"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></a>, <a class="reference internal" href="../builtins/functions.html#float" title="float"><code class="xref py py-class docutils literal notranslate"><span class="pre">float</span></code></a>,
+<a class="reference internal" href="../builtins/functions.html#bool" title="bool"><code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code></a> or <code class="docutils literal notranslate"><span class="pre">None</span></code>.  If <em>skipkeys</em> is true, such items are simply skipped.</p>
+<p>If <em>ensure_ascii</em> is true (the default), the output is guaranteed to
+have all incoming non-ASCII and non-printable characters escaped.
+If <em>ensure_ascii</em> is false, all characters will be output as-is, except for
+the characters that must be escaped: quotation mark, reverse solidus,
+and the control characters U+0000 through U+001F.</p>
+<p>If <em>check_circular</em> is true (the default), then lists, dicts, and custom
+encoded objects will be checked for circular references during encoding to
+prevent an infinite recursion (which would cause a <a class="reference internal" href="../builtins/exceptions.html#RecursionError" title="RecursionError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">RecursionError</span></code></a>).
+Otherwise, no such check takes place.</p>
+<p>If <em>allow_nan</em> is true (the default), then <code class="docutils literal notranslate"><span class="pre">NaN</span></code>, <code class="docutils literal notranslate"><span class="pre">Infinity</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">-Infinity</span></code> will be encoded as such.  This behavior is not JSON
+specification compliant, but is consistent with most JavaScript based
+encoders and decoders.  Otherwise, it will be a <a class="reference internal" href="../builtins/exceptions.html#ValueError" title="ValueError"><code class="xref py py-exc docutils literal notranslate"><span class="pre">ValueError</span></code></a> to encode
+such floats.</p>
+<p>If <em>sort_keys</em> is true (default: <code class="docutils literal notranslate"><span class="pre">False</span></code>), then the output of dictionaries
+will be sorted by key; this is useful for regression tests to ensure that
+JSON serializations can be compared on a day-to-day basis.</p>
+<p>If <em>indent</em> is a non-negative integer or string, then JSON array elements and
+object members will be pretty-printed with that indent level.  An indent level
+of 0, negative, or <code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code> will only insert newlines.  <code class="docutils literal notranslate"><span class="pre">None</span></code> (the default)
+selects the most compact representation. Using a positive integer indent
+indents that many spaces per level.  If <em>indent</em> is a string (such as <code class="docutils literal notranslate"><span class="pre">&quot;\t&quot;</span></code>),
+that string is used to indent each level.</p>
+<div class="versionchanged">
+<p><span class="versionmodified changed">Changed in version 3.2: </span>Allow strings for <em>indent</em> in addition to integers.</p>
+</div>
+<p>If specified, <em>separators</em> should be an <code class="docutils literal notranslate"><span class="pre">(item_separator,</span> <span class="pre">key_separator)</span></code>
+tuple.  The default is <code class="docutils literal notranslate"><span class="pre">(',</span> <span class="pre">',</span> <span class="pre">':</span> <span class="pre">')</span></code> if <em>indent</em> is <code class="docutils literal notranslate"><span class="pre">None</spa</body></html>

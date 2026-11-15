@@ -193,3 +193,21 @@ describe('section selection', () => {
     expect(excerpt.length).toBeLessThanOrEqual(120);
   });
 });
+
+describe('fenced code in Markdown and plain text', () => {
+  it('keeps line breaks inside a fenced code block in Markdown', () => {
+    const result = selectRelevantContent({
+      source: '# Setup\n\nRun the example.\n\n```ts\nconst a = 1;\nconst b = 2;\n```\n',
+      format: 'markdown', query: 'const', maxLength: 4000
+    });
+    expect(result.text).toContain('```ts\nconst a = 1;\nconst b = 2;\n```');
+  });
+
+  it('keeps a blank line inside a fenced block in plain text together', () => {
+    const result = selectRelevantContent({
+      source: 'Intro line.\n\n```\nfoo()\n\nbar()\n```',
+      format: 'text', query: 'foo', maxLength: 4000
+    });
+    expect(result.text).toContain('```\nfoo()\n\nbar()\n```');
+  });
+});
