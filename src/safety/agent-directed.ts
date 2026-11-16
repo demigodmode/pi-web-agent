@@ -11,7 +11,7 @@ const EXPLICIT_LABEL = /\bAGENT\s+INSTRUCTION\s*:/gu;
 const CLAUDE_MENTION = /(?<![\p{L}\p{N}_@])@claude\b/giu;
 const MODAL_ADDRESS = new RegExp(String.raw`\b${RECIPIENT}\s+(?:should|must|needs?\s+to)\b`, 'giu');
 const MODAL = /\b(?:should|must|needs?\s+to)\b/iu;
-const EXECUTION = /\b(?:run|execute)\b\s+(?:[`]|<code>)?\s*(?:(?:this|the\s+following)\s+(?:command|script)|(?:curl|wget|sh|bash|shell|command|script)\b|[^\n]{0,60}\|)/iu;
+const EXECUTION = /\b(?:run|execute)\b\s+(?:[`]|<code>)?\s*(?:(?:this|the\s+following)\s+(?:command|script)|(?:curl|wget|sh|bash|shell|command|script)\b|[^\n]{0,60}\||(?:(?:bash|sh|zsh|node|python3?|pwsh|powershell)\s+)?(?:\.{1,2}\/)?[\w@.\-\/]*\.(?:sh|bash|zsh|py|ps1|js|mjs|cjs|ts|rb|pl)\b)/iu;
 const INSTALL = /\binstall\b(?:\s+(?:this|the|a|an))?\s+(?:package|dependency|module|plugin)\b/iu;
 const EGRESS = new RegExp(String.raw`(?:^\s*|[,:;]\s*|\bthen\s+|\band\s+)(?:please\s+)?${FILLER}(?:\b${SEND_VERB}\b\s+\S|\binclude\b[\s\S]{1,100}?\s+\b(?:in|into)\b\s+(?:(?:a|the)\s+)?(?:(?:request\s+)?url|request)\b)|(?:^\s*|[,:;]\s*|\bthen\s+)please\s+${SEND_VERB}\b\s*$`, 'iu');
 // A send verb with a lead-in ("now email", "and send") needs an object after it, so a plain sentence is not a request.
@@ -151,12 +151,27 @@ function unquotedAddresses(text: string): Address[] {
   return addresses.sort((left, right) => left.end - right.end);
 }
 
-function hasLeadingOverride(text: string): boolean {
+/** The override phrase, unquoted and not scoped to a document, with the offset it starts at. */
+function unscopedOverride(text: string): number | undefined {
   const match = text.match(STANDALONE_OVERRIDE);
-  if (!match || match.index === undefined || isQuotedAt(text, match.index)) return false;
+  if (!match || match.index === undefined || isQuotedAt(text, match.index)) return undefined;
   const rest = text.slice(match.index + match[0].length);
-  if (SCOPED_OVERRIDE.test(rest) && riskyAgentAsks(rest).length === 0) return false;
-  return /^\s*(?:(?:important|note)\s*:\s*)?$/iu.test(text.slice(0, match.index));
+  if (SCOPED_OVERRIDE.test(rest) && riskyAgentAsks(rest).length === 0) return undefined;
+  return match.index;
+}
+
+function hasLeadingOverride(text: string): boolean {
+  const index = unscopedOverride(text);
+  return index !== undefined && /^\s*(?:(?:important|note|attention)\s*:\s*)?$/iu.test(text.slice(0, index));
+}
+
+/** A sentence that opens with an IMPORTANT:, NOTE: or ATTENTION: label and then the override. */
+function labelledOverrideSentence(text: string): string | undefined {
+  const index = unscopedOverride(text);
+  if (index === undefined) return undefined;
+  const found = sentences(text).find((sentence) => sentence.start <= index && index < sentence.end);
+  if (!found || !/^(?:important|note|attention)\s*:\s*$/iu.test(text.slice(found.start, index))) return undefined;
+  return found.text;
 }
 
 /** Shared risky-ask classification for source detection and future span extraction. */
@@ -399,6 +414,7 @@ export function extractAgentDirectedRequestSpans(text: string, { heading = false
     seen.add(span);
     spans.push(span);
   };
+  const labelled = heading ? undefined : labelledOverrideSentence(text);
 
   let previousAddresses: Address[] = [];
   for (let index = 0; index < parts.length && spans.length < MAX_SPANS_PER_TEXT; index += 1) {
@@ -433,6 +449,7 @@ export function extractAgentDirectedRequestSpans(text: string, { heading = false
     }
     previousAddresses = addresses;
   }
+  if (labelled) push(labelled);
   const inside = spansInsideOthers(spans);
   return spans.filter((_, index) => !inside[index]);
 }

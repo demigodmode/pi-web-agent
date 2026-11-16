@@ -109,6 +109,21 @@ function isHeadingLike(paragraph: string): boolean {
   return !paragraph.includes('\n') && paragraph.length <= MAX_HEADING_CHARS && !/[.!?:;,。！？：；，]$/.test(paragraph) && !isCodeBlock(paragraph);
 }
 
+/** Front matter is the first block of a document: `---` lines around it, or a one-line `--- key: value ---`. */
+function isFrontMatter(paragraph: string): boolean {
+  const lines = paragraph.split(/\r?\n/);
+  if (lines.length === 1) return /^---\s+\S.*\s---$/.test(paragraph.trim());
+  return lines.length >= 2 && /^---\s*$/.test(lines[0]!) && /^---\s*$/.test(lines.at(-1)!);
+}
+
+/** A paragraph of markup punctuation and empty VitePress container lines (`:::`, `::: tip`). */
+function isMarkupOnly(paragraph: string): boolean {
+  if (paragraph.split(/\r?\n/).every((line) => /^\s*:{3,}(?:\s+[\w-]+)?\s*$/.test(line))) return true;
+  // A bare version number such as 1.4 is an answer, so any digit counts as text.
+  const text = paragraph.replace(/[`*_#>|\-=+~:;.,!?()[\]{}<>/\\'"&^%$@]/gu, ' ');
+  return !/\d|[\p{L}\p{N}]{3,}/u.test(text);
+}
+
 function passageCandidates(text: string): PassageCandidate[] {
   const paragraphs = splitEvidenceParagraphs(text);
   const candidates: PassageCandidate[] = [];
@@ -118,13 +133,18 @@ function passageCandidates(text: string): PassageCandidate[] {
   let prefix: string | undefined;
   paragraphs.forEach((paragraph, index) => {
     const next = paragraphs[index + 1];
-    const headingLike = !isCodeBlock(paragraph) && isHeadingLike(paragraph);
+    if (index === 0 && isFrontMatter(paragraph)) return;
+    const codeBlock = isCodeBlock(paragraph);
+    if (!codeBlock && isMarkupOnly(paragraph)) {
+      prefix = undefined;
+      return;
+    }
+    const headingLike = !codeBlock && isHeadingLike(paragraph);
     if (headingLike) section = paragraph;
     if (headingLike && next !== undefined && !isHeadingLike(next)) {
       prefix = paragraph;
       return;
     }
-    const codeBlock = isCodeBlock(paragraph);
     const lead = prefix;
     prefix = undefined;
     const combined = lead ? `${lead}\n\n${paragraph}` : paragraph;

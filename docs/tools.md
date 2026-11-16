@@ -42,7 +42,7 @@ Internally, `web_explore` can do a few things:
 - evaluate source quality and source diversity
 - synthesize findings and caveats
 
-Plain-text and Markdown links, such as `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md files (including `raw.githubusercontent.com` links), are read directly. They go through the same passage selection, and text addressed to AI agents is marked the same way.
+Plain-text and Markdown links, such as `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md files (including `raw.githubusercontent.com` links), are read directly. They go through the same passage selection. Ordinary pages are marked the same way when they address an AI agent with a risky request. Files written for agents on purpose, such as `llms.txt`, `AGENTS.md` and `CLAUDE.md`, get a note saying who wrote them and are not marked. Plain-text reads stop at 2 MiB, and the result says the document was longer than what was read. A binary file is refused with the error `The response looks like a binary file, not text.`
 
 The important bit: those internal steps are not separate public tools for normal model use. If more web evidence is needed, the model should call `web_explore` again with a narrower query.
 

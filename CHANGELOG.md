@@ -23,7 +23,7 @@ The format is intentionally simple and release-oriented.
 - Updated undici to 8.12.4 and the Pi dev dependencies to 1.5.2, which clears the open `npm audit` advisories (undici, minimatch).
 
 ### Fixed
-- None.
+- When every search in a `web_explore` run fails and nothing usable comes back, the result now shows the provider's own error (for example a degoog base URL that returns 404 or an HTML page, or all degoog engines failing) instead of only "No usable evidence found."
 
 ### Breaking
 - None.

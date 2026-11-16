@@ -133,3 +133,30 @@ describe('large page timing', () => {
     expect(performance.now() - started).toBeLessThan(5_000);
   }, 60_000);
 });
+
+describe('markup-only paragraphs', () => {
+  const texts = (source: string) => rankEvidencePassages(source, 'coverage').map((candidate) => candidate.text);
+
+  it('takes no slot for container fences, rules and table separators, and keeps the prose', () => {
+    const found = texts('# Coverage\n\n:::\n\n::: tip\n\nUse the coverage flag to see which lines ran.\n\n:::\n\n***\n\n| --- | --- |\n\n---\n\nRun the suite once to refresh the report.');
+    expect(found.some((text) => /^[:*\-| ]+$/.test(text))).toBe(false);
+    expect(found.some((text) => text.includes('Use the coverage flag'))).toBe(true);
+    expect(found.some((text) => text.includes('Run the suite once'))).toBe(true);
+    expect(found.some((text) => text.includes('::: tip'))).toBe(false);
+  });
+
+  it('drops a leading front-matter block in either form', () => {
+    expect(texts('--- url: /guide/coverage.md ---\n\nCoverage reports show which lines ran.')).toEqual(['Coverage reports show which lines ran.']);
+    expect(texts('---\nurl: /guide/coverage.md\ntitle: Coverage\n---\n\nCoverage reports show which lines ran.')).toEqual(['Coverage reports show which lines ran.']);
+  });
+
+  it('keeps code blocks even when they hold no word', () => {
+    const source = 'Intro about coverage.\n\n```\n:::\n```';
+    expect(texts(source).some((text) => text.includes('```'))).toBe(true);
+  });
+
+  it('does not treat a later rule or a container with words as markup', () => {
+    const source = 'Coverage notes.\n\n---\n\n::: warning Coverage is off by default. :::';
+    expect(texts(source)).toEqual(['Coverage notes.', '::: warning Coverage is off by default. :::']);
+  });
+});

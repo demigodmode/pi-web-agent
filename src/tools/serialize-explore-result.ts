@@ -1,6 +1,6 @@
 import type { WebExploreResponse } from '../types.js';
 import { endWithPeriod } from '../presentation/explore-display-text.js';
-import { searchUnavailableNotices } from '../presentation/explore-presentation.js';
+import { searchNoticeLines } from '../presentation/explore-presentation.js';
 import { formatResearchContext } from '../presentation/research-context.js';
 import { REFERENCE_LABEL, markedText, sourceSafetyNotices } from '../safety/result-notices.js';
 import { matchFlaggedParagraphs } from '../safety/passage-matching.js';
@@ -9,11 +9,19 @@ const cutNotice = (ids: string[]) => ids.length
   ? `${ids.join(ids.length === 2 ? ' and ' : ', ')} had more relevant text that didn't fit. Re-read a link with a narrower question if you need it.`
   : undefined;
 
+// Refusals already read "Refused: ..."; other failures get the wrapper.
+function errorLine(result: WebExploreResponse): string {
+  const message = result.error?.message ?? 'Unknown research failure.';
+  if (result.error?.code !== 'SECRET_IN_QUERY') return `Research failed: ${message}`;
+  const safe = message.replace(/^(?:Refused:|Research failed:)\s*/iu, '');
+  return safe ? `Refused: ${safe}` : 'Refused: Research request refused.';
+}
+
 export function serializeExploreResult(result: WebExploreResponse): string {
-  const searchNotices = searchUnavailableNotices(result);
+  const searchNotices = searchNoticeLines(result);
   const requiredNotices = (result.requiredSourceFailures ?? []).map((failure) =>
     `Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`);
-  const terminalError = result.status === 'error' ? `Research failed: ${result.error?.message ?? 'Unknown research failure.'}` : undefined;
+  const terminalError = result.status === 'error' ? errorLine(result) : undefined;
   const selection = result.modelResult;
   const context = selection?.contextLines.join('\n') ?? formatResearchContext(result.metadata).join('\n');
   const hasExcerpt = result.evidence?.some((item) => item.excerpts.some((excerpt) => Boolean(excerpt.text.trim()))) ?? false;

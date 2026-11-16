@@ -62,25 +62,71 @@ function mayFillSlot(source: MutableSource, candidate: PassageCandidate, rank: n
 /** Admits a ranked paragraph as its own excerpt, clipped to cap if needed. */
 function admit(source: MutableSource, candidate: PassageCandidate, cap: number): { text: string; clipped: boolean } {
   if (cap <= 0) return { text: '', clipped: true };
-  const text = clipCodePoints(candidate.text, cap);
+  const text = clipPassage(candidate.text, cap, Boolean(candidate.codeBlock));
+  if (!text) return { text, clipped: true };
   source.absorbed.add(candidate.order);
   append(source, candidate, text);
   return { text, clipped: codePoints(candidate.text) > cap };
+}
+const ASCII_SENTENCE_END = '.!?';
+const CJK_SENTENCE_END = '。！？';
+const ABBREVIATIONS = new Set(['etc', 'vs', 'cf', 'approx', 'dr', 'mr', 'mrs', 'ms', 'st', 'no', 'fig', 'vol']);
+
+/** Whether the period at index ends an abbreviation such as "e.g." or "Dr." rather than a sentence. */
+function abbreviatedAt(points: string[], index: number): boolean {
+  let start = index;
+  while (start > 0 && /[\p{L}.]/u.test(points[start - 1]!)) start--;
+  const word = points.slice(start, index).join('');
+  return word.includes('.') || ABBREVIATIONS.has(word.toLowerCase());
+}
+
+/** Whether cutting after the first `end` points leaves a complete sentence. */
+function endsSentence(points: string[], end: number): boolean {
+  const last = points[end - 1]!;
+  if (CJK_SENTENCE_END.includes(last)) return true;
+  if (!ASCII_SENTENCE_END.includes(last)) return false;
+  if (end < points.length && !/\s/u.test(points[end]!)) return false;
+  return !(last === '.' && abbreviatedAt(points, end - 1));
+}
+
+/**
+ * The first `chars` code points of a neighbouring paragraph, up to its last
+ * sentence end. The whole paragraph when it fits; empty if no sentence end fits.
+ */
+function sentencesWithin(text: string, chars: number): string {
+  const points = Array.from(text);
+  if (points.length <= chars) return text;
+  for (let end = chars; end >= 1; end--) if (endsSentence(points, end)) return points.slice(0, end).join('');
+  return '';
+}
+
+const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
+/** Cutting before points[end] keeps whole words. Scripts without spaces break anywhere between their characters. */
+function wordBoundary(points: string[], end: number): boolean {
+  return /\s/u.test(points[end]!) || CJK_CHAR.test(points[end]!) || CJK_CHAR.test(points[end - 1]!);
+}
+
+/**
+ * A selected passage cut to chars. Prose keeps its last sentence end when that
+ * keeps at least half the room; otherwise, and for code, it ends on a word
+ * boundary. Empty when no clean cut fits.
+ */
+function clipPassage(text: string, chars: number, code: boolean): string {
+  const points = Array.from(text);
+  if (points.length <= chars) return text;
+  if (!code) {
+    for (let end = chars; end >= 1 && end * 2 >= chars; end--) if (endsSentence(points, end)) return points.slice(0, end).join('');
+  }
+  for (let end = chars; end >= 1 && end * 2 >= chars; end--) if (wordBoundary(points, end)) return points.slice(0, end).join('').trimEnd();
+  // One long unbroken run (a URL, minified code): a hard cut beats dropping it.
+  return points.slice(0, chars).join('');
 }
 /**
  * Grows an admitted excerpt through the neighbouring paragraphs of its section,
  * then across a boundary, while they fit under cap. Returns the code points added
  * and whether the last paragraph was only partly taken.
  */
-/** The first `chars` code points of text, ending on a word boundary; empty if none fits. */
-function trimToWord(text: string, chars: number): string {
-  const points = Array.from(text);
-  if (points.length <= chars) return text;
-  if (/\s/u.test(points[chars]!)) return points.slice(0, chars).join('').trimEnd();
-  let cut = chars;
-  while (cut > 0 && !/\s/u.test(points[cut - 1]!)) cut--;
-  return points.slice(0, cut).join('').trimEnd();
-}
 function grow(source: MutableSource, excerpt: InternalExcerpt, cap: number): { added: number } {
   const seed = excerpt.seed;
   if (!seed || excerpt.text !== seed.text) return { added: 0 };
@@ -109,15 +155,15 @@ function grow(source: MutableSource, excerpt: InternalExcerpt, cap: number): { a
       }
     }
   }
-  // Whatever room is left takes the opening of a neighbouring paragraph, cut on
-  // a word boundary. Fenced code is taken whole or not at all, and the trimmed
-  // piece is context, so it never marks the source as cut.
+  // Whatever room is left takes a neighbouring paragraph up to its last sentence
+  // end, or nothing. Fenced code is never trimmed, and the trimmed piece is
+  // context, so it never marks the source as cut.
   const room = cap - codePoints(text) - 2;
   if (room >= MIN_TRIM_CHARS) {
     const next = ordered.slice(hi).find((other) => !source.absorbed.has(other.order) && !passageMayBeFlagged(source, other.text));
     const previous = ordered.slice(0, Math.max(0, lo + 1)).reverse().find((other) => !source.absorbed.has(other.order) && !passageMayBeFlagged(source, other.text));
-    const nextPiece = next && !next.codeBlock ? trimToWord(next.text, room) : '';
-    const previousPiece = previous && !previous.codeBlock ? trimToWord(previous.text, room) : '';
+    const nextPiece = next && !next.codeBlock ? sentencesWithin(next.text, room) : '';
+    const previousPiece = previous && !previous.codeBlock ? sentencesWithin(previous.text, room) : '';
     if (nextPiece) {
       text = `${text}\n\n${nextPiece}`; source.absorbed.add(next!.order);
     } else if (previousPiece) {

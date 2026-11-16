@@ -261,4 +261,12 @@ Search unavailable (brave): Brave search requires PI_WEB_AGENT_BRAVE_API_KEY. Ru
 
 The selected search provider can't search until you fix something on your side: a missing or rejected key, a used-up quota, or a missing endpoint URL. The message after the provider name is the provider's own explanation. `web_explore` stops searching for that run instead of repeating the same failure, and links in your question are still read.
 
+## Results say "Search failed"
+
+```
+Search failed (degoog): Degoog search request failed: HTTP 404. Check the base URL.
+```
+
+Every search in the run failed and nothing usable came back, so the result shows the provider's own error. The text after the provider name tells you what to check. Fix the base URL, key or engines, then search again. The message is the same in the model text and in the terminal.
+
 Run `/web-agent doctor` to see what's missing, then set the key (in the environment where Pi runs, then restart Pi) or switch providers in settings. If you'd rather fall back to DuckDuckGo automatically, turn on fallback (see [self-hosted backends](./self-hosted-backends.md#explicit-fallback)).
