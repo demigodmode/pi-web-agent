@@ -3,11 +3,6 @@ import { allocateResult } from '../../src/results/allocate.js';
 import { countResultContent } from '../../src/results/content-length.js';
 import type { PreparedSource, ResultAllocationInput } from '../../src/results/types.js';
 
-/** Repeated text with a space every ten characters, so a clip has word boundaries to land on. */
-function spaced(char: string, length: number): string {
-  return Array.from({ length }, (_, index) => (index % 10 === 9 ? ' ' : char)).join('');
-}
-
 function source(id: string, texts: string[], required = false): PreparedSource {
   return {
     id, title: id, url: `https://example.test/${id}`, method: 'http', required, reader: false,
@@ -28,8 +23,7 @@ describe('allocation contract boundaries', () => {
     item.readerDocument = item.ranked.map(candidate => candidate.text).join('\n\n');
     const result = allocateResult(input([item], 'short'));
     expect(result.evidence[0]!.excerpts.length).toBeGreaterThan(3);
-    expect(result.modelResult.contentChars).toBeGreaterThan(3900);
-    expect(result.modelResult.contentChars).toBeLessThanOrEqual(4000);
+    expect(result.modelResult.contentChars).toBe(4000);
     expect(result.evidence[0]!.spaceCut).toBe(true);
   });
 
@@ -55,9 +49,8 @@ describe('allocation contract boundaries', () => {
   it('applies the 300-character floor to discovered sources, not required-source extras', () => {
     const data = input([source('S1', [paragraph('first'), paragraph('second', 400)], true)], 1200);
     const result = allocateResult(data);
-    expect(result.evidence[0]!.excerpts.map(excerpt => excerpt.text.length)).toEqual([900, 294]);
-    expect(result.modelResult.contentChars).toBeGreaterThan(1190);
-    expect(result.modelResult.contentChars).toBeLessThanOrEqual(1200);
+    expect(result.evidence[0]!.excerpts.map(excerpt => excerpt.text.length)).toEqual([900, 299]);
+    expect(result.modelResult.contentChars).toBe(1200);
   });
 
   it('does not allocate a discovered excerpt when exactly 299 characters remain', () => {
@@ -91,7 +84,7 @@ describe('allocation contract boundaries', () => {
     const ordinary = Array.from({ length: 10 }, (_, n) => source(`S${n}`, Array.from({ length: 3 }, (_, p) => paragraph(`source${n}passage${p}`))));
     const result = allocateResult(input([reader, ...ordinary], 'standard'));
     expect(result.evidence[0]!.excerpts.map(excerpt => excerpt.text).join('')).toBe(reader.readerDocument);
-    expect(result.evidence.slice(1).flatMap(item => item.excerpts).reduce((sum, excerpt) => sum + excerpt.text.length, 0)).toBeGreaterThan(9_990);
+    expect(result.evidence.slice(1).flatMap(item => item.excerpts).reduce((sum, excerpt) => sum + excerpt.text.length, 0)).toBe(10_000);
   });
 
   it('preserves a naturally short required excerpt without padding', () => {
@@ -105,7 +98,7 @@ describe('allocation contract boundaries', () => {
       for (const required of [0, 1, 3, 8]) {
         const sources = Array.from({ length: 12 }, (_, n) => source(`S${n}`, [paragraph(`unique${n}`), paragraph(`extra${n}`, 700)], n < required));
         const data = input(sources, budget);
-        data.findings = Array.from({ length: 5 }, (_, n) => `unique finding ${n} ${spaced('z', 160)}`);
+        data.findings = Array.from({ length: 5 }, (_, n) => `unique finding ${n} ${'z'.repeat(160)}`);
         data.findingSourceIds = data.findings.map((_, n) => [`S${n}`]);
         data.context = { suggestedQueries: ['first follow-up', 'second follow-up'], openGaps: ['missing detail'], executedQueries: ['query with "quotes"', 'other query'] };
         const before = JSON.stringify(data);

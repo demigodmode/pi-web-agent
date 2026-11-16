@@ -32,42 +32,7 @@ function scoreText(text: string, terms: string[], allowPartialMatch = false): nu
   ), 0);
 }
 
-function fenceOpening(line: string): string | undefined {
-  return line.match(/^\s*(`{3,}|~{3,})/)?.[1];
-}
-
-function fenceCloses(line: string, opening: string): boolean {
-  const marker = line.trim();
-  return marker.length >= opening.length && [...marker].every((char) => char === opening[0]);
-}
-
-function splitCode(text: string, maxLength: number): string[] {
-  const code = text.trim();
-  if (!code) return [];
-  if (code.length <= maxLength) return [code];
-  const chunks: string[] = [];
-  let chunk = '';
-  for (let line of code.split('\n')) {
-    while (line.length > maxLength) {
-      if (chunk) chunks.push(chunk);
-      chunk = '';
-      chunks.push(line.slice(0, maxLength));
-      line = line.slice(maxLength);
-    }
-    if (chunk && chunk.length + line.length + 1 > maxLength) {
-      chunks.push(chunk);
-      chunk = line;
-    } else {
-      chunk = chunk ? `${chunk}\n${line}` : line;
-    }
-  }
-  if (chunk) chunks.push(chunk);
-  return chunks;
-}
-
 function splitLong(text: string, maxLength: number): string[] {
-  // Fenced code keeps its line breaks, so it is never flattened into prose.
-  if (fenceOpening(text)) return splitCode(text, maxLength);
   const normalized = clean(text);
   if (normalized.length <= maxLength) return normalized ? [normalized] : [];
   const words = normalized.split(' ');
@@ -149,29 +114,11 @@ function markdownSections(source: string): Section[] {
   const sections: Section[] = [{ blocks: [] }];
   let current = sections[0];
   let paragraph: string[] = [];
-  let fence: string | undefined;
-  let code: string[] = [];
   const flush = () => {
     if (paragraph.length) current.blocks.push(clean(paragraph.join(' ')));
     paragraph = [];
   };
   for (const line of source.split(/\r?\n/)) {
-    if (fence) {
-      code.push(line);
-      if (fenceCloses(line, fence)) {
-        current.blocks.push(code.join('\n'));
-        code = [];
-        fence = undefined;
-      }
-      continue;
-    }
-    const opening = fenceOpening(line);
-    if (opening) {
-      flush();
-      fence = opening;
-      code = [line];
-      continue;
-    }
     const heading = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
     if (heading) {
       flush();
@@ -183,41 +130,12 @@ function markdownSections(source: string): Section[] {
       paragraph.push(line.trim());
     }
   }
-  if (code.length) current.blocks.push(code.join('\n'));
   flush();
   return sections.filter((section) => section.heading || section.blocks.length);
 }
 
 function plainSections(source: string): Section[] {
-  const blocks: string[] = [];
-  let lines: string[] = [];
-  let fence: string | undefined;
-  const flush = () => {
-    if (lines.length) blocks.push(lines.join('\n'));
-    lines = [];
-  };
-  for (const line of source.split(/\r?\n/)) {
-    if (fence) {
-      lines.push(line);
-      if (fenceCloses(line, fence)) {
-        fence = undefined;
-        flush();
-      }
-      continue;
-    }
-    const opening = fenceOpening(line);
-    if (opening) {
-      flush();
-      fence = opening;
-      lines.push(line);
-    } else if (!line.trim()) {
-      flush();
-    } else {
-      lines.push(line);
-    }
-  }
-  flush();
-  return blocks.map((block) => ({ blocks: [fenceOpening(block) ? block.trim() : clean(block)] }))
+  return source.split(/\n\s*\n/).map((text) => ({ blocks: [clean(text)] }))
     .filter((section) => section.blocks[0]);
 }
 
@@ -262,7 +180,7 @@ function makeWindows(sections: Section[], terms: string[], maxLength: number): W
     let body = '';
     let bodyAllowsPartialMatch = false;
     const add = () => {
-      const text = [heading, body].filter(Boolean).join('\n\n');
+      const text = clean([heading, body].filter(Boolean).join('\n\n'));
       windows.push({ text, anchor: section.anchor, score: scoreText(heading, terms) * 3 + scoreText(body, terms, bodyAllowsPartialMatch), index: windows.length });
       body = '';
       bodyAllowsPartialMatch = false;

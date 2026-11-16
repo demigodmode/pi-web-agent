@@ -126,6 +126,6 @@ describe('registered result-length pipeline', () => {
     expect(actual).toBe(output.details.metadata.resultLength.contentChars);
     expect(actual).toBeLessThanOrEqual(1000);
     expect(text).toContain('[S1] Source 1:');
-    expect(text).toContain('S2, S3, S4, S5 had more relevant text');
+    expect(text).toContain('S1, S2, S3, S4, S5 had more relevant text');
   });
 });

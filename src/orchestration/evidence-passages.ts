@@ -6,11 +6,7 @@ export type PassageCandidate = {
   order: number;
   score: number;
   codeBlock: boolean;
-  /** Nearest section heading, used as scoring context and to bound excerpt growth. */
-  section?: string;
 };
-
-const MAX_HEADING_CHARS = 100;
 
 export function splitEvidenceParagraphs(text: string): string[] {
   const paragraphs: string[] = [];
@@ -74,13 +70,11 @@ function splitLongCandidate(part: string): string[] {
   return chunks;
 }
 
-function wordsOf(text: string): string[] {
-  return (text.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu) ?? [])
-    .filter((term) => [...term].length >= 3);
-}
-
 function termsOf(text: string): Set<string> {
-  return new Set(wordsOf(text));
+  return new Set(
+    (text.normalize('NFC').toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu) ?? [])
+      .filter((term) => [...term].length >= 3)
+  );
 }
 
 function queryTokens(query: string): string[] {
@@ -105,84 +99,24 @@ function isBoilerplate(text: string): boolean {
   return markers.filter((marker) => marker.test(text)).length >= 2;
 }
 
-function isHeadingLike(paragraph: string): boolean {
-  return !paragraph.includes('\n') && paragraph.length <= MAX_HEADING_CHARS && !/[.!?:;,。！？：；，]$/.test(paragraph) && !isCodeBlock(paragraph);
-}
-
-/** Front matter is the first block of a document: `---` lines around it, or a one-line `--- key: value ---`. */
-function isFrontMatter(paragraph: string): boolean {
-  const lines = paragraph.split(/\r?\n/);
-  if (lines.length === 1) return /^---\s+\S.*\s---$/.test(paragraph.trim());
-  return lines.length >= 2 && /^---\s*$/.test(lines[0]!) && /^---\s*$/.test(lines.at(-1)!);
-}
-
-/** A paragraph of markup punctuation and empty VitePress container lines (`:::`, `::: tip`). */
-function isMarkupOnly(paragraph: string): boolean {
-  if (paragraph.split(/\r?\n/).every((line) => /^\s*:{3,}(?:\s+[\w-]+)?\s*$/.test(line))) return true;
-  // A bare version number such as 1.4 is an answer, so any digit counts as text.
-  const text = paragraph.replace(/[`*_#>|\-=+~:;.,!?()[\]{}<>/\\'"&^%$@]/gu, ' ');
-  return !/\d|[\p{L}\p{N}]{3,}/u.test(text);
-}
-
-function passageCandidates(text: string): PassageCandidate[] {
-  const paragraphs = splitEvidenceParagraphs(text);
-  const candidates: PassageCandidate[] = [];
-  // The nearest heading-like line is the section; a heading directly above a
-  // paragraph is also kept in that paragraph's first chunk, as it was before.
-  let section: string | undefined;
-  let prefix: string | undefined;
-  paragraphs.forEach((paragraph, index) => {
-    const next = paragraphs[index + 1];
-    if (index === 0 && isFrontMatter(paragraph)) return;
-    const codeBlock = isCodeBlock(paragraph);
-    if (!codeBlock && isMarkupOnly(paragraph)) {
-      prefix = undefined;
-      return;
-    }
-    const headingLike = !codeBlock && isHeadingLike(paragraph);
-    if (headingLike) section = paragraph;
-    if (headingLike && next !== undefined && !isHeadingLike(next)) {
-      prefix = paragraph;
-      return;
-    }
-    const lead = prefix;
-    prefix = undefined;
-    const combined = lead ? `${lead}\n\n${paragraph}` : paragraph;
-    for (const chunk of splitLongCandidate(combined)) {
-      candidates.push({ text: chunk, order: candidates.length, score: 0, codeBlock, ...(section ? { section } : {}) });
-    }
-  });
-  return candidates;
-}
-
-type ScoringQuery = { terms: Set<string>; numbers: Set<string>; properNames: Set<string> };
-
-function scoringQuery(query: string): ScoringQuery {
-  const tokens = queryTokens(query);
-  return {
-    terms: new Set(tokens.flatMap((token) => token.toLowerCase().split('.')).filter((term) => Array.from(term).length >= 3)),
-    numbers: numericTokens(query),
-    properNames: new Set(tokens.filter((token) => /^\p{Lu}/u.test(token) && Array.from(token).length >= 3))
-  };
-}
-
-function scoreCandidate(candidate: PassageCandidate, query: ScoringQuery): PassageCandidate {
-  const { terms, numbers, properNames } = query;
-  const sectionWords = candidate.section && !candidate.text.startsWith(candidate.section) ? wordsOf(candidate.section) : [];
-  const matched = new Set([...wordsOf(candidate.text), ...sectionWords].filter((word) => terms.has(word)));
-  const chunkNumbers = numericTokens(candidate.text);
-  const numericBonus = [...numbers].filter((number) => chunkNumbers.has(number)).length;
-  const properNameBonus = [...properNames].filter((name) => new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(candidate.text)).length;
-  return { ...candidate, score: matched.size + numericBonus + properNameBonus };
-}
-
 export function rankEvidencePassages(text: string, query: string): PassageCandidate[] {
-  const candidates = passageCandidates(text);
+  const tokens = queryTokens(query);
+  const terms = new Set(tokens.map((token) => token.toLowerCase()).filter((term) => Array.from(term).length >= 3));
+  const numbers = numericTokens(query);
+  const properNames = new Set(tokens.filter((token) => /^\p{Lu}/u.test(token) && Array.from(token).length >= 3));
+  const candidates = splitEvidenceParagraphs(text).flatMap((paragraph) => {
+    const codeBlock = isCodeBlock(paragraph);
+    return splitLongCandidate(paragraph).map((chunk) => {
+      const chunkTerms = termsOf(chunk);
+      const overlap = [...terms].filter((term) => chunkTerms.has(term)).length;
+      const numericBonus = [...numbers].filter((number) => numericTokens(chunk).has(number)).length;
+      const properNameBonus = [...properNames].filter((name) => new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(chunk)).length;
+      return { text: chunk, order: 0, score: overlap + numericBonus + properNameBonus, codeBlock };
+    });
+  }).map((candidate, order) => ({ ...candidate, order }));
   const substantive = candidates.filter((candidate) => candidate.codeBlock || !isBoilerplate(candidate.text));
   const kept = substantive.length ? substantive : candidates.filter((candidate) => candidate.text.trim());
-  const scoring = scoringQuery(query);
-  return kept.map((candidate) => scoreCandidate(candidate, scoring))
-    .sort((a, b) => b.score - a.score || a.order - b.order);
+  return kept.sort((a, b) => b.score - a.score || a.order - b.order);
 }
 
 export function selectEvidencePassages(text: string, query: string) {
