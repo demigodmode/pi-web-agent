@@ -14,6 +14,7 @@ The format is intentionally simple and release-oriented.
 - New docs page: [Running safely](docs/safety.md).
 - A `degoog` search backend for self-hosted [degoog](https://github.com/degoog-org/degoog) instances: set the instance URL as `backends.search.baseUrl`, and an optional key in `PI_WEB_AGENT_DEGOOG_API_KEY`. `/web-agent doctor` reports missing engines and a rejected key.
 - `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md links served as plain text or Markdown are now read directly instead of coming back unreadable.
+- A `keenable` search backend for [Keenable](https://keenable.ai) (#126, thanks @KGKallasmaa). It's opt-in: set `KEENABLE_API_KEY` and select `keenable` under Backends or list it in fanout. The key alone doesn't turn it on.
 
 ### Changed
 - Hidden page text (`hidden`, `aria-hidden`, `display:none`, off-screen and zero-size text) is removed before a page is read. Tabs, `<details>` and accordion panels are kept.
