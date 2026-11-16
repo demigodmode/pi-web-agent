@@ -67,7 +67,7 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, and Google SERP
+- switch search between DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, Keenable, and Google SERP
 - edit the search endpoint URL (SearXNG, degoog, or Google SERP)
 - enable a hosted/SearXNG → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
@@ -75,7 +75,7 @@ Choose **Backends**. From there you can:
 - enable Firecrawl → HTTP fallback
 - set the outbound proxy URL
 
-Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
+Hosted search and Firecrawl API keys are intentionally not edited in the settings UI. Prefer environment variables for secrets: `PI_WEB_AGENT_BRAVE_API_KEY`, `YDC_API_KEY`, `EXA_API_KEY`, `TAVILY_API_KEY`, `KEENABLE_API_KEY`, `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`, and `PI_WEB_AGENT_FIRECRAWL_API_KEY`.
 
 ## Config file locations
 
@@ -332,6 +332,28 @@ Equivalent config:
 ```
 
 Tavily only improves source discovery. `web_explore` still fetches pages, ranks evidence, handles headless fallback, and writes caveats itself.
+
+## Keenable
+
+To use Keenable, set:
+
+```bash
+KEENABLE_API_KEY=...
+```
+
+Then choose **Settings → Backends → Search backend → keenable**.
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "keenable"
+    }
+  }
+}
+```
+
+The key alone never turns Keenable on: it is used only when you select `keenable` or list it in fanout. Keenable is not in the DuckDuckGo fallback list, so with Keenable selected the **Search fallback** row in settings shows `off` and a Keenable failure stays visible instead of switching to another backend. Like the other hosted backends, Keenable only improves source discovery.
 
 ## Parallel Search MCP
 

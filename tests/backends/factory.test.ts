@@ -560,6 +560,20 @@ describe('backend factory', () => {
     }
   });
 
+  it('creates keenable search with the environment API key', () => {
+    vi.stubEnv('KEENABLE_API_KEY', 'kn-key');
+    const createKeenableSearch = vi.fn().mockReturnValue(vi.fn());
+    try {
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'keenable' } },
+        { ...offlineNetworkDeps(), createKeenableSearch }
+      );
+      expect(createKeenableSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'kn-key' }));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('records tavily as the search fallback source', async () => {
     const primary = vi.fn().mockResolvedValue({
       status: 'error',

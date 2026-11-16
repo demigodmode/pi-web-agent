@@ -20,7 +20,7 @@ export type SearchResult = {
   snippet: string;
 };
 
-export type SearchProviderName = 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog';
+export type SearchProviderName = 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable';
 
 export type FanoutMode = 'off' | 'on' | 'auto';
 
@@ -83,9 +83,9 @@ export type ToolError = {
 };
 
 export type SearchMetadata = {
-  backend: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog';
+  backend: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable';
   cacheHit: boolean;
-  fallbackFrom?: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'duckduckgo';
+  fallbackFrom?: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable' | 'duckduckgo';
   fallbackReason?: string;
   fanout?: FanoutMetadata;
   attempts?: Attempt[];
