@@ -32,6 +32,24 @@ export function searchUnavailableNotices(result: Pick<WebExploreResponse, 'searc
   return [...new Set(lines)];
 }
 
+/**
+ * When nothing usable came back and every search failed, the providers' own error texts,
+ * one line per distinct message. A provider already named as unavailable is not repeated.
+ */
+export function searchFailureNotices(result: Pick<WebExploreResponse, 'searchUnavailable' | 'searchFailures' | 'findings' | 'sources'>, clean: (text: string) => string = (text) => text): string[] {
+  if (!result.searchFailures?.length || result.findings.length > 0 || result.sources.length > 0) return [];
+  const named = new Set((result.searchUnavailable ?? []).map((item) => item.provider));
+  const lines = result.searchFailures
+    .filter((item) => !named.has(item.provider))
+    .map((item) => clean(`Search failed (${item.provider}): ${endWithPeriod(item.message)}`));
+  return [...new Set(lines)];
+}
+
+/** The search notices a result shows: unavailable providers, then failures when nothing usable came back. */
+export function searchNoticeLines(result: Pick<WebExploreResponse, 'searchUnavailable' | 'searchFailures' | 'findings' | 'sources'>, clean: (text: string) => string = (text) => text): string[] {
+  return [...searchUnavailableNotices(result, clean), ...searchFailureNotices(result, clean)];
+}
+
 function joinSourceIds(ids: readonly string[]): string {
   if (ids.length < 2) return ids[0] ?? '';
   if (ids.length === 2) return `${ids[0]} and ${ids[1]}`;
@@ -61,7 +79,7 @@ function buildLegacyExplorePresentation(result: WebExploreResponse): Presentatio
   const notices = (result.requiredSourceFailures ?? []).map((failure) =>
     sanitizeTerminalText(`Required source not read: ${failure.url}. ${endWithPeriod(failure.message)} The requirements of this source were not checked.`)
   );
-  const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
+  const searchNotices = searchNoticeLines(result, sanitizeTerminalText);
   const safety = sourceSafetyLines(result);
   if (result.status === 'error') {
     const successful = result.sources.length
@@ -217,7 +235,7 @@ export function buildExplorePresentation(result: WebExploreResponse): Presentati
   const noEvidence = result.findings.length === 0 && result.sources.length === 0;
   const error = terminalError(result);
   const limitation = !error && result.caveat ? sanitizeTerminalText(result.caveat) : undefined;
-  const searchNotices = searchUnavailableNotices(result, sanitizeTerminalText);
+  const searchNotices = searchNoticeLines(result, sanitizeTerminalText);
   const researchContext = formatResearchContext(result.metadata).join('\n');
   const compact = [summary, ...searchNotices, ...compactNotices, safety.directed, error ?? (noEvidence ? 'No usable evidence found.' : limitation)].filter(Boolean).join('\n');
   const previewFindings = result.findings.slice(0, 3).map((finding) =>

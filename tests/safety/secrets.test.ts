@@ -91,6 +91,18 @@ describe('detectInputSecret', () => {
     }
   });
 
+  test('detects Slack IDs with 10 to 13 digit segments, as gitleaks does', () => {
+    const body = token('', alphabet, 24);
+    expect(detectInputSecret(`xoxb-1234567890-1234567890-${body}`)).toEqual({ kind: 'slack' });
+    expect(detectInputSecret(`xoxb-${digits(13)}-${digits(10)}-${body}`)).toEqual({ kind: 'slack' });
+    expect(detectInputSecret(`xoxp-1234567890-1234567890-1234567890-${token('', alphabet, 32)}`)).toEqual({ kind: 'slack' });
+    expect(detectInputSecret(`xoxs-1234567890-1234567890-1234567890-${distinct(32, 'ABCDEF0123456789')}`)).toEqual({ kind: 'slack' });
+    expect(detectInputSecret(`xoxb-${digits(9)}-${digits(10)}-${body}`)).toBeUndefined();
+    expect(detectInputSecret(`xoxb-${digits(10)}-${digits(14)}-${body}`)).toBeUndefined();
+    expect(detectInputSecret(`xoxp-${digits(9)}-${digits(12)}-${digits(12)}-${token('', alphabet, 32)}`)).toBeUndefined();
+    expect(detectInputSecret(`xoxb-${digits(10)}-${digits(10)}-${'x'.repeat(24)}`)).toBeUndefined();
+  });
+
   test('detects private-key begin markers without requiring key contents', () => {
     for (const marker of [
       '-----BEGIN RSA PRIVATE KEY-----',

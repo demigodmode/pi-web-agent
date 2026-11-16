@@ -61,6 +61,8 @@ export type Attempt = {
   cooldownUntil?: number;
   /** The provider's own message for a user-fixable failure, e.g. a missing key or base URL. */
   detail?: string;
+  /** The provider's error text for a failed or skipped attempt. */
+  message?: string;
 };
 
 export type SearchCoverage = {
@@ -173,6 +175,12 @@ export type SearchUnavailable = {
   message: string;
 };
 
+/** A search provider's own error text from a run where every search failed. */
+export type SearchFailure = {
+  provider: string;
+  message: string;
+};
+
 export type WebExploreResponse = {
   status: 'ok' | 'error';
   /** Monotonic wall time for this individual exploration invocation. */
@@ -199,6 +207,7 @@ export type WebExploreResponse = {
   }>;
   caveat?: string;
   searchUnavailable?: SearchUnavailable[];
+  searchFailures?: SearchFailure[];
   requiredSourceFailures?: Array<{
     url: string;
     code: string;

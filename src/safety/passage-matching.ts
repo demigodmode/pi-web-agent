@@ -195,6 +195,33 @@ function renderPassage(actual: string, bare: boolean, clauses: readonly string[]
   return `${prefix}${markClauses(context, clauses, mark)}`;
 }
 
+/** Fenced code and blockquote lines, as offset ranges. Quoted text is never marked. */
+function codeAndQuoteSpans(text: string): Span[] {
+  const spans: Span[] = [];
+  let fence: { marker: string; length: number; start: number } | undefined;
+  let offset = 0;
+  for (const line of text.split('\n')) {
+    const start = offset;
+    const end = offset + line.length;
+    offset = end + 1;
+    if (fence) {
+      if (new RegExp(`^ {0,3}${fence.marker}{${fence.length},}\\s*$`, 'u').test(line)) {
+        spans.push({ start: fence.start, end });
+        fence = undefined;
+      }
+      continue;
+    }
+    const open = line.match(/^ {0,3}(`{3,}|~{3,})/u);
+    if (open) {
+      fence = { marker: open[1]![0]!, length: open[1]!.length, start };
+      continue;
+    }
+    if (/^ {0,3}>/u.test(line)) spans.push({ start, end });
+  }
+  if (fence) spans.push({ start: fence.start, end: text.length });
+  return spans;
+}
+
 /** Inserts a marker after whole emitted matches without reformatting source text. */
 export function markMatchedParagraphs(text: string, matched: readonly string[], mark: string): string {
   const paragraphs = [...new Set(matched.map(normalizeParagraph).filter(Boolean))].sort((left, right) => right.length - left.length);
@@ -203,9 +230,14 @@ export function markMatchedParagraphs(text: string, matched: readonly string[], 
     const clauses = extractRiskyAgentAskClauses(paragraph).sort((left, right) => right.length - left.length);
     const bare = clauses.includes(paragraph);
     const edits: Array<{ start: number; end: number; text: string }> = [];
+    const protectedSpans = codeAndQuoteSpans(rendered);
     let from = 0;
     for (let found = findPassage(rendered, paragraph, from, true); found; found = findPassage(rendered, paragraph, from, true)) {
       const { start, end } = found;
+      if (protectedSpans.some((span) => span.start < end && span.end > start)) {
+        from = start + 1;
+        continue;
+      }
       let matchStart = start;
       if (bare && start > 0) {
         const lineStart = rendered.lastIndexOf('\n', start - 1) + 1;

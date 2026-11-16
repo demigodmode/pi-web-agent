@@ -40,10 +40,10 @@ const secretPatterns: readonly SecretPattern[] = [
   { kind: 'aws', pattern: /(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/ },
 
   // https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml#L2800-L2854
-  { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xoxb-[0-9]{12}-[0-9]{12}-[A-Za-z0-9]{24}(?![A-Za-z0-9-])/ },
-  { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xoxp-[0-9]{12}-[0-9]{12}-[0-9]{12}-[A-Za-z0-9]{32}(?![A-Za-z0-9-])/ },
+  { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xoxb-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{24}(?![A-Za-z0-9-])/ },
+  { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{32}(?![A-Za-z0-9-])/ },
   { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xox[ar]-(?:[0-9]-)?[A-Za-z0-9]{8,48}(?![A-Za-z0-9-])/ },
-  { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xoxs-[0-9]{12}-[0-9]{12}-[0-9]{12}-[A-Fa-f0-9]{32}(?![A-Za-z0-9-])/ },
+  { kind: 'slack', pattern: /(?<![A-Za-z0-9-])xoxs-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[A-Fa-f0-9]{32}(?![A-Za-z0-9-])/ },
 
   // Gitleaks supports Stripe live keys through 99 characters; retain known 24-char legacy keys.
   { kind: 'stripe', pattern: /(?<![A-Za-z0-9_])(?:sk|rk)_live_(?:[A-Za-z0-9]{24}|[A-Za-z0-9]{99})(?![A-Za-z0-9_])/ },

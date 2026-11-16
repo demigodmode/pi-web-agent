@@ -40,6 +40,7 @@ function withRedactedUrls(response: WebExploreResponse): WebExploreResponse {
     ...(response.error ? { error: redactStrings(response.error) } : {}),
     ...(response.requiredSourceFailures ? { requiredSourceFailures: redactStrings(response.requiredSourceFailures) } : {}),
     ...(response.searchUnavailable ? { searchUnavailable: redactStrings(response.searchUnavailable) } : {}),
+    ...(response.searchFailures ? { searchFailures: redactStrings(response.searchFailures) } : {}),
     ...(response.metadata ? { metadata: redactStrings(response.metadata) } : {})
   };
 }
@@ -59,6 +60,7 @@ type ExploreResult = {
   requiredSourceEvidence?: ResearchEvidence[];
   requiredSourceFailures?: NonNullable<WebExploreResponse['requiredSourceFailures']>;
   searchUnavailable?: WebExploreResponse['searchUnavailable'];
+  searchFailures?: WebExploreResponse['searchFailures'];
 };
 type ExploreRunner = (input: ExploreInput) => Promise<ExploreResult>;
 
@@ -131,7 +133,8 @@ export function createWebExploreTool({
         error: result.terminalFailure,
         metadata: result.metadata,
         requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures,
-        ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {})
+        ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {}),
+        ...(result.searchFailures ? { searchFailures: result.searchFailures } : {})
       };
       return allocatePublicResponse(base, publicEvidence, normalizedQuery, required.length, results, modelContext);
     }
@@ -170,7 +173,8 @@ export function createWebExploreTool({
       caveat: synthesized.caveat,
       metadata: result.metadata,
       requiredSourceFailures: result.requiredSourceFailures ?? result.metadata?.requiredSourceFailures,
-      ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {})
+      ...(result.searchUnavailable ? { searchUnavailable: result.searchUnavailable } : {}),
+      ...(result.searchFailures ? { searchFailures: result.searchFailures } : {})
     };
 
     return allocatePublicResponse(shaped, publicEvidence, normalizedQuery, required.length, results, modelContext);

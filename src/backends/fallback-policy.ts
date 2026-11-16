@@ -1,7 +1,7 @@
 import { abortableSleep, throwIfAborted } from '../abort.js';
 import { buildFetchPresentation } from '../presentation/fetch-presentation.js';
 import { buildSearchPresentation } from '../presentation/search-presentation.js';
-import type { Attempt, FailureInfo, ResearchFetchInput, SearchInput, SearchProviderName, SearchUnavailable, WebFetchResponse, WebSearchResponse } from '../types.js';
+import type { Attempt, FailureInfo, ResearchFetchInput, SearchFailure, SearchInput, SearchProviderName, SearchUnavailable, WebFetchResponse, WebSearchResponse } from '../types.js';
 import { failureOf, shouldFallBack } from './failure.js';
 import type { ProviderHealth, ProviderHealthState } from './provider-health.js';
 
@@ -78,14 +78,28 @@ function skipMessage(backend: string, state: Exclude<ProviderHealthState, { stat
   return state.detail ? `${base} ${state.detail}` : base;
 }
 
-function failedAttempt(backend: string, failure: FailureInfo, state: ProviderHealthState, detail?: string): Attempt {
+function failedAttempt(backend: string, failure: FailureInfo, state: ProviderHealthState, detail?: string, message?: string): Attempt {
   return {
     backend,
     outcome: 'failed',
     failure,
     ...(state.state === 'cooling_down' ? { cooldownUntil: state.until } : {}),
-    ...(detail ? { detail } : {})
+    ...(detail ? { detail } : {}),
+    ...(message ? { message } : {})
   };
+}
+
+/**
+ * The provider error texts behind a failed search: one per distinct message, provider named.
+ * Falls back to the result's own error when it carries no attempts (a bare provider result).
+ */
+export function providerFailures(result: WebSearchResponse): SearchFailure[] {
+  const attempts = result.metadata.attempts ?? [];
+  const found = attempts.length
+    ? attempts.filter((attempt) => (attempt.outcome === 'failed' || attempt.outcome === 'skipped') && attempt.message)
+      .map((attempt) => ({ provider: attempt.backend, message: attempt.message! }))
+    : failureOf(result) && result.error?.message ? [{ provider: result.metadata.backend, message: result.error.message }] : [];
+  return found.filter((entry, index) => found.findIndex((other) => other.provider === entry.provider && other.message === entry.message) === index);
 }
 
 function isTargetHttpFailure(result: WebFetchResponse): boolean {
@@ -126,7 +140,7 @@ export function withSearchPolicy(name: SearchProviderName, search: Search, deps:
 
     if (failure) {
       const detail = detailFor(failure, result.error?.message);
-      attempts.push(failedAttempt(name, failure, deps.health.record(healthKey, failure, detail), detail));
+      attempts.push(failedAttempt(name, failure, deps.health.record(healthKey, failure, detail), detail, result.error?.message));
     } else {
       attempts.push({ backend: name, outcome: result.results.length > 0 ? 'results' : 'empty' });
     }

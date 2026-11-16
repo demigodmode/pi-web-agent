@@ -1,4 +1,4 @@
-import type { Attempt, ResearchFetchInput, SearchProviderName, SearchUnavailable, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
+import type { Attempt, ResearchFetchInput, SearchFailure, SearchProviderName, SearchUnavailable, WebFetchHeadlessResponse, WebFetchResponse } from '../types.js';
 import { throwIfAborted } from '../abort.js';
 import { failureOf, isTerminalFailure } from '../backends/failure.js';
 import { rankEvidence } from './evidence-ranker.js';
@@ -231,6 +231,7 @@ type ResearchOrchestratorResult = {
   requiredSourceEvidence: ResearchEvidence[];
   requiredSourceFailures: RequiredSourceFailure[];
   searchUnavailable?: SearchUnavailable[];
+  searchFailures?: SearchFailure[];
 };
 
 function decisionForAnswer({
@@ -332,6 +333,10 @@ export function createResearchOrchestrator({
       const requiredSourceFailures: RequiredSourceFailure[] = [];
       // Search backends that failed for a reason the user can fix, deduplicated across passes.
       const searchUnavailable: SearchUnavailable[] = [];
+      // Provider error texts from failed searches. They are shown only when every search failed.
+      let searchPassCount = 0;
+      let failedSearchPassCount = 0;
+      const searchFailures: SearchFailure[] = [];
       const recordSearchUnavailable = (entries: SearchUnavailable[]) => {
         for (const entry of entries) {
           if (!searchUnavailable.some((seen) => seen.provider === entry.provider && seen.kind === entry.kind && seen.message === entry.message)) {
@@ -366,6 +371,7 @@ export function createResearchOrchestrator({
           requiredSourceEvidence: [...requiredSourceEvidence],
           requiredSourceFailures: [...requiredSourceFailures],
           ...(searchUnavailable.length ? { searchUnavailable: [...searchUnavailable] } : {}),
+          ...(searchPassCount > 0 && failedSearchPassCount === searchPassCount && searchFailures.length ? { searchFailures: [...searchFailures] } : {}),
           metadata: {
             ...result.metadata,
             ...context,
@@ -678,6 +684,15 @@ export function createResearchOrchestrator({
           throwIfAborted(signal);
 
           lastPass = pass;
+          if (pass.searchQueries.length) {
+            searchPassCount++;
+            if (pass.searchFailed) {
+              failedSearchPassCount++;
+              for (const failure of pass.searchFailures ?? []) {
+                if (!searchFailures.some((seen) => seen.provider === failure.provider && seen.message === failure.message)) searchFailures.push(failure);
+              }
+            }
+          }
           if (pass.searchAttempts) runAttempts.push(...pass.searchAttempts);
           if (pass.fetchAttempts) runAttempts.push(...pass.fetchAttempts);
           if (pass.searchCoveragePartial) searchCoveragePartial = true;
