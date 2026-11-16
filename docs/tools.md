@@ -83,9 +83,7 @@ Set the global default in `~/.pi/agent/extensions/pi-web-agent/config.json` and 
 
 At Standard, sources share 10,000 characters of excerpts, with up to three excerpts of 900 characters each per source. Links you pasted go first; search results split what's left evenly in rank order. If a search result's share would be under 300 characters, it's left out and the result says so. GitHub, PDF and YouTube pages found through search count as ordinary sources here. A GitHub, PDF or YouTube link you pasted comes back in full (up to 24,000 characters), outside that pool.
 
-An excerpt starts from the paragraph that best matches the question and takes in the text around it while there is room.
-
-With any other setting, each link you pasted still gets its best excerpt (up to 900 characters) even if that goes over the limit, so a result with many pasted links can run a little long. Under 4,000 characters, search results don't split the space evenly: the best-matching passages across all of them go first, and a source that gets nothing is listed as cut.
+With any other setting, each link you pasted still gets its best excerpt (up to 900 characters) even if that goes over the limit, so a result with many pasted links can run a little long.
 
 Results say why text is missing. `(document longer than what was read)` means the reader hit its cap, and reading again won't get more. A notice that a source "had more relevant text that didn't fit" means the result length cut it; asking about that link with a narrower question will pick a different passage. Text that simply wasn't relevant to the question isn't marked.
 

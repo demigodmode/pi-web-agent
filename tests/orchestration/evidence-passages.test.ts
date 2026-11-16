@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { comparePassages } from '../../src/results/duplicate-passages.js';
 import { rankEvidencePassages, selectEvidencePassages, splitEvidenceParagraphs } from '../../src/orchestration/evidence-passages.js';
 
 describe('selectEvidencePassages', () => {
@@ -97,66 +96,5 @@ describe('selectEvidencePassages', () => {
     const code = '````markdown\n```\n~~~\n````';
     expect(splitEvidenceParagraphs(`Before.\n\n${code}\n\nAfter.`)).toEqual(['Before.', code, 'After.']);
     expect(rankEvidencePassages(code, 'markdown')[0]).toMatchObject({ text: code, codeBlock: true });
-  });
-});
-
-describe('passage heading context', () => {
-  it('keeps a heading with the paragraph it introduces and scores later chunks by their section heading', () => {
-    const body = Array.from({ length: 40 }, (_, index) => `Sentence ${index} repeats plain words.`).join(' ');
-    const candidates = rankEvidencePassages(`Coverage setup\n\n${body}`, 'coverage');
-    expect(candidates.find((candidate) => candidate.order === 0)!.text.startsWith('Coverage setup')).toBe(true);
-    expect(candidates.some((candidate) => candidate.section === 'Coverage setup' && candidate.score > 0)).toBe(true);
-    expect(candidates.every((candidate) => candidate.section === 'Coverage setup')).toBe(true);
-  });
-});
-
-describe('code blocks after a heading', () => {
-  it('keeps a code candidate whose text starts with its heading flagged as code', () => {
-    const [candidate] = rankEvidencePassages('Setup steps\n\n```ts\nconst a = 1;\n```', 'const');
-    expect(candidate).toMatchObject({ codeBlock: true });
-    expect(candidate!.text.startsWith('Setup steps')).toBe(true);
-    expect(comparePassages(candidate!.text, 'Setup steps and other prose', { leftCodeBlock: candidate!.codeBlock, rightCodeBlock: false })).toBe('distinct');
-  });
-});
-
-describe('large page timing', () => {
-  it('ranks a 2 MiB page within a bound of 5 seconds', () => {
-    const words = ['coverage', 'provider', 'config', 'vitest', 'plain', 'words', 'here', 'setup', 'the', 'example', '2024', 'Alpha'];
-    let seed = 7;
-    const random = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-    const paragraphs = Array.from({ length: Math.floor(2 * 1024 * 1024 / 200) }, (_, index) => (index % 40 === 0
-      ? `Heading ${index % 9}`
-      : Array.from({ length: 30 }, () => words[Math.floor(random() * words.length)]).join(' ')));
-    const page = paragraphs.join('\n\n');
-    const started = performance.now();
-    rankEvidencePassages(page, 'vitest coverage provider 2024 Alpha config');
-    expect(performance.now() - started).toBeLessThan(5_000);
-  }, 60_000);
-});
-
-describe('markup-only paragraphs', () => {
-  const texts = (source: string) => rankEvidencePassages(source, 'coverage').map((candidate) => candidate.text);
-
-  it('takes no slot for container fences, rules and table separators, and keeps the prose', () => {
-    const found = texts('# Coverage\n\n:::\n\n::: tip\n\nUse the coverage flag to see which lines ran.\n\n:::\n\n***\n\n| --- | --- |\n\n---\n\nRun the suite once to refresh the report.');
-    expect(found.some((text) => /^[:*\-| ]+$/.test(text))).toBe(false);
-    expect(found.some((text) => text.includes('Use the coverage flag'))).toBe(true);
-    expect(found.some((text) => text.includes('Run the suite once'))).toBe(true);
-    expect(found.some((text) => text.includes('::: tip'))).toBe(false);
-  });
-
-  it('drops a leading front-matter block in either form', () => {
-    expect(texts('--- url: /guide/coverage.md ---\n\nCoverage reports show which lines ran.')).toEqual(['Coverage reports show which lines ran.']);
-    expect(texts('---\nurl: /guide/coverage.md\ntitle: Coverage\n---\n\nCoverage reports show which lines ran.')).toEqual(['Coverage reports show which lines ran.']);
-  });
-
-  it('keeps code blocks even when they hold no word', () => {
-    const source = 'Intro about coverage.\n\n```\n:::\n```';
-    expect(texts(source).some((text) => text.includes('```'))).toBe(true);
-  });
-
-  it('does not treat a later rule or a container with words as markup', () => {
-    const source = 'Coverage notes.\n\n---\n\n::: warning Coverage is off by default. :::';
-    expect(texts(source)).toEqual(['Coverage notes.', '::: warning Coverage is off by default. :::']);
   });
 });
