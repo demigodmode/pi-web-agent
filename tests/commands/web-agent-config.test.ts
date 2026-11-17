@@ -260,6 +260,26 @@ describe('web-agent config draft helpers', () => {
     expect(fetchUrlState.backends.fetch.baseUrl).toBe('http://localhost:3002');
   });
 
+  it('keeps a degoog endpoint on degoog and drops it when switching providers', () => {
+    const loaded = {
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    };
+
+    const state = createSettingsDraftState(loaded, 'project');
+    const degoogState = applySettingsValue(state, 'backend:search:provider', 'degoog');
+    expect(degoogState.backends.search.provider).toBe('degoog');
+
+    const urlState = applySettingsValue(degoogState, 'backend:search:baseUrl', 'http://localhost:4444');
+    expect(urlState.backends.search.provider).toBe('degoog');
+    expect(urlState.backends.search.baseUrl).toBe('http://localhost:4444');
+
+    const toSearxng = applySettingsValue(urlState, 'backend:search:provider', 'searxng');
+    expect(toSearxng.backends.search.baseUrl).toBeUndefined();
+  });
+
   it('applies search fanout mode draft values', () => {
     const loaded = {
       global: { path: '/global/config.json', exists: false },
@@ -2220,6 +2240,23 @@ describe('browser path settings', () => {
     project: { path: '/project/config.json', exists: false },
     effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
     effectiveBackends: effective
+  });
+
+  it('lists keenable as a search backend with an env-var key row and no DuckDuckGo fallback', () => {
+    const items = buildBackendSettingsItems('project', { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'keenable' } }, theme);
+    expect(items.find((item) => item.id === 'backend:search:provider')).toMatchObject({ currentValue: 'keenable', values: expect.arrayContaining(['keenable']) });
+    expect(items.find((item) => item.id === 'backend:secret:keenable')).toMatchObject({ label: 'Keenable API key', currentValue: 'env var' });
+    expect(items.find((item) => item.id === 'backend:search:fallback')).toMatchObject({ currentValue: 'off', values: ['off'] });
+  });
+
+  it('switches the draft search provider to keenable', () => {
+    const state = createSettingsDraftState({
+      global: { path: '/global/config.json', exists: false },
+      project: { path: '/project/config.json', exists: false },
+      effectiveConfig: DEFAULT_PRESENTATION_CONFIG,
+      effectiveBackends: DEFAULT_BACKEND_CONFIG
+    }, 'project');
+    expect(applySettingsValue(state, 'backend:search:provider', 'keenable').backends.search.provider).toBe('keenable');
   });
 
   it('shows the browser path field and the env var reminder in the backend section', () => {

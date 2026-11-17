@@ -58,6 +58,18 @@ Set `YDC_API_KEY` in the environment where Pi runs, then reload/restart Pi and r
 
 If You.com still reports an HTTP warning, check that the key is valid and that the Pi process can reach the You.com Search API.
 
+## `/web-agent doctor` says degoog returns no results
+
+A fresh degoog has no web engines installed, so every search comes back empty. Doctor reports `no search engines installed` in that case. Install some engines in degoog's settings and enable them.
+
+If doctor says `no web search engines are enabled`, the engines are installed but switched off. Turn one on in degoog.
+
+If doctor says `every engine failed`, degoog is up but each engine it tried errored or was misconfigured. The reasons are listed in the message (rate limits and blocks are common; a misconfigured engine shows its error reason). Try again later, fix the engine's settings, or enable another engine.
+
+A `HTTP 401` warning means degoog wants an API key. Set `PI_WEB_AGENT_DEGOOG_API_KEY` in the environment where Pi runs to the key from degoog, then reload Pi.
+
+`HTTP N from /api/engines` (any non-2xx status, such as a 404) or `unexpected response from /api/engines` (an HTML page or other non-JSON body) means the base URL is wrong. Use the instance root, like `http://localhost:4444`, and keep any sub-path your reverse proxy adds. See [Backends](/self-hosted-backends#degoog-search) for the details.
+
 ## `/web-agent doctor` says Google SERP is missing its endpoint or key
 
 `google-serp` needs both an endpoint and a key. Set `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` in the environment where Pi runs, and set `backends.search.baseUrl` (or **Search endpoint URL** in settings) to your vendor's search URL. Reload/restart Pi and run doctor again.
@@ -133,7 +145,7 @@ If you want the diagnostic report directly, use:
 The settings UI has three sections:
 
 - **Presentation**: `defaultMode` and `web_explore`
-- **Backends**: search/fetch providers, SearXNG and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
+- **Backends**: search/fetch providers, SearXNG, degoog, and Firecrawl URLs, fallback toggles, and env-var reminders for the hosted search and Firecrawl API keys
 - **Results**: the result-length limit and its write scope
 
 Older config files may still contain keys for older low-level tools. They are ignored by the current UI.
@@ -248,5 +260,13 @@ Search unavailable (brave): Brave search requires PI_WEB_AGENT_BRAVE_API_KEY. Ru
 ```
 
 The selected search provider can't search until you fix something on your side: a missing or rejected key, a used-up quota, or a missing endpoint URL. The message after the provider name is the provider's own explanation. `web_explore` stops searching for that run instead of repeating the same failure, and links in your question are still read.
+
+## Results say "Search failed"
+
+```
+Search failed (degoog): Degoog search request failed: HTTP 404. Check the base URL.
+```
+
+Every search in the run failed and nothing usable came back, so the result shows the provider's own error. The text after the provider name tells you what to check. Fix the base URL, key or engines, then search again. The message is the same in the model text and in the terminal.
 
 Run `/web-agent doctor` to see what's missing, then set the key (in the environment where Pi runs, then restart Pi) or switch providers in settings. If you'd rather fall back to DuckDuckGo automatically, turn on fallback (see [self-hosted backends](./self-hosted-backends.md#explicit-fallback)).

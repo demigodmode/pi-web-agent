@@ -12,9 +12,11 @@ import { createYouComSearchTool } from '../search/youcom.js';
 import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createParallelSearchTool } from '../search/parallel.js';
+import { createKeenableSearchTool } from '../search/keenable.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { createGoogleSerpSearchTool } from '../search/google-serp.js';
+import { createDegoogSearchTool } from '../search/degoog.js';
 import { createFanoutSearch, FANOUT_PROVIDER_TIMEOUT_MS, withCallTimeout } from '../search/fanout.js';
 import { chainSearch, withFetchPolicy, withSearchPolicy, type PolicyDeps } from './fallback-policy.js';
 import { createProviderHealth, type ProviderHealth } from './provider-health.js';
@@ -53,7 +55,9 @@ export type BackendFactoryDeps = {
   createExaSearch?: typeof createExaSearchTool;
   createParallelSearch?: typeof createParallelSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
+  createKeenableSearch?: typeof createKeenableSearchTool;
   createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
+  createDegoogSearch?: typeof createDegoogSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
   createFirecrawlFetch?: typeof createFirecrawlFetcher;
   createHeadlessFetch?: typeof createWebFetchHeadlessTool;
@@ -105,6 +109,10 @@ function invalidSearxngSearch() {
 
 function invalidGoogleSerpSearch() {
   return invalidConfiguredSearch('google-serp', 'Google SERP search requires backends.search.baseUrl.');
+}
+
+function invalidDegoogSearch() {
+  return invalidConfiguredSearch('degoog', 'Degoog search requires backends.search.baseUrl.');
 }
 
 function invalidFirecrawlFetch() {
@@ -165,7 +173,9 @@ export function createBackendSet(
   const createExaSearch = deps.createExaSearch ?? createExaSearchTool;
   const createParallelSearch = deps.createParallelSearch ?? createParallelSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
+  const createKeenableSearch = deps.createKeenableSearch ?? createKeenableSearchTool;
   const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
+  const createDegoogSearch = deps.createDegoogSearch ?? createDegoogSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
   const createFirecrawlFetch = deps.createFirecrawlFetch ?? createFirecrawlFetcher;
   const createHeadlessFetch = deps.createHeadlessFetch ?? createWebFetchHeadlessTool;
@@ -304,6 +314,8 @@ export function createBackendSet(
         return createParallelSearch({ fetchImpl });
       case 'tavily':
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
+      case 'keenable':
+        return createKeenableSearch({ apiKey: process.env.KEENABLE_API_KEY, fetchImpl });
       case 'google-serp': {
         // Each endpoint-backed provider resolves its own URL, so a fanout set can never
         // point one provider at another's endpoint (or send it the other's key).
@@ -316,6 +328,12 @@ export function createBackendSet(
               fetchImpl
             })
           : invalidGoogleSerpSearch();
+      }
+      case 'degoog': {
+        const baseUrl = resolveSearchBaseUrl(config.search, 'degoog');
+        return baseUrl
+          ? createDegoogSearch({ baseUrl, apiKey: process.env.PI_WEB_AGENT_DEGOOG_API_KEY, fetchImpl })
+          : invalidDegoogSearch();
       }
       case 'duckduckgo':
       default:

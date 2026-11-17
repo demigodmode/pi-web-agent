@@ -1,0 +1,113 @@
+{
+  "query": "vitest coverage setup",
+  "results": [
+    {
+      "url": "https://vitest.dev/config/coverage",
+      "title": "coverage | Config | Vitest",
+      "content": "Vitest calls it for each node of the transformed code, together with the kind of coverage the node counts for. Return true to ignore the node, or 'ignore-this-and-nested-nodes' to also ignore all nodes inside it.",
+      "engine": "degoog-org-official-extensions-duckduckgo-engine",
+      "engines": [
+        "degoog-org-official-extensions-duckduckgo-engine",
+        "degoog-org-official-extensions-startpage-engine"
+      ],
+      "category": "general",
+      "template": "default.html",
+      "score": 23,
+      "positions": [
+        1
+      ],
+      "parsed_url": [
+        "https",
+        "vitest.dev",
+        "/config/coverage",
+        "",
+        "",
+        ""
+      ],
+      "publishedDate": null,
+      "img_src": "",
+      "thumbnail": "",
+      "iframe_src": "",
+      "audio_src": "",
+      "length": "",
+      "views": "",
+      "author": "",
+      "metadata": ""
+    },
+    {
+      "url": "https://deku.posstree.com/en/react/vitest-coverage",
+      "title": "[React] Setting Up Vitest Test Coverage | DeKu",
+      "content": "Mar 10, 2026 ... The vitest run -- coverage command runs Vitest once without watch mode while collecting coverage data. .gitignore Configuration . Since coverage ...",
+      "engine": "degoog-org-official-extensions-duckduckgo-engine",
+      "engines": [
+        "degoog-org-official-extensions-duckduckgo-engine",
+        "degoog-org-official-extensions-startpage-engine"
+      ],
+      "category": "general",
+      "template": "default.html",
+      "score": 11,
+      "positions": [
+        2
+      ],
+      "parsed_url": [
+        "https",
+        "deku.posstree.com",
+        "/en/react/vitest-coverage",
+        "",
+        "",
+        ""
+      ],
+      "publishedDate": null,
+      "img_src": "",
+      "thumbnail": "",
+      "iframe_src": "",
+      "audio_src": "",
+      "length": "",
+      "views": "",
+      "author": "",
+      "metadata": ""
+    },
+    {
+      "url": "https://vitest.dev/guide/coverage.html",
+      "title": "Coverage | Guide | Vitest",
+      "content": "Coverage Vitest supports Native code coverage via v8 and instrumented code coverage via istanbul. Coverage Providers Both v8 and istanbul support are optional. By default, v8 will be used. You can select the coverage tool by setting test.coverage.provider to v8 or istanbul:",
+      "engine": "degoog-org-official-extensions-duckduckgo-engine",
+      "engines": [
+        "degoog-org-official-extensions-duckduckgo-engine"
+      ],
+      "category": "general",
+      "template": "default.html",
+      "score": 10,
+      "positions": [
+        3
+      ],
+      "parsed_url": [
+        "https",
+        "vitest.dev",
+        "/guide/coverage.html",
+        "",
+        "",
+        ""
+      ],
+      "publishedDate": null,
+      "img_src": "",
+      "thumbnail": "",
+      "iframe_src": "",
+      "audio_src": "",
+      "length": "",
+      "views": "",
+      "author": "",
+      "metadata": ""
+    }
+  ],
+  "answers": [],
+  "corrections": [],
+  "infoboxes": [],
+  "suggestions": [],
+  "unresponsive_engines": [
+    [
+      "degoog-org-official-extensions-brave-engine",
+      "Too many requests"
+    ]
+  ]
+}

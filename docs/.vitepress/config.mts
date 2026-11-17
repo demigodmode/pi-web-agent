@@ -25,6 +25,7 @@ export default defineConfig({
           { text: 'Setup modes', link: '/setup-modes' },
           { text: 'Backends', link: '/self-hosted-backends' },
           { text: 'Tools', link: '/tools' },
+          { text: 'Running safely', link: '/safety' },
           { text: 'Architecture', link: '/architecture' },
           { text: 'Development', link: '/development' },
           { text: 'Troubleshooting', link: '/troubleshooting' },

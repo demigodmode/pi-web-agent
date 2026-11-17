@@ -2,6 +2,16 @@
 
 The public tool surface is intentionally small now.
 
+## Safety with untrusted pages
+
+`web_explore` hands the model page text as quoted reference, with a fixed line saying so before the excerpts. Three checks run on every call:
+
+- Text a reader can't see or open is removed before the page is read. Tabs and collapsed sections are kept.
+- An excerpt that speaks to an AI agent directly and asks for something risky (run a command, send data, read secrets, change files, hide something from you, ignore its instructions) stays in the result with a mark after it, and the terminal shows one line naming the source. Docs that only talk about agents, and attack examples quoted in code blocks or blockquotes, are not marked.
+- If the query or a link in it contains what looks like a credential, the whole call is refused before anything is searched or fetched.
+
+These are checks, not a sandbox. See [Running safely](/safety) for what they don't cover.
+
 ## `web_explore`
 
 Use `web_explore` for web research questions:
@@ -19,7 +29,7 @@ Internally, `web_explore` can do a few things:
 - read HTTP/HTTPS links from the prompt before search
 - strip common tracking params from direct links
 - plan search queries
-- run web search through the configured search backend: DuckDuckGo, SearXNG, Brave, You.com, Exa, Tavily, Parallel, or Google SERP
+- run web search through the configured search backend: DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, Keenable, or Google SERP
 - optionally fan search across multiple configured providers at once when fanout is enabled, dedupe and rerank the merged results
 - read GitHub, PDF, and YouTube links through dedicated readers instead of scraping the page
 - clone and search a GitHub repo when you paste a repo or folder link
@@ -31,6 +41,8 @@ Internally, `web_explore` can do a few things:
 - rank evidence
 - evaluate source quality and source diversity
 - synthesize findings and caveats
+
+Plain-text and Markdown links, such as `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md files (including `raw.githubusercontent.com` links), are read directly. They go through the same passage selection. Ordinary pages are marked the same way when they address an AI agent with a risky request. Files written for agents on purpose, such as `llms.txt`, `AGENTS.md` and `CLAUDE.md`, get a note saying who wrote them and are not marked. Plain-text reads stop at 2 MiB, and the result says the document was longer than what was read. A binary file is refused with the error `The response looks like a binary file, not text.`
 
 The important bit: those internal steps are not separate public tools for normal model use. If more web evidence is needed, the model should call `web_explore` again with a narrower query.
 

@@ -1,5 +1,6 @@
 import { Text } from '@earendil-works/pi-tui';
-import { displayExploreQuery } from './explore-display-text.js';
+import { displayExploreQuery, sanitizeTerminalText } from './explore-display-text.js';
+import { detectInputSecret } from '../safety/secrets.js';
 export { clipTerminalText, safeDisplayQuery, safeDisplayUrl } from './explore-display-text.js';
 
 const HEADING_QUERY_LIMIT = 96;
@@ -18,6 +19,7 @@ function quoteAndClip(value: string, maxVisibleChars: number): string {
 }
 
 export function formatExploreCall(query: unknown, argsComplete: boolean): string {
+  if (argsComplete && typeof query === 'string' && detectInputSecret(sanitizeTerminalText(query))) return 'web_explore (query refused)';
   const display = argsComplete ? displayExploreQuery(query) : undefined;
   return display ? `web_explore (${quoteAndClip(display, HEADING_QUERY_LIMIT)})` : 'web_explore (…)';
 }

@@ -3,13 +3,14 @@ import { formatPriorityContext, formatSearchedContext } from '../presentation/re
 import { comparePassages, containsPassageTokens } from './duplicate-passages.js';
 import { resolveLengthLimit } from './length.js';
 import { clipCodePoints, codePoints, countResultContent } from './content-length.js';
+import { matchFlaggedParagraphs } from '../safety/passage-matching.js';
 import type { AllocatedSource, ModelFinding, PreparedSource, ResultAllocation, ResultAllocationInput } from './types.js';
 
 const MAX_EXCERPTS = 3;
 const MAX_EXCERPT_CHARS = 900;
 const STANDARD_POOL = 10_000;
 type InternalExcerpt = { text: string; anchor?: string; codeBlock?: boolean };
-type MutableSource = Omit<AllocatedSource, 'excerpts'> & { excerpts: InternalExcerpt[]; required: boolean; reader: boolean; candidates: PassageCandidate[]; anchor?: string };
+type MutableSource = Omit<AllocatedSource, 'excerpts' | 'safety'> & { excerpts: InternalExcerpt[]; required: boolean; reader: boolean; candidates: PassageCandidate[]; anchor?: string; sourceSafety?: PreparedSource['sourceSafety'] };
 type CandidateEntry = { source: MutableSource; candidate: PassageCandidate; sourceOrder: number; candidateOrder: number };
 
 function findingText(text: string) {
@@ -22,7 +23,19 @@ function makeSources(sources: PreparedSource[]): MutableSource[] {
     excerpts: [], retrievalCut: source.retrievalCut, selectionOmitted: source.selectionOmitted, spaceCut: false,
     ...(source.retrievedAt ? { retrievedAt: source.retrievedAt } : {}), required: source.required, reader: source.reader,
     ...(source.sectionAnchor ? { anchor: source.sectionAnchor } : {}),
+    ...(source.sourceSafety ? { sourceSafety: { flaggedParagraphs: [...source.sourceSafety.flaggedParagraphs], agentNotes: [...source.sourceSafety.agentNotes] } } : {}),
     candidates: source.ranked.length ? source.ranked.map((candidate) => ({ ...candidate })) : rankEvidencePassages(source.readerDocument ?? '', '')
+  }));
+}
+function passageIsFlagged(source: MutableSource, text: string): boolean {
+  return Boolean(source.sourceSafety?.flaggedParagraphs.length && matchFlaggedParagraphs(text, source.sourceSafety.flaggedParagraphs).length);
+}
+function passageMayBeFlagged(source: MutableSource, text: string): boolean {
+  if (passageIsFlagged(source, text)) return true;
+  const normalized = coverageText(text).replace(/\s+/gu, ' ').trim();
+  return Boolean(normalized && source.sourceSafety?.flaggedParagraphs.some((paragraph) => {
+    const flagged = coverageText(paragraph).replace(/\s+/gu, ' ').trim();
+    return flagged.startsWith(normalized) || normalized.startsWith(flagged);
   }));
 }
 function excerptLimit(source: MutableSource) {
@@ -43,6 +56,7 @@ function emitCoverage(source: MutableSource, candidate: PassageCandidate, all: M
   for (const target of all) for (let index = 0; index < target.excerpts.length; index++) {
     if (target === source) continue;
     const targetExcerpt = target.excerpts[index]!;
+    if (passageMayBeFlagged(source, candidate.text) || passageMayBeFlagged(target, targetExcerpt.text)) continue;
     const compared = comparePassages(candidate.text, targetExcerpt.text, { leftCodeBlock: candidate.codeBlock, rightCodeBlock: targetExcerpt.codeBlock });
     if (compared === 'equal' || compared === 'left-contained') {
       source.samePassageAs = [...(source.samePassageAs ?? []), { sourceId: target.id, excerptIndex: index, relation: compared === 'equal' ? 'same' : 'covered' }];
@@ -74,13 +88,23 @@ function isFindingCovered(finding: ModelFinding, sources: MutableSource[]) {
   return finding.sourceIds.some((id) => {
     const source = sourceById(sources, id); if (!source) return false;
     if (source.excerpts.some((excerpt) => normalizedContains(excerpt.text, finding.text))) return true;
+    if (passageIsFlagged(source, coverageText(finding.text))) return false;
     return (source.samePassageAs ?? []).some((coverage) => {
       const target = sourceById(sources, coverage.sourceId)?.excerpts[coverage.excerptIndex];
       return target !== undefined && normalizedContains(target.text, finding.text);
     });
   });
 }
-function publicSources(sources: MutableSource[]): AllocatedSource[] { return sources.map(({ required: _required, reader: _reader, candidates: _candidates, anchor: _anchor, excerpts: local, ...source }) => ({ ...source, excerpts: local.map(({ codeBlock: _codeBlock, ...excerpt }) => excerpt) })); }
+function publicSources(sources: MutableSource[], findings: ModelFinding[]): AllocatedSource[] {
+  return sources.map(({ required: _required, reader: _reader, candidates: _candidates, anchor: _anchor, sourceSafety, excerpts: local, ...source }) => {
+    const texts = [...local.map((excerpt) => excerpt.text), ...findings.filter((finding) => finding.sourceIds.includes(source.id)).map((finding) => finding.text)];
+    const markedParagraphs = sourceSafety ? [...new Set(texts.flatMap((text) => matchFlaggedParagraphs(coverageText(text), sourceSafety.flaggedParagraphs)))] : [];
+    const safety = sourceSafety && (markedParagraphs.length || sourceSafety.agentNotes.length)
+      ? { markedParagraphs, agentNotes: [...sourceSafety.agentNotes] }
+      : undefined;
+    return { ...source, excerpts: local.map(({ codeBlock: _codeBlock, ...excerpt }) => excerpt), ...(safety ? { safety } : {}) };
+  });
+}
 function append(source: MutableSource, candidate: PassageCandidate, text: string) { source.excerpts.push({ text, ...(source.anchor ? { anchor: source.anchor } : {}), codeBlock: candidate.codeBlock }); }
 function replaceCoveredShorter(source: MutableSource, all: MutableSource[]) {
   const replacementIndex = source.excerpts.length - 1;
@@ -90,6 +114,7 @@ function replaceCoveredShorter(source: MutableSource, all: MutableSource[]) {
     if (other === source || other.required) continue;
     for (let index = other.excerpts.length - 1; index >= 0; index--) {
       const excerpt = other.excerpts[index]!;
+      if (passageMayBeFlagged(other, excerpt.text) || passageMayBeFlagged(source, replacement.text)) continue;
       if (comparePassages(excerpt.text, replacement.text, { leftCodeBlock: excerpt.codeBlock, rightCodeBlock: replacement.codeBlock }) !== 'left-contained') continue;
       // Preserve every existing alias by redirecting it to text that actually
       // covers the removed excerpt, and repair indexes after the splice.
@@ -157,7 +182,7 @@ function standard(input: ResultAllocationInput): ResultAllocation {
   const priority = formatPriorityContext(input.context, 1000);
   const searched = formatSearchedContext(input.context, Math.max(0, 1000 - counted([], [], priority) - (priority.length ? 1 : 0)));
   const context = [...priority, ...searched];
-  return { evidence: publicSources(sources), modelResult: { findings, contextLines: context, contentChars: counted(findings, sources, context) }, cutSourceIds: sources.filter((source) => source.spaceCut).map((source) => source.id), requiredOverflowChars: 0 };
+  return { evidence: publicSources(sources, findings), modelResult: { findings, contextLines: context, contentChars: counted(findings, sources, context) }, cutSourceIds: sources.filter((source) => source.spaceCut).map((source) => source.id), requiredOverflowChars: 0 };
 }
 
 function bounded(input: ResultAllocationInput, limit: number): ResultAllocation {
@@ -227,7 +252,7 @@ function bounded(input: ResultAllocationInput, limit: number): ResultAllocation 
     searched = formatSearchedContext(input.context, Math.max(0, limit - beforeSearch - (contentChars - limit)));
     context = [...priority, ...searched]; contentChars = counted(findings, sources, context);
   }
-  return { evidence: publicSources(sources), modelResult: { findings, contextLines: context, contentChars }, cutSourceIds: sources.filter((source) => source.spaceCut).map((source) => source.id), effectiveChars: limit, requiredOverflowChars: Math.max(0, contentChars - limit) };
+  return { evidence: publicSources(sources, findings), modelResult: { findings, contextLines: context, contentChars }, cutSourceIds: sources.filter((source) => source.spaceCut).map((source) => source.id), effectiveChars: limit, requiredOverflowChars: Math.max(0, contentChars - limit) };
 }
 export function allocateResult(input: ResultAllocationInput): ResultAllocation {
   const resolved = resolveLengthLimit(input.setting, input.model?.contextWindow); const standardResult = standard(input);

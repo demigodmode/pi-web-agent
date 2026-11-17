@@ -7,7 +7,13 @@ import { queryTerms, type QueryTerm } from './repo-terms.js';
 import { safeSlice } from './safe-slice.js';
 
 export type RepoSearchExcerpt = { startLine: number; endLine: number; text: string };
-export type RepoSearchFile = { path: string; score: number; excerpts: RepoSearchExcerpt[] };
+export type RepoSearchFile = {
+  path: string;
+  score: number;
+  excerpts: RepoSearchExcerpt[];
+  /** Internal full text retained only for source-level safety classification. */
+  sourceText?: string;
+};
 export type RepoSearchBudget = 'files' | 'bytes' | 'time';
 export type RepoSearchResult = {
   scopeFound: boolean;
@@ -59,7 +65,7 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 const PROJECT_DOCUMENT_NAMES = new Set(['CHANGELOG', 'LICENSE', 'NOTICE', 'AUTHORS', 'COPYING', 'CONTRIBUTING']);
 const TEST_OR_DOC = /(^|\/)(tests?|__tests__|specs?|fixtures?|docs?|examples?)(\/|$)|\.(test|spec)\.[a-z0-9]+$|\.(md|markdown|rst|adoc)$/i;
-const EXEMPT_TEXT_FILES = /^(CMakeLists\.txt|requirements.*\.txt)$/;
+export const EXEMPT_TEXT_FILES = /^(CMakeLists\.txt|requirements.*\.txt)$/;
 const GENERATED = /\.min\.(js|css)$|(^|\/)(generated|__generated__)(\/|$)|\.(generated|gen)\.[a-z0-9]+$/i;
 const SCORE_WINDOW_LINES = 41;
 
@@ -387,7 +393,8 @@ export async function searchRepo(root: string, options: RepoSearchOptions): Prom
   const files = top.map((candidate) => ({
     path: candidate.path,
     score: candidate.score,
-    excerpts: buildExcerpts(candidate.text, terms, options.contextLines)
+    excerpts: buildExcerpts(candidate.text, terms, options.contextLines),
+    sourceText: candidate.text
   }));
   return result(true, fitToBudget(files, options.charBudget ?? Number.POSITIVE_INFINITY), stoppedBy, scanned);
 }

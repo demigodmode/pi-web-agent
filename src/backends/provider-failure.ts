@@ -105,6 +105,10 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
     // as 402. UNVERIFIED across every vendor, so anything else keeps the defaults.
     if (status === 401 || status === 403) kind = 'auth_failed';
     else if (status === 402) kind = 'quota_exhausted';
+  } else if (provider === 'keenable') {
+    // Source: https://docs.keenable.ai/errors (402 out of credits, 403 key rejected or revoked)
+    if (status === 402) kind = 'quota_exhausted';
+    else if (status === 403) kind = 'auth_failed';
   }
   // brave, tavily, duckduckgo: defaults only (UNVERIFIED beyond 429; see research gate).
 

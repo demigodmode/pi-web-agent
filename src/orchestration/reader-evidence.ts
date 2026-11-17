@@ -3,12 +3,14 @@ import type { WebFetchResponse } from '../types.js';
 import { rankEvidencePassages, splitEvidenceParagraphs } from './evidence-passages.js';
 import type { ResearchEvidence } from './research-types.js';
 import { classifySourceProfile } from './source-profile.js';
+import { detectAgentDirectedParagraphs } from '../safety/agent-directed.js';
+import { redactUrlForDisplay } from './url.js';
 
 export function readerEvidence(result: WebFetchResponse, query: string, requestedUrl?: string): ResearchEvidence {
   const content = result.content!;
   const text = content.text;
   return {
-    title: content.title ?? result.url,
+    title: content.title ?? redactUrlForDisplay(result.url),
     url: result.url,
     ...(requestedUrl ? { requestedUrl } : {}),
     method: result.metadata.method,
@@ -22,6 +24,11 @@ export function readerEvidence(result: WebFetchResponse, query: string, requeste
     truncated: result.metadata.truncated ?? false,
     ...(content.sectionAnchor ? { sectionAnchor: content.sectionAnchor } : {}),
     ...(result.metadata.partialComments ? { partialComments: true } : {}),
+    sourceSafety: content.sourceSafety ?? (
+      result.metadata.method === 'pdf' || result.metadata.method === 'youtube'
+        ? { flaggedParagraphs: detectAgentDirectedParagraphs(text, 'text'), agentNotes: [] }
+        : { flaggedParagraphs: [], agentNotes: [] }
+    ),
     ...(result.metadata.cacheHit === false ? { retrievedAt: new Date().toISOString() } : {})
   };
 }

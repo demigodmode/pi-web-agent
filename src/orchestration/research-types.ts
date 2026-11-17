@@ -1,6 +1,7 @@
-import type { Attempt, FailureInfo, SearchProviderName, SearchUnavailable } from '../types.js';
+import type { Attempt, FailureInfo, SearchFailure, SearchProviderName, SearchUnavailable } from '../types.js';
 import type { ResearchBudgetReason, ResearchBudgetSnapshot } from './run-budget.js';
 import type { PassageCandidate } from './evidence-passages.js';
+import type { SourceSafety } from '../safety/types.js';
 
 export type ResearchSourceKind =
   | 'official-docs'
@@ -34,6 +35,8 @@ export type ResearchEvidence = {
   /** @deprecated Compatibility marker; it does not establish why text was omitted. */
   truncated?: boolean;
   partialComments?: boolean;
+  /** Internal-only source annotations retained for later allocation. */
+  sourceSafety?: SourceSafety;
 };
 
 export type ResearchGap = {
@@ -64,6 +67,10 @@ export type ResearchWorkerResult = {
   searchUnavailable?: SearchUnavailable[];
   /** True when every provider that failed on this pass failed with a user-fixable kind. */
   searchUnavailableOnly?: boolean;
+  /** True when this pass's search returned an error. */
+  searchFailed?: boolean;
+  /** The provider error texts behind a failed search on this pass. */
+  searchFailures?: SearchFailure[];
 };
 
 export type ResearchRunMetadata = {

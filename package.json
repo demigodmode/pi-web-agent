@@ -1,6 +1,6 @@
 {
   "name": "@demigodmode/pi-web-agent",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "Pi package for reliable web access with explicit search, fetch, and headless boundaries.",
   "type": "module",
   "main": "./dist/extension.js",
@@ -25,10 +25,12 @@
     "web-fetch",
     "duckduckgo",
     "searxng",
+    "degoog",
     "brave-search",
     "you-com",
     "exa",
     "tavily",
+    "keenable",
     "firecrawl"
   ],
   "repository": {
@@ -67,7 +69,7 @@
     "cheerio": "^1.1.0",
     "jsdom": "^26.0.0",
     "playwright": "^1.60.0",
-    "undici": "^8.12.3",
+    "undici": "^8.12.4",
     "unpdf": "^1.8.1",
     "youtube-caption-extractor": "^1.10.2"
   },

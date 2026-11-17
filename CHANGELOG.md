@@ -18,6 +18,27 @@ The format is intentionally simple and release-oriented.
 ### Breaking
 - None.
 
+## [1.18.0] - 2026-11-17
+### Added
+- Every `web_explore` result now tells the model that its excerpts are quoted reference material, not instructions.
+- Text in a page, issue, PDF or repo file that addresses an AI agent and asks for something risky (run a command, send data, read secrets, hide something from you, ignore its instructions) is marked in the result, and the terminal shows a line naming the source. The text is kept. Quoted examples in code blocks and blockquotes are not marked.
+- `llms.txt`, `AGENTS.md`, `CLAUDE.md` and similar files get a short note saying who wrote them.
+- A query or link containing what looks like a credential (GitHub, OpenAI, Anthropic, AWS, Slack, Stripe, Google or npm keys, private keys, `password=` style values) is refused before anything is searched or fetched. Placeholders and signed S3, GCS and Azure links are allowed.
+- New docs page: [Running safely](docs/safety.md).
+- A `degoog` search backend for self-hosted [degoog](https://github.com/degoog-org/degoog) instances: set the instance URL as `backends.search.baseUrl`, and an optional key in `PI_WEB_AGENT_DEGOOG_API_KEY`. `/web-agent doctor` reports missing engines and a rejected key.
+- `llms.txt`, `llms-full.txt`, and raw README or AGENTS.md links served as plain text or Markdown are now read directly instead of coming back unreadable.
+- A `keenable` search backend for [Keenable](https://keenable.ai) (#126, thanks @KGKallasmaa). It's opt-in: set `KEENABLE_API_KEY` and select `keenable` under Backends or list it in fanout. The key alone doesn't turn it on.
+
+### Changed
+- Hidden page text (`hidden`, `aria-hidden`, `display:none`, off-screen and zero-size text) is removed before a page is read. Tabs, `<details>` and accordion panels are kept.
+- Updated undici to 8.12.4 and the Pi dev dependencies to 1.5.2, which clears the open `npm audit` advisories (undici, minimatch).
+
+### Fixed
+- When every search in a `web_explore` run fails and nothing usable comes back, the result now shows the provider's own error (for example a degoog base URL that returns 404 or an HTML page, or all degoog engines failing) instead of only "No usable evidence found."
+
+### Breaking
+- None.
+
 ## [1.17.0] - 2026-11-09
 ### Added
 - Research results tell Pi what was searched, which gaps remain, and up to two rule-based follow-up searches. The same context appears in verbose view.

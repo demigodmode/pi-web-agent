@@ -1,6 +1,8 @@
 import type { PresentationEnvelope } from './presentation/types.js';
 import type { PresentationStats } from './orchestration/presentation-stats.js';
 import type { LengthLimit, ModelResultSelection } from './results/types.js';
+import type { SourceSafety } from './safety/types.js';
+import type { EmittedSourceSafety } from './safety/types.js';
 
 export const TOOL_STATUSES = [
   'ok',
@@ -18,7 +20,7 @@ export type SearchResult = {
   snippet: string;
 };
 
-export type SearchProviderName = 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp';
+export type SearchProviderName = 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable';
 
 export type FanoutMode = 'off' | 'on' | 'auto';
 
@@ -59,6 +61,8 @@ export type Attempt = {
   cooldownUntil?: number;
   /** The provider's own message for a user-fixable failure, e.g. a missing key or base URL. */
   detail?: string;
+  /** The provider's error text for a failed or skipped attempt. */
+  message?: string;
 };
 
 export type SearchCoverage = {
@@ -81,9 +85,9 @@ export type ToolError = {
 };
 
 export type SearchMetadata = {
-  backend: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp';
+  backend: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable';
   cacheHit: boolean;
-  fallbackFrom?: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'duckduckgo';
+  fallbackFrom?: 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable' | 'duckduckgo';
   fallbackReason?: string;
   fanout?: FanoutMetadata;
   attempts?: Attempt[];
@@ -134,6 +138,8 @@ export type ExtractedContent = {
   botCheck?: boolean;
   /** Anchor of the section chosen for research; direct fetches do not set this. */
   sectionAnchor?: string;
+  /** Internal source-level safety annotations; never exposed in public fetch metadata. */
+  sourceSafety?: SourceSafety;
 };
 
 export type WebSearchResponse = {
@@ -169,6 +175,12 @@ export type SearchUnavailable = {
   message: string;
 };
 
+/** A search provider's own error text from a run where every search failed. */
+export type SearchFailure = {
+  provider: string;
+  message: string;
+};
+
 export type WebExploreResponse = {
   status: 'ok' | 'error';
   /** Monotonic wall time for this individual exploration invocation. */
@@ -191,9 +203,11 @@ export type WebExploreResponse = {
     selectionOmitted?: boolean;
     spaceCut?: boolean;
     samePassageAs?: Array<{ sourceId: string; excerptIndex: number; relation: 'same' | 'covered' }>;
+    safety?: EmittedSourceSafety;
   }>;
   caveat?: string;
   searchUnavailable?: SearchUnavailable[];
+  searchFailures?: SearchFailure[];
   requiredSourceFailures?: Array<{
     url: string;
     code: string;

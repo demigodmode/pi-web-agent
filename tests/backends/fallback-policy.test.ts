@@ -75,7 +75,8 @@ describe('withSearchPolicy', () => {
       backend: 'brave',
       outcome: 'failed',
       failure,
-      cooldownUntil: 1_000_000 + 15 * 60_000
+      cooldownUntil: 1_000_000 + 15 * 60_000,
+      message: 'brave rate_limited'
     });
   });
 
