@@ -7,6 +7,19 @@ The format is intentionally simple and release-oriented.
 ## Unreleased
 
 ### Added
+- None.
+
+### Changed
+- None.
+
+### Fixed
+- None.
+
+### Breaking
+- None.
+
+## [1.18.0] - 2026-11-17
+### Added
 - Every `web_explore` result now tells the model that its excerpts are quoted reference material, not instructions.
 - Text in a page, issue, PDF or repo file that addresses an AI agent and asks for something risky (run a command, send data, read secrets, hide something from you, ignore its instructions) is marked in the result, and the terminal shows a line naming the source. The text is kept. Quoted examples in code blocks and blockquotes are not marked.
 - `llms.txt`, `AGENTS.md`, `CLAUDE.md` and similar files get a short note saying who wrote them.
