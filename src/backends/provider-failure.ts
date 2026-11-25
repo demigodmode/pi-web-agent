@@ -1,7 +1,7 @@
 import type { FailureInfo, FailureKind, SearchProviderName } from '../types.js';
 import { parseRetryAfter } from './failure.js';
 
-export type ClassifiedProvider = SearchProviderName | 'firecrawl';
+export type ClassifiedProvider = SearchProviderName;
 
 export type ResponseParts = {
   status: number;
@@ -92,6 +92,7 @@ export function classifyHttpFailure(provider: ClassifiedProvider, parts: Respons
   } else if (provider === 'firecrawl') {
     // Source: https://docs.firecrawl.dev/api-reference/errors
     if (status === 402) kind = 'quota_exhausted';
+    else if (status === 403) kind = 'auth_failed';
   } else if (provider === 'youcom') {
     // Source: https://you.com/docs/api-reference/search/v1-search (429 UNVERIFIED -> default)
     if (status === 402) kind = 'quota_exhausted';

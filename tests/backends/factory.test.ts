@@ -574,6 +574,20 @@ describe('backend factory', () => {
     }
   });
 
+  it('creates firecrawl search with the environment API key', () => {
+    vi.stubEnv('PI_WEB_AGENT_FIRECRAWL_API_KEY', 'fc-key');
+    const createFirecrawlSearch = vi.fn().mockReturnValue(vi.fn());
+    try {
+      createBackendSet(
+        { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'firecrawl' } },
+        { ...offlineNetworkDeps(), createFirecrawlSearch }
+      );
+      expect(createFirecrawlSearch).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'fc-key' }));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('records tavily as the search fallback source', async () => {
     const primary = vi.fn().mockResolvedValue({
       status: 'error',
@@ -1529,6 +1543,19 @@ describe('backend factory failure-aware fallback (#55)', () => {
     const result = await backends.search({ query: 'q' });
     expect(tavilyCalls).toEqual(['keyless']);
     expect(result.metadata.coverage?.partial).toBe(true);
+  });
+
+  it('keeps Firecrawl search health apart from Firecrawl fetch health', async () => {
+    const firecrawlPage = vi.fn(async (url: string) => ({
+      status: 'ok' as const, url, title: 'Example', content: 'page text', metadata: { method: 'firecrawl' as const, cacheHit: false }
+    }));
+    const backends = createBackendSet(
+      { ...DEFAULT_BACKEND_CONFIG, search: { provider: 'firecrawl' }, fetch: { provider: 'firecrawl', baseUrl: 'http://localhost:3002' } },
+      { ...offlineNetworkDeps(), createFirecrawlSearch: () => failing('firecrawl', 'auth_failed') as any, createFirecrawlFetch: () => firecrawlPage as any }
+    );
+    await backends.search({ query: 'a' });
+    await backends.fetchPage({ url: 'https://example.com/' });
+    expect(firecrawlPage).toHaveBeenCalledTimes(1);
   });
 
   it('never falls back or retries when the shared proxy config is invalid (config_global)', async () => {

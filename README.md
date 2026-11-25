@@ -37,7 +37,7 @@ One public tool, `web_explore`, that does bounded web research for Pi: search, f
 - **Reads the real content behind links.** Paste a GitHub, PDF, or YouTube URL and it pulls the actual thing (GitHub files/issues/PRs from the API, PDF text, YouTube transcripts). Public GitHub content is keyless; private GitHub content needs `GITHUB_TOKEN` or `gh auth login`. So "summarize this PDF" or "what does this repo do" works off the source, not the page shell.
 - **Answers questions about a GitHub repo from its code.** Paste a repo or folder link and it clones that exact commit (shallow, over HTTPS), searches the code for your question, and cites excerpts with links pinned to the commit. Needs `git` 2.32+. Public repositories can be read anonymously; private repositories use `gh auth login` or `GITHUB_TOKEN`. If the repo can't be read it says why instead of guessing from the README.
 - **Esc stops it.** Cancelling a running `web_explore` stops searches, page reads, and the headless browser. Page reads give up after 15 seconds (PDFs 60, Firecrawl 45), and one page that fails to load doesn't fail the whole run.
-- **Ten search backends.** DuckDuckGo (keyless default), SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel (keyless, opt-in), Keenable (opt-in), and any Google SERP endpoint you point it at.
+- **Eleven search backends.** DuckDuckGo (keyless default), SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel (keyless, opt-in), Keenable (opt-in), Firecrawl (opt-in), and any Google SERP endpoint you point it at.
 - **Optional search fanout.** Query several backends at once, dedupe, and rank pages that more than one provider agreed on to the top. Off by default; flip it to `on` or `auto`.
 - **Honest by default.** Weak, narrow, blocked, or cautionary evidence gets flagged instead of dressed up as confidence.
 - **Safe with untrusted pages.** Links the model picks, or finds on a page it read, can't reach localhost, your LAN, or cloud metadata endpoints. That includes redirects and everything a headless page loads. Addresses you configure yourself aren't affected, and an allow list covers the private ranges you do want.
@@ -102,6 +102,7 @@ Defaults are DuckDuckGo search, plain HTTP fetch, and local-browser headless. Sw
 | You.com | search (hosted) | `YDC_API_KEY` |
 | Exa | search (hosted) | `EXA_API_KEY` |
 | Keenable | search (hosted, opt-in) | `KEENABLE_API_KEY` |
+| Firecrawl | search (hosted, opt-in) | `PI_WEB_AGENT_FIRECRAWL_API_KEY` |
 | Tavily | search (hosted) | `TAVILY_API_KEY` |
 | Parallel | search (hosted) | select `parallel`, keyless |
 | Google SERP | search (hosted) | base URL + `PI_WEB_AGENT_GOOGLE_SERP_API_KEY` |

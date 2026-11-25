@@ -110,7 +110,7 @@ For a self-hosted or hosted-backend setup, open:
 
 Choose **Backends** to set:
 
-- search provider: `duckduckgo`, `searxng`, `degoog`, `brave`, `youcom`, `exa`, `tavily`, `keenable`, or `google-serp`
+- search provider: `duckduckgo`, `searxng`, `degoog`, `brave`, `youcom`, `exa`, `tavily`, `keenable`, `firecrawl`, or `google-serp`
 - SearXNG URL, for example `http://localhost:8080`
 - degoog URL, for example `http://localhost:4444`
 - Google SERP endpoint URL, for example `https://google.serper.dev/search`
@@ -143,7 +143,7 @@ Secrets live in the environment, not in config the settings UI writes. The ones 
 - `TAVILY_API_KEY`: Tavily search
 - `PI_WEB_AGENT_GOOGLE_SERP_API_KEY`: Google SERP endpoint search (`baseUrl` + header key, any vendor)
 - `PI_WEB_AGENT_DEGOOG_API_KEY`: degoog search, only if the instance has API-key protection on
-- `PI_WEB_AGENT_FIRECRAWL_API_KEY`: Firecrawl fetch
+- `PI_WEB_AGENT_FIRECRAWL_API_KEY`: Firecrawl fetch, and Firecrawl search (opt-in; select `firecrawl` under Backends)
 - `GITHUB_TOKEN`: optional for public GitHub content; private GitHub reader and repo-research access need `GITHUB_TOKEN` or `gh auth login`
 
 This package integrates with existing self-hosted services. SearXNG/Firecrawl installation, Docker Compose files, reverse proxies, TLS, and auth setup belong to those projects' docs.

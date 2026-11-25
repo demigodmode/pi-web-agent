@@ -3,6 +3,7 @@ import { BROWSER_PATH_CONFIG_KEY, BROWSER_PATH_ENV, type BrowserResolutionResult
 import { classifyEnvelopeFailure } from './provider-failure.js';
 import { createParallelSearchTool } from '../search/parallel.js';
 import { createKeenableSearchTool } from '../search/keenable.js';
+import { createFirecrawlSearchTool } from '../search/firecrawl.js';
 import { normalizeYouComResults, YOUCOM_SEARCH_URL } from '../search/youcom.js';
 import { allEnginesFailed, DEGOOG_API_KEY_ENV, degoogApiUrl, degoogHeaders, describeEngineFailures, engineTimingsOf } from '../search/degoog.js';
 
@@ -272,6 +273,19 @@ export async function checkBackendHealth(
         timeout.done();
       }
     }
+  } else if (config.search.provider === 'firecrawl') {
+    if (!process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY?.trim()) {
+      lines.push('search backend: firecrawl warning (missing PI_WEB_AGENT_FIRECRAWL_API_KEY)');
+    } else {
+      const timeout = withTimeout(timeoutMs);
+      try {
+        const result = await createFirecrawlSearchTool({ apiKey: process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY, fetchImpl })({ query: 'pi-web-agent web research', signal: timeout.signal });
+        lines.push(result.status === 'ok' ? 'search backend: firecrawl ok' :
+          `search backend: firecrawl warning (${result.error?.message ?? 'unexpected response'})`);
+      } finally {
+        timeout.done();
+      }
+    }
   } else if (config.search.provider === 'tavily') {
     const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey?.trim()) {
@@ -414,6 +428,10 @@ export async function checkBackendHealth(
       } else if (provider === 'keenable') {
         if (!process.env.KEENABLE_API_KEY?.trim()) {
           lines.push('search fanout provider keenable warning (missing KEENABLE_API_KEY)');
+        }
+      } else if (provider === 'firecrawl') {
+        if (!process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY?.trim()) {
+          lines.push('search fanout provider firecrawl warning (missing PI_WEB_AGENT_FIRECRAWL_API_KEY)');
         }
       }
     }

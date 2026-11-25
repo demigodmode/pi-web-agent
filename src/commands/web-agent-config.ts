@@ -383,7 +383,7 @@ export function buildBackendSettingsItems(
       id: 'backend:search:provider',
       label: 'Search backend',
       currentValue: backends.search.provider,
-      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog', 'keenable']
+      values: ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog', 'keenable', 'firecrawl']
     },
     {
       id: 'backend:search:baseUrl',
@@ -437,6 +437,12 @@ export function buildBackendSettingsItems(
     {
       id: 'backend:secret:keenable',
       label: 'Keenable API key',
+      currentValue: 'env var',
+      values: ['env var']
+    },
+    {
+      id: 'backend:secret:firecrawl',
+      label: 'Firecrawl API key',
       currentValue: 'env var',
       values: ['env var']
     },
@@ -661,7 +667,7 @@ export function applySettingsValue(
     }
   }
 
-  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'parallel' || newValue === 'google-serp' || newValue === 'degoog' || newValue === 'keenable')) {
+  if (id === 'backend:search:provider' && (newValue === 'duckduckgo' || newValue === 'searxng' || newValue === 'brave' || newValue === 'youcom' || newValue === 'exa' || newValue === 'tavily' || newValue === 'parallel' || newValue === 'google-serp' || newValue === 'degoog' || newValue === 'keenable' || newValue === 'firecrawl')) {
     const oldProvider = currentBackends.search.provider as SearchProviderName;
     currentBackends.search.provider = newValue as SearchProviderName;
 

@@ -13,6 +13,7 @@ import { fetchDuckDuckGoHtml } from '../search/duckduckgo.js';
 import { createExaSearchTool } from '../search/exa.js';
 import { createParallelSearchTool } from '../search/parallel.js';
 import { createKeenableSearchTool } from '../search/keenable.js';
+import { createFirecrawlSearchTool } from '../search/firecrawl.js';
 import { createTavilySearchTool } from '../search/tavily.js';
 import { createSearxngSearchTool } from '../search/searxng.js';
 import { createGoogleSerpSearchTool } from '../search/google-serp.js';
@@ -56,6 +57,7 @@ export type BackendFactoryDeps = {
   createParallelSearch?: typeof createParallelSearchTool;
   createTavilySearch?: typeof createTavilySearchTool;
   createKeenableSearch?: typeof createKeenableSearchTool;
+  createFirecrawlSearch?: typeof createFirecrawlSearchTool;
   createGoogleSerpSearch?: typeof createGoogleSerpSearchTool;
   createDegoogSearch?: typeof createDegoogSearchTool;
   createHttpFetch?: typeof createWebFetchTool;
@@ -174,6 +176,7 @@ export function createBackendSet(
   const createParallelSearch = deps.createParallelSearch ?? createParallelSearchTool;
   const createTavilySearch = deps.createTavilySearch ?? createTavilySearchTool;
   const createKeenableSearch = deps.createKeenableSearch ?? createKeenableSearchTool;
+  const createFirecrawlSearch = deps.createFirecrawlSearch ?? createFirecrawlSearchTool;
   const createGoogleSerpSearch = deps.createGoogleSerpSearch ?? createGoogleSerpSearchTool;
   const createDegoogSearch = deps.createDegoogSearch ?? createDegoogSearchTool;
   const createHttpFetch = deps.createHttpFetch ?? createWebFetchTool;
@@ -291,7 +294,7 @@ export function createBackendSet(
   // One health state per backend set: a rebuilt set (config change) starts fresh.
   const policyDeps: PolicyDeps = { health: deps.providerHealth ?? createProviderHealth(deps.policy?.now ? { now: deps.policy.now } : {}), ...deps.policy };
   const guarded = (name: SearchProviderName, search: BackendSet['search'], healthKey?: string) =>
-    withSearchPolicy(name, search, policyDeps, healthKey);
+    withSearchPolicy(name, search, policyDeps, healthKey ?? (name === 'firecrawl' ? 'firecrawl-search' : name));
 
   const createDuckDuckGo = () =>
     createDuckDuckGoSearch({ searchHtml: (query, signal) => fetchDuckDuckGoHtml(query, { fetchImpl, signal }) });
@@ -316,6 +319,8 @@ export function createBackendSet(
         return createTavilySearch({ apiKey: process.env.TAVILY_API_KEY, fetchImpl });
       case 'keenable':
         return createKeenableSearch({ apiKey: process.env.KEENABLE_API_KEY, fetchImpl });
+      case 'firecrawl':
+        return createFirecrawlSearch({ apiKey: process.env.PI_WEB_AGENT_FIRECRAWL_API_KEY, fetchImpl });
       case 'google-serp': {
         // Each endpoint-backed provider resolves its own URL, so a fanout set can never
         // point one provider at another's endpoint (or send it the other's key).
