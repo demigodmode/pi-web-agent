@@ -24,7 +24,7 @@ export type ProxyConfig = {
 };
 
 export type SearchBackendConfig = {
-  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable';
+  provider: 'duckduckgo' | 'searxng' | 'brave' | 'youcom' | 'exa' | 'tavily' | 'parallel' | 'google-serp' | 'degoog' | 'keenable' | 'firecrawl';
   /** Endpoint of the selected provider. Under fanout, give the other endpoint-backed providers their own entry in baseUrls. */
   baseUrl?: string;
   /** Per-provider endpoints, so one endpoint-backed provider never has to reuse another's baseUrl (see resolveSearchBaseUrl). */
@@ -240,7 +240,7 @@ function extractFirecrawlOptions(value: unknown): FirecrawlOptions | undefined {
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
-const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog', 'keenable'];
+const PROVIDER_NAMES: SearchProviderName[] = ['duckduckgo', 'searxng', 'brave', 'youcom', 'exa', 'tavily', 'parallel', 'google-serp', 'degoog', 'keenable', 'firecrawl'];
 
 /**
  * Providers that talk to an endpoint the user configures in backends.search.baseUrl.
@@ -307,6 +307,7 @@ export function usableSearchProviders(
   if (search.provider === 'parallel' || search.fanout?.providers?.includes('parallel')) usable.push('parallel');
   // Keenable is opt-in: only usable when explicitly selected and keyed, so implicit fanout sets stay unchanged.
   if (env.KEENABLE_API_KEY?.trim() && (search.provider === 'keenable' || search.fanout?.providers?.includes('keenable'))) usable.push('keenable');
+  if (env.PI_WEB_AGENT_FIRECRAWL_API_KEY?.trim() && (search.provider === 'firecrawl' || search.fanout?.providers?.includes('firecrawl'))) usable.push('firecrawl');
   return usable;
 }
 

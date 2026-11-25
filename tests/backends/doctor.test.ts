@@ -324,6 +324,61 @@ describe('backend doctor checks', () => {
     }
   });
 
+  it('warns when firecrawl search is selected without an API key', async () => {
+    vi.stubEnv('PI_WEB_AGENT_FIRECRAWL_API_KEY', '');
+    const fetchImpl = vi.fn();
+    try {
+      const lines = await checkBackendHealth({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'firecrawl' } }, { fetchImpl });
+      expect(lines).toContain('search backend: firecrawl warning (missing PI_WEB_AGENT_FIRECRAWL_API_KEY)');
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports firecrawl search ok for a documented 200 response', async () => {
+    vi.stubEnv('PI_WEB_AGENT_FIRECRAWL_API_KEY', 'fc-key');
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: { web: [{ url: 'https://example.com', title: 'A', description: 'text', position: 1 }] }
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    try {
+      const lines = await checkBackendHealth({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'firecrawl' } }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+      expect(lines).toContain('search backend: firecrawl ok');
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://api.firecrawl.dev/v2/search',
+        expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer fc-key' }) })
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports a firecrawl search HTTP failure as a warning', async () => {
+    vi.stubEnv('PI_WEB_AGENT_FIRECRAWL_API_KEY', 'fc-key');
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: false, error: 'Unauthorized: Invalid token' }), { status: 401, headers: { 'content-type': 'application/json' } }));
+    try {
+      const lines = await checkBackendHealth({ ...DEFAULT_BACKEND_CONFIG, search: { provider: 'firecrawl' } }, { fetchImpl: fetchImpl as unknown as typeof fetch });
+      expect(lines).toContain('search backend: firecrawl warning (Firecrawl search request failed: HTTP 401)');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('warns when fanout includes firecrawl without an API key', async () => {
+    vi.stubEnv('PI_WEB_AGENT_FIRECRAWL_API_KEY', '');
+    try {
+      const result = await checkBackendHealth({
+        search: { provider: 'duckduckgo', fanout: { mode: 'on', providers: ['duckduckgo', 'firecrawl'] } },
+        fetch: { provider: 'http' },
+        headless: { provider: 'local-browser' }
+      }, { fetchImpl: vi.fn() });
+      expect(result).toContain('search fanout provider firecrawl warning (missing PI_WEB_AGENT_FIRECRAWL_API_KEY)');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('warns when fanout includes keenable without an API key', async () => {
     vi.stubEnv('KEENABLE_API_KEY', '');
     try {

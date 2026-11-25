@@ -67,7 +67,7 @@ Open:
 
 Choose **Backends**. From there you can:
 
-- switch search between DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, Keenable, and Google SERP
+- switch search between DuckDuckGo, SearXNG, degoog, Brave, You.com, Exa, Tavily, Parallel, Keenable, Firecrawl, and Google SERP
 - edit the search endpoint URL (SearXNG, degoog, or Google SERP)
 - enable a hosted/SearXNG → DuckDuckGo fallback
 - switch fetch between plain HTTP and Firecrawl
@@ -354,6 +354,28 @@ Then choose **Settings → Backends → Search backend → keenable**.
 ```
 
 The key alone never turns Keenable on: it is used only when you select `keenable` or list it in fanout. Keenable is not in the DuckDuckGo fallback list, so with Keenable selected the **Search fallback** row in settings shows `off` and a Keenable failure stays visible instead of switching to another backend. Like the other hosted backends, Keenable only improves source discovery.
+
+## Firecrawl search
+
+To use [Firecrawl](https://www.firecrawl.dev/?utm_source=pi-web-agent&utm_medium=integration) for search, set the same key the Firecrawl fetch backend reads:
+
+```bash
+PI_WEB_AGENT_FIRECRAWL_API_KEY=...
+```
+
+Then choose **Settings → Backends → Search backend → firecrawl**.
+
+```json
+{
+  "backends": {
+    "search": {
+      "provider": "firecrawl"
+    }
+  }
+}
+```
+
+pi-web-agent calls the hosted search endpoint, `https://api.firecrawl.dev/v2/search`, and reads each result's title, URL, and description (capped at 500 characters). Search always uses the hosted API and ignores the Firecrawl fetch `baseUrl`, so with a self-hosted fetch backend the key you set here is a hosted Firecrawl key. Each search uses credits from your Firecrawl plan. The key alone never turns Firecrawl search on: it is used only when you select `firecrawl` or list it in fanout, so a key set for Firecrawl fetch does not change your search backend. Firecrawl search is not in the DuckDuckGo fallback list, so with it selected the **Search fallback** row in settings shows `off` and a failure stays visible. Search and fetch keep separate provider health, so a failed search does not cool down Firecrawl page reads. Like the other hosted backends, it only improves source discovery.
 
 ## Parallel Search MCP
 
